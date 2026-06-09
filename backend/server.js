@@ -3,9 +3,13 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
+const net = require('net');
 
 const app = express();
-const PORT = 3001;
+const DEFAULT_PORT = 3001;
+const PORT_RANGE_START = 3001;
+const PORT_RANGE_END = 3100;
+const PORT_FILE = path.join(__dirname, 'port.txt');
 
 app.use(cors());
 app.use(express.json());
@@ -27,28 +31,131 @@ const saveScripts = (scripts) => {
   fs.writeFileSync(SCRIPTS_FILE, JSON.stringify(scripts, null, 2));
 };
 
-// 检测可用的 shell
+const isPortAvailable = (port) => {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', (err) => {
+      resolve(false);
+    });
+    server.once('listening', () => {
+      server.close(() => {
+        resolve(true);
+      });
+    });
+    server.listen(port);
+  });
+};
+
+const findAvailablePort = async (startPort, endPort) => {
+  for (let port = startPort; port <= endPort; port++) {
+    const available = await isPortAvailable(port);
+    if (available) {
+      return port;
+    }
+  }
+  return null;
+};
+
 const detectShell = () => {
   const isWindows = process.platform === 'win32';
+  const result = { command: '', fullPath: '', args: [], type: '', name: '', version: '' };
+
+  const resolveFullPath = (cmd) => {
+    try {
+      if (isWindows) {
+        const out = execSync(`where ${cmd}`, { timeout: 1000, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+        return out.split('\r\n')[0] || out.split('\n')[0] || cmd;
+      } else {
+        const out = execSync(`which ${cmd}`, { timeout: 1000, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+        return out.split('\n')[0] || cmd;
+      }
+    } catch (e) {
+      return cmd;
+    }
+  };
 
   if (!isWindows) {
-    return { command: 'bash', args: ['-c'] };
+    result.command = 'bash';
+    result.fullPath = resolveFullPath('bash');
+    result.args = ['-c'];
+    result.type = 'bash';
+    result.name = result.fullPath;
+    try {
+      result.version = execSync('bash --version', { timeout: 1000 }).toString().split('\n')[0].trim();
+    } catch (e) {}
+    return result;
   }
 
-  const possibleBashPaths = ['bash', 'git\\bash', 'C:\\Program Files\\Git\\bin\\bash.exe', 'C:\\Program Files (x86)\\Git\\bin\\bash.exe'];
+  const possibleBashPaths = [
+    { path: 'bash', name: 'bash (PATH)' },
+    { path: 'C:\\Program Files\\Git\\bin\\bash.exe', name: 'Git Bash (C:\\Program Files\\Git)' },
+    { path: 'C:\\Program Files (x86)\\Git\\bin\\bash.exe', name: 'Git Bash (C:\\Program Files (x86)\\Git)' },
+    { path: process.env.ProgramW6432 ? `${process.env.ProgramW6432}\\Git\\bin\\bash.exe` : '', name: 'Git Bash' },
+    { path: process.env.ProgramFiles ? `${process.env.ProgramFiles}\\Git\\bin\\bash.exe` : '', name: 'Git Bash' },
+    { path: 'C:\\Windows\\System32\\bash.exe', name: 'WSL bash' },
+    { path: 'git\\bash', name: 'Git bash (relative)' }
+  ];
 
-  for (const bashPath of possibleBashPaths) {
+  for (const { path: bashPath, name } of possibleBashPaths) {
+    if (!bashPath) continue;
     try {
       execSync(`"${bashPath}" -c "echo test"`, { stdio: 'ignore', timeout: 1000 });
-      return { command: bashPath, args: ['-c'] };
+      result.command = bashPath;
+      // 如果是简单的 'bash' 命令，解析其完整路径
+      if (bashPath === 'bash' || !bashPath.includes('\\')) {
+        result.fullPath = resolveFullPath(bashPath);
+      } else {
+        result.fullPath = bashPath;
+      }
+      result.args = ['-c'];
+      result.type = 'bash';
+      result.name = name;
+      try {
+        result.version = execSync(`"${bashPath}" --version`, { timeout: 1000 }).toString().split('\n')[0].trim();
+      } catch (e) {}
+      return result;
     } catch (e) {}
   }
 
-  console.log('Warning: bash not found, using cmd.exe (bash scripts may not work)');
-  return { command: 'cmd.exe', args: ['/c'] };
+  result.command = 'cmd.exe';
+  result.fullPath = resolveFullPath('cmd.exe');
+  result.args = ['/c'];
+  result.type = 'cmd';
+  result.name = 'Windows cmd.exe';
+  try {
+    result.version = execSync('cmd /c "echo cmd.exe"', { timeout: 1000 }).toString().trim();
+  } catch (e) {}
+  console.log('⚠️  Warning: bash not found, falling back to cmd.exe (bash scripts may not work correctly)');
+  return result;
 };
 
 const shell = detectShell();
+
+console.log('========================================');
+console.log('🚀 Script Manager - Backend starting...');
+console.log('========================================');
+console.log(`📍 Platform: ${process.platform} (${process.arch})`);
+console.log(`🐚 Shell Type: ${shell.type.toUpperCase()}`);
+console.log(`🔧 Shell Command: ${shell.command} ${shell.args.join(' ')}`);
+if (shell.name) console.log(`📛 Shell Name: ${shell.name}`);
+if (shell.version) console.log(`📦 Shell Version: ${shell.version}`);
+console.log('========================================');
+
+// API to expose shell info to frontend
+app.get('/api/system-info', (req, res) => {
+  res.json({
+    platform: process.platform,
+    arch: process.arch,
+    shell: {
+      type: shell.type,
+      command: shell.command,
+      fullPath: shell.fullPath,
+      args: shell.args,
+      name: shell.name,
+      version: shell.version
+    }
+  });
+});
 
 // ==================== CRUD ====================
 
@@ -109,7 +216,6 @@ app.delete('/api/scripts/:id', (req, res) => {
 
 // ==================== 实时流式执行 (SSE) ====================
 
-// 单脚本流式执行
 app.get('/api/scripts/:id/execute-stream', (req, res) => {
   const { id } = req.params;
   const scripts = getScripts();
@@ -132,19 +238,12 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
 
   const child = spawn(shell.command, [...shell.args, script.content]);
 
-  let output = '';
-  let error = '';
-
   child.stdout.on('data', (data) => {
-    const chunk = data.toString();
-    output += chunk;
-    res.write(`data: ${JSON.stringify({ type: 'stdout', content: chunk })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'stdout', content: data.toString() })}\n\n`);
   });
 
   child.stderr.on('data', (data) => {
-    const chunk = data.toString();
-    error += chunk;
-    res.write(`data: ${JSON.stringify({ type: 'stderr', content: chunk })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'stderr', content: data.toString() })}\n\n`);
   });
 
   child.on('close', (code) => {
@@ -162,7 +261,6 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   });
 });
 
-// 批量流式执行
 app.get('/api/scripts/batch-execute-stream', (req, res) => {
   const ids = req.query.ids ? req.query.ids.split(',') : [];
 
@@ -194,32 +292,33 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
 
     if (!script) {
       res.write(`data: ${JSON.stringify({ type: 'start', scriptId, scriptName: 'Unknown' })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'error', message: 'Script not found' })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'close', exitCode: -1 })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'Script not found' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
       executeNext(index + 1);
       return;
     }
 
-    res.write(`data: ${JSON.stringify({ type: 'start', scriptId: script.id, scriptName: script.name })}\n\n`);
+    const currentId = script.id;
+    res.write(`data: ${JSON.stringify({ type: 'start', scriptId: currentId, scriptName: script.name })}\n\n`);
 
     childProcess = spawn(shell.command, [...shell.args, script.content]);
 
     childProcess.stdout.on('data', (data) => {
-      res.write(`data: ${JSON.stringify({ type: 'stdout', content: data.toString() })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'stdout', scriptId: currentId, content: data.toString() })}\n\n`);
     });
 
     childProcess.stderr.on('data', (data) => {
-      res.write(`data: ${JSON.stringify({ type: 'stderr', content: data.toString() })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'stderr', scriptId: currentId, content: data.toString() })}\n\n`);
     });
 
     childProcess.on('close', (code) => {
-      res.write(`data: ${JSON.stringify({ type: 'close', exitCode: code })}\n\n`);
-      executeNext(index + 1);
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: code })}\n\n`);
+      setTimeout(() => executeNext(index + 1), 50);
     });
 
     childProcess.on('error', (err) => {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
-      executeNext(index + 1);
+      res.write(`data: ${JSON.stringify({ type: 'error', scriptId: currentId, message: err.message })}\n\n`);
+      setTimeout(() => executeNext(index + 1), 50);
     });
   };
 
@@ -232,6 +331,25 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// ==================== 启动服务 ====================
+
+const startServer = async () => {
+  const port = await findAvailablePort(PORT_RANGE_START, PORT_RANGE_END);
+  
+  if (!port) {
+    console.error('Error: No available port found in range', PORT_RANGE_START, '-', PORT_RANGE_END);
+    process.exit(1);
+  }
+
+  if (port !== DEFAULT_PORT) {
+    console.log(`Warning: Port ${DEFAULT_PORT} is in use, using port ${port} instead`);
+  }
+
+  fs.writeFileSync(PORT_FILE, port.toString());
+
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+};
+
+startServer();

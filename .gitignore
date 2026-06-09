@@ -95,6 +95,7 @@ Thumbs.db
 
 # Project specific
 backend/scripts.json
+backend/port.txt
 frontend/dist/
 frontend/.vite/
 *.log

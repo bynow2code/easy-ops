@@ -11,10 +11,12 @@ function App() {
   const [executingId, setExecutingId] = useState(null)
   const [executingBatch, setExecutingBatch] = useState(false)
   const [outputs, setOutputs] = useState({})
+  const [systemInfo, setSystemInfo] = useState(null)
   const eventSourceRef = useRef(null)
 
   useEffect(() => {
     fetchScripts()
+    fetchSystemInfo()
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
@@ -28,6 +30,15 @@ function App() {
       setScripts(response.data)
     } catch (error) {
       console.error('Error fetching scripts:', error)
+    }
+  }
+
+  const fetchSystemInfo = async () => {
+    try {
+      const response = await axios.get('/api/system-info')
+      setSystemInfo(response.data)
+    } catch (error) {
+      console.error('Error fetching system info:', error)
     }
   }
 
@@ -162,39 +173,40 @@ function App() {
 
     es.onmessage = (event) => {
       const data = JSON.parse(event.data)
+      const scriptId = data.scriptId || currentId
 
       if (data.type === 'start') {
         currentId = data.scriptId
         setOutputs(prev => ({
           ...prev,
-          [currentId]: { output: '', error: '', exitCode: null, live: true }
+          [scriptId]: { output: '', error: '', exitCode: null, live: true }
         }))
       } else if (data.type === 'stdout') {
-        if (currentId) {
+        if (scriptId) {
           setOutputs(prev => {
-            const curr = prev[currentId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [currentId]: { ...curr, output: curr.output + data.content } }
+            const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
+            return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
           })
         }
       } else if (data.type === 'stderr') {
-        if (currentId) {
+        if (scriptId) {
           setOutputs(prev => {
-            const curr = prev[currentId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [currentId]: { ...curr, error: curr.error + data.content } }
+            const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
+            return { ...prev, [scriptId]: { ...curr, error: curr.error + data.content } }
           })
         }
       } else if (data.type === 'error') {
-        if (currentId) {
+        if (scriptId) {
           setOutputs(prev => {
-            const curr = prev[currentId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [currentId]: { ...curr, error: curr.error + data.message + '\n', exitCode: data.exitCode || -1 } }
+            const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
+            return { ...prev, [scriptId]: { ...curr, error: curr.error + data.message + '\n', exitCode: data.exitCode || -1 } }
           })
         }
       } else if (data.type === 'close') {
-        if (currentId) {
+        if (scriptId) {
           setOutputs(prev => {
-            const curr = prev[currentId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [currentId]: { ...curr, exitCode: data.exitCode, live: false } }
+            const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
+            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false } }
           })
         }
       } else if (data.type === 'done') {
@@ -232,7 +244,24 @@ function App() {
   return (
     <div className="app-container">
       <header className="header">
-        <h1>Script Manager</h1>
+        <div>
+          <h1>Script Manager</h1>
+          {systemInfo && (
+            <div className="system-info">
+              <div className="info-row">
+                <span className="info-badge">
+                  {systemInfo.shell.type === 'bash' ? '🐚' : '💻'} {systemInfo.shell.type.toUpperCase()}
+                </span>
+                <span className="info-path">{systemInfo.shell.fullPath || systemInfo.shell.command} {systemInfo.shell.args.join(' ')}</span>
+              </div>
+              {systemInfo.shell.version && (
+                <div className="info-row">
+                  <span className="info-version">{systemInfo.shell.version}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <div className="header-actions">
           <button
             onClick={handleBatchExecute}
@@ -267,7 +296,6 @@ function App() {
                   />
                 </th>
                 <th>Name</th>
-                <th>Created At</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -288,11 +316,7 @@ function App() {
                     </td>
                     <td className="name-col">
                       <div className="script-name">{script.name}</div>
-                      <div className="script-content-preview">
-                        {script.content.length > 80 ? script.content.substring(0, 80) + '...' : script.content}
-                      </div>
                     </td>
-                    <td>{formatDate(script.createdAt)}</td>
                     <td>
                       <span className={`status-badge ${isLive ? 'running' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : ''))}`}>
                         {statusLabel}

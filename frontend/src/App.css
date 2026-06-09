@@ -7,40 +7,89 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background-color: #f5f5f5;
-  min-height: 100vh;
 }
 
 .app-container {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 10px 15px;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid #e0e0e0;
+  align-items: flex-start;
+}
+
+.header > div:first-child {
+  flex: 1;
 }
 
 .header h1 {
-  font-size: 24px;
+  font-size: 20px;
   color: #333;
+  margin-bottom: 6px;
+}
+
+.system-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #666;
+}
+
+.info-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.info-path {
+  font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
+  font-size: 12px;
+  color: #444;
+  background: #f0f0f0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.info-version {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  color: #999;
+  padding-left: 2px;
 }
 
 .header-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .btn {
-  padding: 8px 16px;
+  padding: 6px 12px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   transition: background-color 0.2s;
 }
@@ -135,25 +184,35 @@ body {
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .scripts-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.scripts-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .scripts-table th,
 .scripts-table td {
-  padding: 12px 16px;
+  padding: 8px 12px;
   text-align: left;
   border-bottom: 1px solid #f0f0f0;
+  word-wrap: break-word;
 }
 
 .scripts-table th {
   background-color: #fafafa;
   font-weight: 600;
   color: #666;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .scripts-table tbody tr:hover {
@@ -165,7 +224,7 @@ body {
 }
 
 .checkbox-col {
-  width: 40px;
+  width: 50px;
 }
 
 .checkbox-col input {
@@ -174,20 +233,24 @@ body {
   cursor: pointer;
 }
 
-.name-col {
-  min-width: 300px;
+.scripts-table th:nth-child(2),
+.scripts-table td:nth-child(2) {
+  width: 40%;
+}
+
+.scripts-table th:nth-child(3),
+.scripts-table td:nth-child(3) {
+  width: 100px;
+}
+
+.scripts-table th:nth-child(4),
+.scripts-table td:nth-child(4) {
+  width: 280px;
 }
 
 .script-name {
   font-weight: 600;
   color: #333;
-  margin-bottom: 4px;
-}
-
-.script-content-preview {
-  font-size: 13px;
-  color: #999;
-  font-family: monospace;
 }
 
 .actions-col {
@@ -195,12 +258,12 @@ body {
 }
 
 .outputs-container {
-  margin-top: 20px;
+  margin-top: 15px;
 }
 
 .outputs-container h2 {
-  font-size: 18px;
-  margin-bottom: 15px;
+  font-size: 16px;
+  margin-bottom: 10px;
   color: #333;
 }
 
@@ -208,7 +271,7 @@ body {
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  margin-bottom: 15px;
+  margin-bottom: 10px;
   overflow: hidden;
 }
 
@@ -216,7 +279,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 8px 12px;
   background-color: #fafafa;
   border-bottom: 1px solid #f0f0f0;
 }
@@ -224,10 +287,11 @@ body {
 .output-name {
   font-weight: 600;
   color: #333;
+  font-size: 14px;
 }
 
 .exit-code {
-  font-size: 12px;
+  font-size: 11px;
   padding: 2px 8px;
   border-radius: 4px;
 }
@@ -243,7 +307,7 @@ body {
 }
 
 .output-section {
-  padding: 12px 16px;
+  padding: 8px 12px;
 }
 
 .output-section.error {
@@ -251,19 +315,19 @@ body {
 }
 
 .output-section h3 {
-  font-size: 14px;
-  margin-bottom: 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
   color: #666;
 }
 
 .output-content {
   font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
   color: #333;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 300px;
+  max-height: 200px;
   overflow-y: auto;
 }
 
