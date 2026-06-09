@@ -99,3 +99,8 @@ backend/port.txt
 frontend/dist/
 frontend/.vite/
 *.log
+
+# Electron builder output
+release/
+dist-electron/
+out/

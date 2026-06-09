@@ -13,17 +13,16 @@ body {
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 10px 15px;
+  padding: 8px 12px;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #e0e0e0;
   align-items: flex-start;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e0e0e0;
 }
 
 .header > div:first-child {
@@ -31,65 +30,65 @@ body {
 }
 
 .header h1 {
-  font-size: 20px;
+  font-size: 16px;
   color: #333;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .system-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 2px;
+  margin-top: 4px;
 }
 
 .info-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
   color: #666;
 }
 
 .info-badge {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 1px 6px;
   background-color: #e6f7ff;
   color: #1890ff;
-  border-radius: 10px;
+  border-radius: 8px;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11px;
   flex-shrink: 0;
 }
 
 .info-path {
   font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
-  font-size: 12px;
+  font-size: 11px;
   color: #444;
   background: #f0f0f0;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
   word-break: break-all;
 }
 
 .info-version {
   font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 11px;
+  font-size: 10px;
   color: #999;
   padding-left: 2px;
 }
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .btn {
-  padding: 6px 12px;
+  padding: 4px 10px;
   border: none;
-  border-radius: 4px;
+  border-radius: 3px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   transition: background-color 0.2s;
 }
@@ -120,7 +119,8 @@ body {
 .btn-execute {
   background-color: #1890ff;
   color: white;
-  margin-right: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
 }
 
 .btn-execute:hover:not(:disabled) {
@@ -130,6 +130,8 @@ body {
 .btn-delete {
   background-color: #ff4d4f;
   color: white;
+  padding: 3px 8px;
+  font-size: 11px;
 }
 
 .btn-delete:hover:not(:disabled) {
@@ -139,7 +141,8 @@ body {
 .btn-edit {
   background-color: #faad14;
   color: white;
-  margin-right: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
 }
 
 .btn-edit:hover:not(:disabled) {
@@ -158,8 +161,8 @@ body {
 .btn-close {
   background-color: transparent;
   color: #999;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 2px 6px;
+  font-size: 11px;
 }
 
 .btn-close:hover {
@@ -168,23 +171,23 @@ body {
 
 .empty-state {
   text-align: center;
-  padding: 60px 20px;
+  padding: 40px 20px;
   background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .empty-state p {
   color: #999;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .scripts-container {
   background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   overflow: hidden;
-  max-height: 400px;
+  max-height: 350px;
   overflow-y: auto;
 }
 
@@ -202,7 +205,7 @@ body {
 
 .scripts-table th,
 .scripts-table td {
-  padding: 8px 12px;
+  padding: 5px 8px;
   text-align: left;
   border-bottom: 1px solid #f0f0f0;
   word-wrap: break-word;
@@ -212,7 +215,11 @@ body {
   background-color: #fafafa;
   font-weight: 600;
   color: #666;
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.scripts-table tbody tr {
+  height: 36px;
 }
 
 .scripts-table tbody tr:hover {
@@ -224,33 +231,34 @@ body {
 }
 
 .checkbox-col {
-  width: 50px;
+  width: 40px;
 }
 
 .checkbox-col input {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   cursor: pointer;
 }
 
 .scripts-table th:nth-child(2),
 .scripts-table td:nth-child(2) {
-  width: 40%;
+  width: 35%;
 }
 
 .scripts-table th:nth-child(3),
 .scripts-table td:nth-child(3) {
-  width: 100px;
+  width: 80px;
 }
 
 .scripts-table th:nth-child(4),
 .scripts-table td:nth-child(4) {
-  width: 280px;
+  width: 240px;
 }
 
 .script-name {
-  font-weight: 600;
+  font-weight: 500;
   color: #333;
+  font-size: 13px;
 }
 
 .actions-col {
@@ -258,20 +266,20 @@ body {
 }
 
 .outputs-container {
-  margin-top: 15px;
+  margin-top: 10px;
 }
 
 .outputs-container h2 {
-  font-size: 16px;
-  margin-bottom: 10px;
+  font-size: 14px;
+  margin-bottom: 8px;
   color: #333;
 }
 
 .output-panel {
   background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  margin-bottom: 10px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  margin-bottom: 8px;
   overflow: hidden;
 }
 
@@ -279,7 +287,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 6px 10px;
   background-color: #fafafa;
   border-bottom: 1px solid #f0f0f0;
 }
@@ -287,13 +295,13 @@ body {
 .output-name {
   font-weight: 600;
   color: #333;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .exit-code {
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 
 .exit-code.success {
@@ -307,7 +315,7 @@ body {
 }
 
 .output-section {
-  padding: 8px 12px;
+  padding: 6px 10px;
 }
 
 .output-section.error {
@@ -315,19 +323,19 @@ body {
 }
 
 .output-section h3 {
-  font-size: 12px;
-  margin-bottom: 6px;
+  font-size: 11px;
+  margin-bottom: 4px;
   color: #666;
 }
 
 .output-content {
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 12px;
-  line-height: 1.5;
+  font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
+  font-size: 11px;
+  line-height: 1.4;
   color: #333;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 200px;
+  max-height: 150px;
   overflow-y: auto;
 }
 
@@ -349,35 +357,35 @@ body {
   border-radius: 8px;
   width: 90%;
   max-width: 500px;
-  padding: 20px;
+  padding: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
 .modal-content h2 {
-  font-size: 18px;
-  margin-bottom: 20px;
+  font-size: 16px;
+  margin-bottom: 16px;
   color: #333;
 }
 
 .form-group {
-  margin-bottom: 15px;
+  margin-bottom: 12px;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-weight: 500;
   color: #666;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .form-group input,
 .form-group textarea {
   width: 100%;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 13px;
   font-family: inherit;
   transition: border-color 0.2s;
 }
@@ -395,15 +403,15 @@ body {
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .status-badge {
   display: inline-block;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
   background-color: #f0f0f0;
   color: #666;
   font-weight: 500;
@@ -427,11 +435,11 @@ body {
 
 .live-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   background-color: #1890ff;
   border-radius: 50%;
-  margin-left: 6px;
+  margin-left: 4px;
   animation: pulse 1.2s ease-in-out infinite;
 }
 
@@ -447,7 +455,7 @@ body {
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
-    gap: 15px;
+    gap: 10px;
     align-items: flex-start;
   }
 
@@ -458,21 +466,31 @@ body {
 
   .scripts-table th,
   .scripts-table td {
-    padding: 10px 8px;
-    font-size: 13px;
+    padding: 6px 6px;
+    font-size: 12px;
   }
 
   .name-col {
     min-width: auto;
   }
 
+  .scripts-table th:nth-child(4),
+  .scripts-table td:nth-child(4) {
+    width: 70px;
+  }
+
   .actions-col {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 2px;
   }
 
-  .btn-execute {
+  .btn-execute,
+  .btn-edit,
+  .btn-delete {
     margin-right: 0;
+    padding: 2px 5px;
+    font-size: 10px;
+    width: 56px;
   }
 }

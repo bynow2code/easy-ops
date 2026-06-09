@@ -49,6 +49,11 @@ function startBackend() {
       process.env.SCRIPT_DATA_DIR = app.getPath('userData');
       process.env.ELECTRON_MODE = '1';
 
+      // 生产模式下，告知后端前端静态资源目录（在 extraResources 中）
+      if (!isDev) {
+        process.env.FRONTEND_DIST_DIR = path.join(process.resourcesPath, 'frontend', 'dist');
+      }
+
       // 动态端口查找
       const net = require('net');
       const findPort = (startPort) => new Promise((res) => {

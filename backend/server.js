@@ -26,6 +26,24 @@ const resolveDataFile = () => {
 app.use(cors());
 app.use(express.json());
 
+// 在 Electron 打包模式下，托管前端静态资源（同一端口同时提供 API 和页面）
+if (process.env.ELECTRON_MODE === '1') {
+  const frontendDistDir = process.env.FRONTEND_DIST_DIR ||
+    path.join(__dirname, '..', 'frontend', 'dist');
+  if (fs.existsSync(frontendDistDir)) {
+    app.use(express.static(frontendDistDir));
+    // SPA 路由回退：非 API 请求返回 index.html
+    app.get(/^\/(?!api).*/, (req, res, next) => {
+      const indexPath = path.join(frontendDistDir, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        next();
+      }
+    });
+  }
+}
+
 let SCRIPTS_FILE = resolveDataFile();
 
 const getScripts = () => {

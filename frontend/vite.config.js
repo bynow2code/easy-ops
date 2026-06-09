@@ -19,6 +19,7 @@ const getBackendPort = () => {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [react()],
   server: {
     proxy: {

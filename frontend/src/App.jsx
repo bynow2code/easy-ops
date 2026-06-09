@@ -121,7 +121,7 @@ function App() {
       } else if (data.type === 'stderr') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
-          return { ...prev, [id]: { ...curr, error: curr.error + data.content } }
+          return { ...prev, [id]: { ...curr, output: curr.output + data.content } }
         })
       } else if (data.type === 'error') {
         setOutputs(prev => {
@@ -192,7 +192,7 @@ function App() {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [scriptId]: { ...curr, error: curr.error + data.content } }
+            return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
           })
         }
       } else if (data.type === 'error') {
