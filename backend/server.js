@@ -11,10 +11,22 @@ const PORT_RANGE_START = 3001;
 const PORT_RANGE_END = 3100;
 const PORT_FILE = path.join(__dirname, 'port.txt');
 
+// 决定脚本数据文件存储位置：Electron 打包后使用用户数据目录，避免写入只读安装目录
+const resolveDataFile = () => {
+  const dataDir = process.env.SCRIPT_DATA_DIR;
+  if (dataDir) {
+    try {
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    } catch (e) {}
+    return path.join(dataDir, 'scripts.json');
+  }
+  return path.join(__dirname, 'scripts.json');
+};
+
 app.use(cors());
 app.use(express.json());
 
-const SCRIPTS_FILE = path.join(__dirname, 'scripts.json');
+let SCRIPTS_FILE = resolveDataFile();
 
 const getScripts = () => {
   try {
