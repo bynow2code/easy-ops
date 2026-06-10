@@ -30,7 +30,14 @@ app.use(express.json());
 if (process.env.ELECTRON_MODE === '1') {
   const frontendDistDir = process.env.FRONTEND_DIST_DIR ||
     path.join(__dirname, '..', 'client', 'dist');
+  
+  console.log('[Server] ELECTRON_MODE:', process.env.ELECTRON_MODE);
+  console.log('[Server] FRONTEND_DIST_DIR env:', process.env.FRONTEND_DIST_DIR);
+  console.log('[Server] frontendDistDir resolved:', frontendDistDir);
+  console.log('[Server] frontendDistDir exists:', fs.existsSync(frontendDistDir));
   if (fs.existsSync(frontendDistDir)) {
+    const indexHtmlPath = path.join(frontendDistDir, 'index.html');
+    console.log('[Server] index.html exists:', fs.existsSync(indexHtmlPath));
     app.use(express.static(frontendDistDir));
     // SPA 路由回退：非 API 请求返回 index.html
     app.get(/^\/(?!api).*/, (req, res, next) => {
@@ -41,6 +48,8 @@ if (process.env.ELECTRON_MODE === '1') {
         next();
       }
     });
+  } else {
+    console.error('[Server] ERROR: frontendDistDir does not exist:', frontendDistDir);
   }
 }
 
@@ -469,7 +478,20 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
 // ==================== 启动服务 ====================
 
 const startServer = async () => {
-  const port = await findAvailablePort(PORT_RANGE_START, PORT_RANGE_END);
+  // 优先使用环境变量 PORT（由 Electron 主进程设置）
+  let port = parseInt(process.env.PORT);
+  
+  if (!port || isNaN(port)) {
+    // 如果没有设置 PORT，则动态查找可用端口
+    port = await findAvailablePort(PORT_RANGE_START, PORT_RANGE_END);
+  } else {
+    // 验证指定的端口是否可用
+    const isAvailable = await isPortAvailable(port);
+    if (!isAvailable) {
+      console.log(`Port ${port} is in use, finding alternative...`);
+      port = await findAvailablePort(PORT_RANGE_START, PORT_RANGE_END);
+    }
+  }
   
   if (!port) {
     console.error('Error: No available port found in range', PORT_RANGE_START, '-', PORT_RANGE_END);
