@@ -58,7 +58,8 @@
       "target": [
         "nsis",
         "zip"
-      ]
+      ],
+      "icon": "frontend/public/logo.ico"
     },
     "nsis": {
       "oneClick": false,
