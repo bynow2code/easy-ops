@@ -364,7 +364,10 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
 
   res.write(`data: ${JSON.stringify({ type: 'start', scriptId: script.id, scriptName: script.name })}\n\n`);
 
-  const child = spawn(shell.command, [...shell.args, script.content]);
+  // 通过 stdin 原样传入脚本，不做任何转义处理
+  const child = spawn(shell.command, []);
+  child.stdin.write(script.content);
+  child.stdin.end();
 
   child.stdout.on('data', (data) => {
     res.write(`data: ${JSON.stringify({ type: 'stdout', content: data.toString() })}\n\n`);
@@ -429,7 +432,10 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     const currentId = script.id;
     res.write(`data: ${JSON.stringify({ type: 'start', scriptId: currentId, scriptName: script.name })}\n\n`);
 
-    childProcess = spawn(shell.command, [...shell.args, script.content]);
+    // 通过 stdin 原样传入脚本，不做任何转义处理
+    childProcess = spawn(shell.command, []);
+    childProcess.stdin.write(script.content);
+    childProcess.stdin.end();
 
     childProcess.stdout.on('data', (data) => {
       res.write(`data: ${JSON.stringify({ type: 'stdout', scriptId: currentId, content: data.toString() })}\n\n`);
@@ -446,6 +452,7 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
 
     childProcess.on('error', (err) => {
       res.write(`data: ${JSON.stringify({ type: 'error', scriptId: currentId, message: err.message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: -1 })}\n\n`);
       setTimeout(() => executeNext(index + 1), 50);
     });
   };
