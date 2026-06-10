@@ -30,19 +30,19 @@ function App() {
   }, [])
 
   useEffect(() => {
-    // 对正在执行的脚本，自动滚动单个输出框到底部
+    // 对正在执行的脚本，自动滚动单个输出框到顶部
     Object.keys(outputs).forEach(id => {
       const el = outputRefs.current[id]
       if (el && outputs[id]?.live) {
         requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight
+          el.scrollTop = 0
         })
       }
     })
-    // 右侧面板总容器始终滚动到底部（最新输出在最下面）
+    // 右侧面板总容器始终滚动到顶部（最新输出在最上面）
     if (containerRef.current) {
       requestAnimationFrame(() => {
-        containerRef.current.scrollTop = containerRef.current.scrollHeight
+        containerRef.current.scrollTop = 0
       })
     }
   }, [outputs])
@@ -599,7 +599,6 @@ function App() {
                       <div
                         className="output-content-wrapper"
                         ref={el => { outputRefs.current[script.id] = el }}
-                        style={{ maxHeight: '200px', minHeight: '60px', overflowY: 'auto', overflowX: 'hidden' }}
                       >
                         <pre className="output-content">{output.output || 'Waiting for output...'}</pre>
                       </div>
@@ -607,7 +606,7 @@ function App() {
                     {output.error && (
                       <div className="output-section error">
                         <div className="output-section-label">Error</div>
-                        <div className="output-content-wrapper" style={{ maxHeight: '200px', minHeight: '60px', overflowY: 'auto', overflowX: 'hidden' }}>
+                        <div className="output-content-wrapper">
                           <pre className="output-content">{output.error}</pre>
                         </div>
                       </div>

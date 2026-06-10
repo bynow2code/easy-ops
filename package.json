@@ -51,7 +51,8 @@
       "target": [
         "nsis",
         "zip"
-      ]
+      ],
+      "icon": "client/public/logo.png"
     },
     "nsis": {
       "oneClick": false,

@@ -42,7 +42,7 @@ function createWindow(port) {
       nodeIntegration: false,
       sandbox: false
     },
-    icon: path.join(__dirname, '..', 'client', 'public', 'logo.svg')
+    icon: path.join(__dirname, '..', 'client', 'public', 'logo.png')
   });
 
   // Vite 开发模式（热更新），已构建模式/生产模式使用后端端口

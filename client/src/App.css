@@ -758,8 +758,7 @@ html, body, #root {
 
 .output-content-wrapper {
   width: 100%;
-  min-height: 60px;
-  max-height: 200px;
+  height: 100px;
   overflow-y: auto;
   overflow-x: hidden;
   border-radius: 4px;
@@ -775,6 +774,8 @@ html, body, #root {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
+  min-height: 100px;
+  margin: 0;
 }
 
 .right-panel .output-section.error .output-content-wrapper .output-content {

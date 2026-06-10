@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
   <!-- 背景圆角矩形 -->
-  <rect width="256" height="256" rx="40" fill="#4F46E5"/>
+  <rect width="256" height="256" rx="48" fill="#4F46E5"/>
 
-  <!-- E 字母 -->
-  <text x="128" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="140" font-weight="bold" fill="#FFFFFF">E</text>
+  <!-- 终端命令行图标 - 大于号 -->
+  <path d="M70 90 L130 128 L70 166" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 
-  <!-- 底部装饰条 -->
-  <rect x="56" y="195" width="144" height="12" rx="6" fill="#FFFFFF"/>
+  <!-- 光标下划线 -->
+  <rect x="140" y="148" width="56" height="18" rx="9" fill="#FFFFFF"/>
 </svg>
