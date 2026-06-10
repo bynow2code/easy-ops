@@ -7,6 +7,10 @@ let backendServer = null;
 
 const isDev = !app.isPackaged;
 
+// 修复 Windows 下字体模糊
+app.commandLine.appendSwitch('force-device-scale-factor', '1');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+
 function createWindow(port) {
   // 开发模式隐藏菜单栏
   if (isDev) {
@@ -18,6 +22,7 @@ function createWindow(port) {
     height: 800,
     minWidth: 960,
     minHeight: 640,
+    backgroundColor: '#f5f5f5',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

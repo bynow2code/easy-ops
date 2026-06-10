@@ -4,43 +4,13 @@
       <stop offset="0%" style="stop-color:#4F46E5"/>
       <stop offset="100%" style="stop-color:#7C3AED"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#06B6D4"/>
-      <stop offset="100%" style="stop-color:#3B82F6"/>
-    </linearGradient>
   </defs>
   <!-- 背景圆角矩形 -->
-  <rect width="256" height="256" rx="48" fill="url(#bg)"/>
+  <rect width="256" height="256" rx="40" fill="url(#bg)"/>
   
-  <!-- 终端窗口 -->
-  <rect x="32" y="48" width="140" height="100" rx="12" fill="#1E1B4B" opacity="0.9"/>
-  <rect x="32" y="48" width="140" height="24" rx="12" fill="#312E81"/>
-  <rect x="32" y="60" width="140" height="12" fill="#312E81"/>
+  <!-- 简洁的 E 字母 -->
+  <text x="128" y="185" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="160" font-weight="900" fill="white">E</text>
   
-  <!-- 窗口按钮 -->
-  <circle cx="52" cy="60" r="6" fill="#EF4444"/>
-  <circle cx="72" cy="60" r="6" fill="#F59E0B"/>
-  <circle cx="92" cy="60" r="6" fill="#10B981"/>
-  
-  <!-- 终端内容 - 命令行符号 -->
-  <text x="48" y="100" font-family="monospace" font-size="16" fill="#22D3EE" font-weight="bold">$</text>
-  <rect x="64" y="88" width="80" height="4" rx="2" fill="url(#accent)"/>
-  <rect x="48" y="108" width="60" height="4" rx="2" fill="#64748B"/>
-  <rect x="48" y="120" width="90" height="4" rx="2" fill="#64748B"/>
-  
-  <!-- 齿轮 (代表自动化运维) -->
-  <g transform="translate(155, 130)">
-    <path d="M45 0 L55 15 L70 12 L65 28 L82 35 L72 48 L82 62 L65 70 L70 85 L55 82 L45 98 L35 82 L20 85 L25 70 L8 62 L18 48 L8 35 L25 28 L20 12 L35 15 Z" 
-          fill="url(#accent)" opacity="0.95"/>
-    <circle cx="45" cy="49" r="18" fill="#1E1B4B"/>
-    <circle cx="45" cy="49" r="12" fill="url(#accent)"/>
-  </g>
-  
-  <!-- 底部装饰 - 进度条 -->
-  <rect x="32" y="165" width="192" height="8" rx="4" fill="#1E1B4B" opacity="0.6"/>
-  <rect x="32" y="165" width="140" height="8" rx="4" fill="url(#accent)"/>
-  
-  <!-- 文字: Easy -->
-  <text x="128" y="215" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="white" letter-spacing="2">Easy</text>
-  <text x="128" y="245" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" fill="#A5B4FC" letter-spacing="4">OPS</text>
+  <!-- 底部装饰线 -->
+  <rect x="48" y="200" width="160" height="16" rx="8" fill="white" opacity="0.9"/>
 </svg>
