@@ -11,13 +11,19 @@
     "electron-build": "npm run build && electron-builder --win --x64",
     "electron-build-dir": "if exist dist-electron rmdir /s /q dist-electron && npm run build && electron-builder --dir --win"
   },
-  "keywords": ["electron", "script-manager", "easyops"],
+  "keywords": [
+    "electron",
+    "script-manager",
+    "easyops"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^28.3.3",
     "electron-builder": "^23.3.2",
-    "cross-env": "^7.0.3"
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5"
   },
   "build": {
     "appId": "com.easyops.app",
@@ -27,30 +33,32 @@
     },
     "files": [
       "electron/**/*",
-      "backend/**/*",
-      "frontend/dist/**/*",
       "package.json",
-      "!frontend/src/**/*",
-      "!frontend/node_modules/**/*",
-      "!backend/node_modules/**/*",
-      "!dist-electron/**/*",
-      "!**/*.md",
-      "!**/.gitignore",
-      "!frontend/eslint.config.js",
-      "!frontend/vite.config.js",
-      "!frontend/index.html",
-      "!frontend/package-lock.json",
-      "!frontend/package.json",
-      "!backend/package-lock.json",
-      "!backend/package.json",
-      "!start.js",
       "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!package-lock.json",
+          "!package.json"
+        ]
+      },
+      {
+        "from": "frontend/dist",
+        "to": "frontend/dist"
+      }
     ],
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },
     "win": {
-      "target": ["nsis", "zip"]
+      "target": [
+        "nsis",
+        "zip"
+      ]
     },
     "nsis": {
       "oneClick": false,

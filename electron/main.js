@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -8,6 +8,11 @@ let backendServer = null;
 const isDev = !app.isPackaged;
 
 function createWindow(port) {
+  // 开发模式隐藏菜单栏
+  if (isDev) {
+    Menu.setApplicationMenu(null);
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -19,16 +24,19 @@ function createWindow(port) {
       nodeIntegration: false,
       sandbox: false
     },
-    icon: path.join(__dirname, '..', 'frontend', 'public', 'vite.svg')
+    icon: path.join(__dirname, '..', 'frontend', 'public', 'logo.svg')
   });
 
   const url = `http://localhost:${port}`;
+  mainWindow.loadURL(url);
 
+  // 开发模式：F12 打开内部调试工具
   if (isDev) {
-    mainWindow.loadURL(url);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-  } else {
-    mainWindow.loadURL(url);
+    globalShortcut.register('F12', () => {
+      if (mainWindow) {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
   }
 
   mainWindow.on('closed', () => {
@@ -114,6 +122,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  // 注销所有快捷键
+  globalShortcut.unregisterAll();
 });
 
 app.on('quit', () => {
