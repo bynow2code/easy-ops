@@ -29,24 +29,6 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    // 对正在执行的脚本，自动滚动单个输出框到顶部
-    Object.keys(outputs).forEach(id => {
-      const el = outputRefs.current[id]
-      if (el && outputs[id]?.live) {
-        requestAnimationFrame(() => {
-          el.scrollTop = 0
-        })
-      }
-    })
-    // 右侧面板总容器始终滚动到顶部（最新输出在最上面）
-    if (containerRef.current) {
-      requestAnimationFrame(() => {
-        containerRef.current.scrollTop = 0
-      })
-    }
-  }, [outputs])
-
   const fetchScripts = async () => {
     try {
       const response = await axios.get('/api/scripts')
@@ -250,6 +232,17 @@ function App() {
     const timestamp = Date.now()
     setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }))
 
+    // 点击执行时滚动到顶部
+    requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = 0
+      }
+      const el = outputRefs.current[id]
+      if (el) {
+        el.scrollTop = 0
+      }
+    })
+
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRef.current = es
 
@@ -305,6 +298,13 @@ function App() {
     if (executingId || executingBatch) return
 
     setExecutingBatch(true)
+
+    // 点击执行时滚动到顶部
+    requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = 0
+      }
+    })
 
     // 为每个选中的脚本分配唯一时间戳（按选择顺序递减，保持展示顺序）
     const batchTimestamp = Date.now()
