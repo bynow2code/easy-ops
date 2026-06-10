@@ -6,7 +6,7 @@ function App() {
   const [scripts, setScripts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newScript, setNewScript] = useState({ name: '', content: '' })
+  const [newScript, setNewScript] = useState({ name: '', content: '', group: 'backend' })
   const [editingScript, setEditingScript] = useState(null)
   const [executingId, setExecutingId] = useState(null)
   const [executingBatch, setExecutingBatch] = useState(false)
@@ -14,6 +14,7 @@ function App() {
   const [systemInfo, setSystemInfo] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
+  const [activeDropGroup, setActiveDropGroup] = useState(null)
   const eventSourceRef = useRef(null)
   const outputRefs = useRef({})
   const containerRef = useRef(null)
@@ -113,44 +114,94 @@ function App() {
     }
   }
 
-  const handleDragLeave = () => {
-    // do nothing - rely on over to update
-  }
+  const handleDragLeave = () => {}
 
   const handleDragEnd = () => {
     setDraggingId(null)
     setDragOverId(null)
+    setActiveDropGroup(null)
   }
 
-  const handleDrop = async (e, targetId) => {
+  // 拖入分组空白区域（空分组或表外）
+  const handleDragOverGroup = (e, group) => {
     e.preventDefault()
-    // 优先使用 state 中的 draggingId，dataTransfer 经常读取为空（浏览器兼容问题）
+    e.nativeEvent.dataTransfer.dropEffect = 'move'
+    setActiveDropGroup(group)
+  }
+
+  const handleDropToGroup = async (e, targetGroup) => {
+    e.preventDefault()
     const draggedId = draggingId || e.nativeEvent.dataTransfer.getData('text/plain')
     setDraggingId(null)
     setDragOverId(null)
+    setActiveDropGroup(null)
 
-    if (!draggedId || String(draggedId) === String(targetId)) return
+    if (!draggedId) return
 
-    const currentOrder = scripts.map(s => s.id)
-    const fromIndex = currentOrder.indexOf(draggedId)
-    const toIndex = currentOrder.indexOf(targetId)
-    if (fromIndex === -1 || toIndex === -1) return
+    const allScripts = [...scripts]
+    const fromIndex = allScripts.findIndex(s => s.id === draggedId)
+    if (fromIndex === -1) return
 
-    const newOrder = [...currentOrder]
+    const newOrder = allScripts.map(s => s.id)
     newOrder.splice(fromIndex, 1)
-    newOrder.splice(toIndex, 0, draggedId)
+    newOrder.push(draggedId) // 移到末尾
 
-    // 立即乐观更新，让用户看到效果
-    const orderedMap = new Map(scripts.map(s => [s.id, s]))
-    const reordered = newOrder.map(id => orderedMap.get(id)).filter(Boolean)
+    const groups = {}
+    const dragged = allScripts[fromIndex]
+    if (dragged.group !== targetGroup) {
+      groups[draggedId] = targetGroup
+    }
+
+    const updated = allScripts.map(s => {
+      if (s.id === draggedId) return { ...s, group: targetGroup }
+      return s
+    })
+    const reordered = newOrder.map(id => updated.find(s => s.id === id)).filter(Boolean)
     setScripts(reordered)
 
     try {
-      console.log('[reorder] sending:', JSON.stringify(newOrder))
-      await axios.post('/api/scripts/reorder', { order: newOrder })
-      console.log('[reorder] success')
+      await axios.post('/api/scripts/reorder', { order: newOrder, groups: Object.keys(groups).length ? groups : undefined })
     } catch (error) {
-      console.error('[reorder] failed:', error.response?.status, error.response?.data || error.message)
+      alert('Failed to save order')
+      fetchScripts()
+    }
+  }
+
+  // 拖放到具体行：排序 + 可能切换分组
+  const handleDrop = async (e, targetId, targetGroup) => {
+    e.preventDefault()
+    const draggedId = draggingId || e.nativeEvent.dataTransfer.getData('text/plain')
+    setDraggingId(null)
+    setDragOverId(null)
+    setActiveDropGroup(null)
+
+    if (!draggedId || String(draggedId) === String(targetId)) return
+
+    const allScripts = [...scripts]
+    const fromIndex = allScripts.findIndex(s => s.id === draggedId)
+    const toIndex = allScripts.findIndex(s => s.id === targetId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const newOrder = allScripts.map(s => s.id)
+    newOrder.splice(fromIndex, 1)
+    newOrder.splice(toIndex, 0, draggedId)
+
+    const groups = {}
+    const dragged = allScripts[fromIndex]
+    if (dragged.group !== targetGroup) {
+      groups[draggedId] = targetGroup
+    }
+
+    const updated = allScripts.map(s => {
+      if (s.id === draggedId) return { ...s, group: groups[draggedId] || s.group }
+      return s
+    })
+    const reordered = newOrder.map(id => updated.find(s => s.id === id)).filter(Boolean)
+    setScripts(reordered)
+
+    try {
+      await axios.post('/api/scripts/reorder', { order: newOrder, groups: Object.keys(groups).length ? groups : undefined })
+    } catch (error) {
       alert('Failed to save order')
       fetchScripts()
     }
@@ -163,7 +214,8 @@ function App() {
     try {
       await axios.put(`/api/scripts/${editingScript.id}`, {
         name: editingScript.name,
-        content: editingScript.content
+        content: editingScript.content,
+        group: editingScript.group
       })
       setEditingScript(null)
       fetchScripts()
@@ -312,14 +364,6 @@ function App() {
     )
   }
 
-  const toggleSelectAll = () => {
-    if (selectedIds.length === scripts.length) {
-      setSelectedIds([])
-    } else {
-      setSelectedIds(scripts.map(s => s.id))
-    }
-  }
-
   const formatDate = (dateStr) => {
     const date = new Date(dateStr)
     return date.toLocaleString()
@@ -366,100 +410,138 @@ function App() {
       </header>
 
       <div className="main-layout">
-        {/* 左侧：脚本列表 */}
+        {/* 左侧：脚本列表，分上下两组：后端脚本在上，前端脚本在下 */}
         <div className="left-panel">
-          {scripts.length === 0 ? (
-            <div className="empty-state">
-              <p>No scripts found. Click "Add Script" to create your first script.</p>
-            </div>
-          ) : (
-            <div className="scripts-container">
-              <table className="scripts-table">
-                <thead>
-                  <tr>
-                    <th className="drag-col"></th>
-                    <th className="checkbox-col">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.length === scripts.length && scripts.length > 0}
-                        onChange={toggleSelectAll}
-                      />
-                    </th>
-                    <th>Name</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scripts.map(script => {
-                    const out = outputs[script.id]
-                    const isLive = out && out.live
-                    const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
-                    const isDragging = draggingId === script.id
-                    const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
-                    return (
-                      <tr
-                        key={script.id}
-                        className={`${selectedIds.includes(script.id) ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, script.id)}
-                        onDragOver={(e) => handleDragOver(e, script.id)}
-                        onDragLeave={handleDragLeave}
-                        onDragEnd={handleDragEnd}
-                        onDrop={(e) => handleDrop(e, script.id)}
-                      >
-                        <td className="drag-col">
-                          <span className="drag-handle" title="Drag to reorder">⋮⋮</span>
-                        </td>
-                        <td className="checkbox-col">
+          {(() => {
+            const backendScripts = scripts.filter(s => s.group === 'backend').sort((a, b) => (a.orderNum || 0) - (b.orderNum || 0))
+            const frontendScripts = scripts.filter(s => s.group === 'frontend').sort((a, b) => (a.orderNum || 0) - (b.orderNum || 0))
+            const hasBackend = backendScripts.length > 0
+            const hasFrontend = frontendScripts.length > 0
+            const hasAny = hasBackend || hasFrontend
+
+            if (!hasAny) {
+              return (
+                <div className="empty-state">
+                  <p>No scripts found. Click "Add Script" to create your first script.</p>
+                </div>
+              )
+            }
+
+            const renderTable = (groupName, scripts) => (
+              <div
+                className={`script-group ${activeDropGroup === groupName ? 'drop-active' : ''}`}
+                onDragOver={(e) => handleDragOverGroup(e, groupName)}
+                onDrop={(e) => handleDropToGroup(e, groupName)}
+              >
+                <div className="group-header">
+                  <h3 className="group-title">{groupName === 'backend' ? 'Backend Scripts' : 'Frontend Scripts'}</h3>
+                  <span className="group-count">{scripts.length}</span>
+                </div>
+                <div className="group-table">
+                  <table className="scripts-table">
+                    <thead>
+                      <tr>
+                        <th className="drag-col"></th>
+                        <th className="checkbox-col">
                           <input
                             type="checkbox"
-                            checked={selectedIds.includes(script.id)}
-                            onChange={() => toggleSelect(script.id)}
+                            checked={scripts.every(s => selectedIds.includes(s.id)) && scripts.length > 0}
+                            onChange={() => {
+                              const allIds = scripts.map(s => s.id)
+                              const allSelected = allIds.every(id => selectedIds.includes(id))
+                              if (allSelected) {
+                                setSelectedIds(selectedIds.filter(id => !allIds.includes(id)))
+                              } else {
+                                const newSelected = [...new Set([...selectedIds, ...allIds])]
+                                setSelectedIds(newSelected)
+                              }
+                            }}
                           />
-                        </td>
-                        <td className="name-col">
-                          <div className="script-name">{script.name}</div>
-                        </td>
-                        <td>
-                          <span className={`status-badge ${isLive ? 'running' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : ''))}`}>
-                            {statusLabel}
-                          </span>
-                        </td>
-                        <td className="actions-col">
-                          <button
-                            onClick={() => handleExecuteScript(script.id)}
-                            disabled={executingId === script.id || executingBatch}
-                            className="btn btn-execute"
-                          >
-                            {executingId === script.id ? 'Running...' : 'Execute'}
-                          </button>
-                          <button
-                            onClick={() => handleEditScript(script)}
-                            className="btn btn-edit"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteScript(script.id)}
-                            className="btn btn-delete"
-                          >
-                            Delete
-                          </button>
-                        </td>
+                        </th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Actions</th>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                    </thead>
+                    <tbody>
+                      {scripts.map(script => {
+                        const out = outputs[script.id]
+                        const isLive = out && out.live
+                        const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
+                        const isDragging = draggingId === script.id
+                        const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
+                        return (
+                          <tr
+                            key={script.id}
+                            className={`${selectedIds.includes(script.id) ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, script.id)}
+                            onDragOver={(e) => handleDragOver(e, script.id)}
+                            onDragLeave={handleDragLeave}
+                            onDragEnd={handleDragEnd}
+                            onDrop={(e) => handleDrop(e, script.id, groupName)}
+                          >
+                            <td className="drag-col">
+                              <span className="drag-handle" title="Drag to reorder / change group">⋮⋮</span>
+                            </td>
+                            <td className="checkbox-col">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.includes(script.id)}
+                                onChange={() => toggleSelect(script.id)}
+                              />
+                            </td>
+                            <td className="name-col">
+                              <div className="script-name">{script.name}</div>
+                            </td>
+                            <td>
+                              <span className={`status-badge ${isLive ? 'running' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : ''))}`}>
+                                {statusLabel}
+                              </span>
+                            </td>
+                            <td className="actions-col">
+                              <button
+                                onClick={() => handleExecuteScript(script.id)}
+                                disabled={executingId === script.id || executingBatch}
+                                className="btn btn-execute"
+                              >
+                                {executingId === script.id ? 'Running...' : 'Execute'}
+                              </button>
+                              <button
+                                onClick={() => handleEditScript(script)}
+                                className="btn btn-edit"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteScript(script.id)}
+                                className="btn btn-delete"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+
+            return (
+              <div className="scripts-container">
+                {renderTable('backend', backendScripts)}
+                {renderTable('frontend', frontendScripts)}
+              </div>
+            )
+          })()}
         </div>
 
         {/* 右侧：Execution Outputs */}
         <div className="right-panel">
+          <h2 className="outputs-title">Execution Outputs</h2>
           <div className="outputs-container" ref={containerRef}>
-            <h2>Execution Outputs</h2>
             {Object.keys(outputs).length === 0 ? (
               <div className="empty-output">
                 <p>No execution output yet.</p>
@@ -469,41 +551,48 @@ function App() {
               scripts.filter(s => outputs[s.id]).sort((a, b) => {
                 const aOut = outputs[a.id]
                 const bOut = outputs[b.id]
-                // 按执行时间倒序（最近执行的在最前面）
                 return (bOut.timestamp || 0) - (aOut.timestamp || 0)
               }).map(script => {
                 const output = outputs[script.id]
                 return (
                   <div key={script.id} className="output-panel">
                     <div className="output-header">
-                      <span className="output-name">{script.name} {output.live && <span className="live-dot"></span>}</span>
-                      <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
-                        {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Waiting...')}
-                      </span>
-                      <button
-                        onClick={() => setOutputs(prev => {
-                          const newOutputs = { ...prev }
-                          delete newOutputs[script.id]
-                          return newOutputs
-                        })}
-                        className="btn btn-close"
-                      >
-                        Close
-                      </button>
+                      <div className="output-header-left">
+                        <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''}`}>
+                          {script.group === 'frontend' ? 'FE' : 'BE'}
+                        </span>
+                        <span className="output-name">{script.name}</span>
+                        {output.live && <span className="live-dot"></span>}
+                      </div>
+                      <div className="output-header-right">
+                        <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
+                          {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                        </span>
+                        <button
+                          onClick={() => setOutputs(prev => {
+                            const newOutputs = { ...prev }
+                            delete newOutputs[script.id]
+                            return newOutputs
+                          })}
+                          className="btn btn-close"
+                        >
+                          Close
+                        </button>
+                      </div>
                     </div>
                     <div className="output-section">
-                      <h3>Output</h3>
                       <div
                         className="output-content-wrapper"
                         ref={el => { outputRefs.current[script.id] = el }}
+                        style={{ maxHeight: '200px', minHeight: '60px', overflowY: 'auto', overflowX: 'hidden' }}
                       >
                         <pre className="output-content">{output.output || 'Waiting for output...'}</pre>
                       </div>
                     </div>
                     {output.error && (
                       <div className="output-section error">
-                        <h3>Error</h3>
-                        <div className="output-content-wrapper">
+                        <div className="output-section-label">Error</div>
+                        <div className="output-content-wrapper" style={{ maxHeight: '200px', minHeight: '60px', overflowY: 'auto', overflowX: 'hidden' }}>
                           <pre className="output-content">{output.error}</pre>
                         </div>
                       </div>
@@ -521,6 +610,16 @@ function App() {
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>Add New Script</h2>
             <form onSubmit={handleAddScript}>
+              <div className="form-group">
+                <label>Group</label>
+                <select
+                  value={newScript.group}
+                  onChange={e => setNewScript(prev => ({ ...prev, group: e.target.value }))}
+                >
+                  <option value="backend">Backend</option>
+                  <option value="frontend">Frontend</option>
+                </select>
+              </div>
               <div className="form-group">
                 <label>Script Name</label>
                 <input
@@ -559,6 +658,16 @@ function App() {
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>Edit Script</h2>
             <form onSubmit={handleUpdateScript}>
+              <div className="form-group">
+                <label>Group</label>
+                <select
+                  value={editingScript.group || 'backend'}
+                  onChange={e => setEditingScript(prev => ({ ...prev, group: e.target.value }))}
+                >
+                  <option value="backend">Backend</option>
+                  <option value="frontend">Frontend</option>
+                </select>
+              </div>
               <div className="form-group">
                 <label>Script Name</label>
                 <input

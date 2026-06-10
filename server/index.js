@@ -50,25 +50,26 @@ const getScripts = () => {
   try {
     if (fs.existsSync(SCRIPTS_FILE)) {
       const scripts = JSON.parse(fs.readFileSync(SCRIPTS_FILE, 'utf8'));
-      // 兼容旧数据：补齐 orderNum，然后按 orderNum 升序
+      // 兼容旧数据：补齐 orderNum 和 group
       let maxOrder = -1;
       scripts.forEach(s => {
-        if (s.orderNum == null) {
-          // 首次补字段时，用当前下标作为 orderNum（保持原顺序）
-          // 延迟赋值，先找最大 orderNum
-        } else if (s.orderNum > maxOrder) {
+        if (s.orderNum != null && s.orderNum > maxOrder) {
           maxOrder = s.orderNum;
         }
       });
-      let hasMissingOrder = false;
+      let hasMissing = false;
       scripts.forEach(s => {
         if (s.orderNum == null) {
-          hasMissingOrder = true;
+          hasMissing = true;
           maxOrder += 1;
           s.orderNum = maxOrder;
         }
+        if (!s.group) {
+          hasMissing = true;
+          s.group = 'backend';
+        }
       });
-      if (hasMissingOrder) {
+      if (hasMissing) {
         saveScripts(scripts);
       }
       scripts.sort((a, b) => (a.orderNum || 0) - (b.orderNum || 0));
@@ -218,7 +219,7 @@ app.get('/api/scripts', (req, res) => {
 });
 
 app.post('/api/scripts', (req, res) => {
-  const { name, content } = req.body;
+  const { name, content, group } = req.body;
   if (!name || !content) {
     return res.status(400).json({ error: 'Name and content are required' });
   }
@@ -229,6 +230,7 @@ app.post('/api/scripts', (req, res) => {
     id: Date.now().toString(),
     name,
     content,
+    group: group || 'backend',
     orderNum: maxOrder + 1,
     createdAt: new Date().toISOString()
   };
@@ -240,7 +242,7 @@ app.post('/api/scripts', (req, res) => {
 
 app.put('/api/scripts/:id', (req, res) => {
   const { id } = req.params;
-  const { name, content } = req.body;
+  const { name, content, group } = req.body;
 
   const scripts = getScripts();
   const index = scripts.findIndex(s => s.id === id);
@@ -250,6 +252,7 @@ app.put('/api/scripts/:id', (req, res) => {
   }
 
   scripts[index] = { ...scripts[index], name, content };
+  if (group) scripts[index].group = group;
   saveScripts(scripts);
   res.json(scripts[index]);
 });
@@ -269,31 +272,31 @@ app.delete('/api/scripts/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// 批量重排序：body 传 { order: ['id1', 'id2', ...] }
+// 批量重排序（支持分组切换）：body 传 { order: ['id1','id2',...], groups?: { id: 'backend'|'frontend' } }
 app.post('/api/scripts/reorder', (req, res) => {
   try {
-    const { order } = req.body;
-    console.log('[reorder] body:', JSON.stringify(req.body));
-    console.log('[reorder] order:', JSON.stringify(order));
+    const { order, groups } = req.body;
     if (!Array.isArray(order)) {
-      console.log('[reorder] ERROR: order is not an array');
       return res.status(400).json({ error: 'order must be an array of script ids' });
     }
 
     const scripts = getScripts();
-    console.log('[reorder] scripts count:', scripts.length);
-
     const idToScript = new Map(scripts.map(s => [s.id, s]));
 
-    // 为出现在 order 中的脚本分配连续的 orderNum
+    // 先应用分组变更
+    if (groups && typeof groups === 'object') {
+      Object.entries(groups).forEach(([id, group]) => {
+        const s = idToScript.get(id);
+        if (s) s.group = group;
+      });
+    }
+
+    // 应用排序
     order.forEach((id, idx) => {
       const s = idToScript.get(id);
-      if (s) {
-        s.orderNum = idx;
-      }
+      if (s) s.orderNum = idx;
     });
 
-    // 不在 order 中的脚本，继续追加到末尾（保持它们自己的顺序）
     let nextOrder = order.length;
     scripts.forEach(s => {
       if (!order.includes(s.id)) {
@@ -303,7 +306,6 @@ app.post('/api/scripts/reorder', (req, res) => {
     });
 
     saveScripts(scripts);
-    console.log('[reorder] success');
     res.json({ success: true });
   } catch (err) {
     console.error('[reorder] ERROR:', err.message);
