@@ -16,6 +16,7 @@ function App() {
   const [draggingId, setDraggingId] = useState(null)
   const eventSourceRef = useRef(null)
   const outputRefs = useRef({})
+  const containerRef = useRef(null)
 
   useEffect(() => {
     fetchScripts()
@@ -28,12 +29,21 @@ function App() {
   }, [])
 
   useEffect(() => {
+    // 对正在执行的脚本，自动滚动单个输出框到底部
     Object.keys(outputs).forEach(id => {
       const el = outputRefs.current[id]
       if (el && outputs[id]?.live) {
-        el.scrollTop = el.scrollHeight
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight
+        })
       }
     })
+    // 右侧面板总容器始终滚动到底部（最新输出在最下面）
+    if (containerRef.current) {
+      requestAnimationFrame(() => {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight
+      })
+    }
   }, [outputs])
 
   const fetchScripts = async () => {
@@ -90,13 +100,14 @@ function App() {
 
   const handleDragStart = (e, id) => {
     setDraggingId(id)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', id)
+    const dt = e.nativeEvent.dataTransfer
+    dt.effectAllowed = 'move'
+    dt.setData('text/plain', id)
   }
 
   const handleDragOver = (e, id) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
+    e.nativeEvent.dataTransfer.dropEffect = 'move'
     if (dragOverId !== id) {
       setDragOverId(id)
     }
@@ -113,11 +124,12 @@ function App() {
 
   const handleDrop = async (e, targetId) => {
     e.preventDefault()
-    const draggedId = e.dataTransfer.getData('text/plain') || draggingId
+    // 优先使用 state 中的 draggingId，dataTransfer 经常读取为空（浏览器兼容问题）
+    const draggedId = draggingId || e.nativeEvent.dataTransfer.getData('text/plain')
     setDraggingId(null)
     setDragOverId(null)
 
-    if (!draggedId || draggedId === targetId) return
+    if (!draggedId || String(draggedId) === String(targetId)) return
 
     const currentOrder = scripts.map(s => s.id)
     const fromIndex = currentOrder.indexOf(draggedId)
@@ -134,9 +146,11 @@ function App() {
     setScripts(reordered)
 
     try {
-      await axios.put('/api/scripts/reorder', { order: newOrder })
+      console.log('[reorder] sending:', JSON.stringify(newOrder))
+      await axios.post('/api/scripts/reorder', { order: newOrder })
+      console.log('[reorder] success')
     } catch (error) {
-      console.error('Error reordering scripts:', error)
+      console.error('[reorder] failed:', error.response?.status, error.response?.data || error.message)
       alert('Failed to save order')
       fetchScripts()
     }
@@ -176,13 +190,10 @@ function App() {
       const data = JSON.parse(event.data)
 
       if (data.type === 'start') {
-        setOutputs(prev => {
-          const curr = prev[id]
-          return {
-            ...prev,
-            [id]: { output: '', error: '', exitCode: null, live: true, timestamp: curr?.timestamp || timestamp }
-          }
-        })
+        setOutputs(prev => ({
+          ...prev,
+          [id]: { output: '', error: '', exitCode: null, live: true, timestamp }
+        }))
       } else if (data.type === 'stdout') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
@@ -228,11 +239,11 @@ function App() {
 
     setExecutingBatch(true)
 
-    // 为每个选中的脚本初始化输出
+    // 为每个选中的脚本分配唯一时间戳（按选择顺序递减，保持展示顺序）
     const batchTimestamp = Date.now()
     const initialOutputs = {}
-    selectedIds.forEach(id => {
-      initialOutputs[id] = { output: '', error: '', exitCode: null, live: true, timestamp: batchTimestamp }
+    selectedIds.forEach((id, index) => {
+      initialOutputs[id] = { output: '', error: '', exitCode: null, live: true, timestamp: batchTimestamp - index }
     })
     setOutputs(prev => ({ ...prev, ...initialOutputs }))
 
@@ -241,6 +252,8 @@ function App() {
     eventSourceRef.current = es
 
     let currentId = null
+    // 为每个脚本记录各自的启动时间戳
+    const scriptTimestamps = { ...initialOutputs }
 
     es.onmessage = (event) => {
       const data = JSON.parse(event.data)
@@ -248,13 +261,10 @@ function App() {
 
       if (data.type === 'start') {
         currentId = data.scriptId
-        setOutputs(prev => {
-          const curr = prev[scriptId]
-          return {
-            ...prev,
-            [scriptId]: { output: '', error: '', exitCode: null, live: true, timestamp: curr?.timestamp || batchTimestamp }
-          }
-        })
+        setOutputs(prev => ({
+          ...prev,
+          [scriptId]: { output: '', error: '', exitCode: null, live: true, timestamp: scriptTimestamps[scriptId]?.timestamp || batchTimestamp }
+        }))
       } else if (data.type === 'stdout') {
         if (scriptId) {
           setOutputs(prev => {
@@ -318,13 +328,30 @@ function App() {
   return (
     <div className="app-container">
       <header className="header">
-        <div>
+        <div className="header-left">
           <h1>Script Manager</h1>
+          <div className="header-actions">
+            <button
+              onClick={handleBatchExecute}
+              disabled={selectedIds.length === 0 || executingBatch || executingId}
+              className="btn btn-primary btn-batch"
+            >
+              {executingBatch ? 'Executing...' : `Execute Selected (${selectedIds.length})`}
+            </button>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="btn btn-success"
+            >
+              Add Script
+            </button>
+          </div>
+        </div>
+        <div className="header-right">
           {systemInfo && (
             <div className="system-info">
               <div className="info-row">
                 <span className="info-badge">
-                  {systemInfo.shell.type === 'bash' ? '🐚' : '💻'} {systemInfo.shell.type.toUpperCase()}
+                  {systemInfo.shell.type === 'bash' ? 'BASH' : systemInfo.shell.type.toUpperCase()}
                 </span>
                 <span className="info-path">{systemInfo.shell.fullPath || systemInfo.shell.command} {systemInfo.shell.args.join(' ')}</span>
               </div>
@@ -335,21 +362,6 @@ function App() {
               )}
             </div>
           )}
-        </div>
-        <div className="header-actions">
-          <button
-            onClick={handleBatchExecute}
-            disabled={selectedIds.length === 0 || executingBatch || executingId}
-            className="btn btn-primary btn-batch"
-          >
-            {executingBatch ? 'Executing...' : `Execute Selected (${selectedIds.length})`}
-          </button>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="btn btn-success"
-          >
-            Add Script
-          </button>
         </div>
       </header>
 
@@ -446,7 +458,7 @@ function App() {
 
         {/* 右侧：Execution Outputs */}
         <div className="right-panel">
-          <div className="outputs-container">
+          <div className="outputs-container" ref={containerRef}>
             <h2>Execution Outputs</h2>
             {Object.keys(outputs).length === 0 ? (
               <div className="empty-output">
@@ -457,10 +469,7 @@ function App() {
               scripts.filter(s => outputs[s.id]).sort((a, b) => {
                 const aOut = outputs[a.id]
                 const bOut = outputs[b.id]
-                // 正在运行的始终在最前
-                if (aOut.live && !bOut.live) return -1
-                if (!aOut.live && bOut.live) return 1
-                // 按执行时间倒序（最近的在前面）
+                // 按执行时间倒序（最近执行的在最前面）
                 return (bOut.timestamp || 0) - (aOut.timestamp || 0)
               }).map(script => {
                 const output = outputs[script.id]
@@ -469,7 +478,7 @@ function App() {
                     <div className="output-header">
                       <span className="output-name">{script.name} {output.live && <span className="live-dot"></span>}</span>
                       <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
-                        {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Starting...')}
+                        {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Waiting...')}
                       </span>
                       <button
                         onClick={() => setOutputs(prev => {
@@ -482,24 +491,21 @@ function App() {
                         Close
                       </button>
                     </div>
-                    {output.output && (
-                      <div className="output-section">
-                        <h3>Output</h3>
-                        <pre
-                          ref={el => { outputRefs.current[script.id] = el }}
-                          className="output-content"
-                          onLoad={() => {
-                            if (output.live && outputRefs.current[script.id]) {
-                              outputRefs.current[script.id].scrollTop = outputRefs.current[script.id].scrollHeight
-                            }
-                          }}
-                        >{output.output}</pre>
+                    <div className="output-section">
+                      <h3>Output</h3>
+                      <div
+                        className="output-content-wrapper"
+                        ref={el => { outputRefs.current[script.id] = el }}
+                      >
+                        <pre className="output-content">{output.output || 'Waiting for output...'}</pre>
                       </div>
-                    )}
+                    </div>
                     {output.error && (
                       <div className="output-section error">
                         <h3>Error</h3>
-                        <pre className="output-content">{output.error}</pre>
+                        <div className="output-content-wrapper">
+                          <pre className="output-content">{output.error}</pre>
+                        </div>
                       </div>
                     )}
                   </div>

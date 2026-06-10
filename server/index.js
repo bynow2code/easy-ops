@@ -29,7 +29,7 @@ app.use(express.json());
 // 在 Electron 打包模式下，托管前端静态资源（同一端口同时提供 API 和页面）
 if (process.env.ELECTRON_MODE === '1') {
   const frontendDistDir = process.env.FRONTEND_DIST_DIR ||
-    path.join(__dirname, '..', 'frontend', 'dist');
+    path.join(__dirname, '..', 'client', 'dist');
   if (fs.existsSync(frontendDistDir)) {
     app.use(express.static(frontendDistDir));
     // SPA 路由回退：非 API 请求返回 index.html
@@ -185,13 +185,13 @@ const detectShell = () => {
 const shell = detectShell();
 
 console.log('========================================');
-console.log('🚀 Script Manager - Backend starting...');
+console.log('[EasyOps] Script Manager - Backend starting...');
 console.log('========================================');
-console.log(`📍 Platform: ${process.platform} (${process.arch})`);
-console.log(`🐚 Shell Type: ${shell.type.toUpperCase()}`);
-console.log(`🔧 Shell Command: ${shell.command} ${shell.args.join(' ')}`);
-if (shell.name) console.log(`📛 Shell Name: ${shell.name}`);
-if (shell.version) console.log(`📦 Shell Version: ${shell.version}`);
+console.log(`[Platform] ${process.platform} (${process.arch})`);
+console.log(`[Shell]   Type: ${shell.type.toUpperCase()}`);
+console.log(`[Shell]   Command: ${shell.command} ${shell.args.join(' ')}`);
+if (shell.name) console.log(`[Shell]   Name: ${shell.name}`);
+if (shell.version) console.log(`[Shell]   Version: ${shell.version}`);
 console.log('========================================');
 
 // API to expose shell info to frontend
@@ -270,34 +270,74 @@ app.delete('/api/scripts/:id', (req, res) => {
 });
 
 // 批量重排序：body 传 { order: ['id1', 'id2', ...] }
-app.put('/api/scripts/reorder', (req, res) => {
-  const { order } = req.body;
-  if (!Array.isArray(order)) {
-    return res.status(400).json({ error: 'order must be an array of script ids' });
+app.post('/api/scripts/reorder', (req, res) => {
+  try {
+    const { order } = req.body;
+    console.log('[reorder] body:', JSON.stringify(req.body));
+    console.log('[reorder] order:', JSON.stringify(order));
+    if (!Array.isArray(order)) {
+      console.log('[reorder] ERROR: order is not an array');
+      return res.status(400).json({ error: 'order must be an array of script ids' });
+    }
+
+    const scripts = getScripts();
+    console.log('[reorder] scripts count:', scripts.length);
+
+    const idToScript = new Map(scripts.map(s => [s.id, s]));
+
+    // 为出现在 order 中的脚本分配连续的 orderNum
+    order.forEach((id, idx) => {
+      const s = idToScript.get(id);
+      if (s) {
+        s.orderNum = idx;
+      }
+    });
+
+    // 不在 order 中的脚本，继续追加到末尾（保持它们自己的顺序）
+    let nextOrder = order.length;
+    scripts.forEach(s => {
+      if (!order.includes(s.id)) {
+        s.orderNum = nextOrder;
+        nextOrder += 1;
+      }
+    });
+
+    saveScripts(scripts);
+    console.log('[reorder] success');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[reorder] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
   }
+});
 
-  const scripts = getScripts();
-  const idToScript = new Map(scripts.map(s => [s.id, s]));
-
-  // 为出现在 order 中的脚本分配连续的 orderNum
-  order.forEach((id, idx) => {
-    const s = idToScript.get(id);
-    if (s) {
-      s.orderNum = idx;
+// 兼容旧 PUT 请求
+app.put('/api/scripts/reorder', (req, res) => {
+  try {
+    const { order } = req.body;
+    console.log('[reorder PUT] order:', JSON.stringify(order));
+    if (!Array.isArray(order)) {
+      return res.status(400).json({ error: 'order must be an array of script ids' });
     }
-  });
-
-  // 不在 order 中的脚本，继续追加到末尾（保持它们自己的顺序）
-  let nextOrder = order.length;
-  scripts.forEach(s => {
-    if (!order.includes(s.id)) {
-      s.orderNum = nextOrder;
-      nextOrder += 1;
-    }
-  });
-
-  saveScripts(scripts);
-  res.json({ success: true });
+    const scripts = getScripts();
+    const idToScript = new Map(scripts.map(s => [s.id, s]));
+    order.forEach((id, idx) => {
+      const s = idToScript.get(id);
+      if (s) s.orderNum = idx;
+    });
+    let nextOrder = order.length;
+    scripts.forEach(s => {
+      if (!order.includes(s.id)) {
+        s.orderNum = nextOrder;
+        nextOrder += 1;
+      }
+    });
+    saveScripts(scripts);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[reorder PUT] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ==================== 实时流式执行 (SSE) ====================

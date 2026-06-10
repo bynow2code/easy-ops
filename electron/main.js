@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Menu, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -7,9 +7,9 @@ let backendServer = null;
 
 const isDev = !app.isPackaged;
 
-// 修复 Windows 下字体模糊
-app.commandLine.appendSwitch('force-device-scale-factor', '1');
-app.commandLine.appendSwitch('disable-gpu-compositing');
+// 检查是否为「已构建前端 + Electron 开发」模式（electron-dev）
+// 此时 client/dist 已构建好，应直接使用后端端口而非 Vite 开发服务器
+const isBuiltMode = isDev && fs.existsSync(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
 
 function createWindow(port) {
   // 隐藏菜单栏（开发和生产模式都隐藏）
@@ -30,20 +30,17 @@ function createWindow(port) {
     icon: path.join(__dirname, '..', 'client', 'public', 'logo.svg')
   });
 
-  // 开发模式使用 Vite 热更新（端口 5173），生产模式使用后端端口
-  const url = isDev ? 'http://localhost:5173' : `http://localhost:${port}`;
+  // Vite 开发模式（热更新），已构建模式/生产模式使用后端端口
+  const useViteDev = isDev && !isBuiltMode;
+  const url = useViteDev ? 'http://localhost:5173' : `http://localhost:${port}`;
   mainWindow.loadURL(url);
 
-  // 开发模式：启用热更新并打开调试工具
+  // 开发模式：F12 呼出调试工具
   if (isDev) {
-    mainWindow.webContents.openDevTools();
-  }
-
-  // 开发模式：F12 打开内部调试工具
-  if (isDev) {
-    globalShortcut.register('F12', () => {
-      if (mainWindow) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' && input.type === 'keyDown') {
         mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
       }
     });
   }
@@ -66,9 +63,13 @@ function startBackend() {
       process.env.SCRIPT_DATA_DIR = app.getPath('userData');
       process.env.ELECTRON_MODE = '1';
 
-      // 生产模式下，告知后端前端静态资源目录（在 extraResources 中）
+      // 告知后端前端静态资源目录
       if (!isDev) {
+        // 生产模式：extraResources 中的路径
         process.env.FRONTEND_DIST_DIR = path.join(process.resourcesPath, 'client', 'dist');
+      } else if (isBuiltMode) {
+        // 已构建模式：本地 client/dist
+        process.env.FRONTEND_DIST_DIR = path.join(__dirname, '..', 'client', 'dist');
       }
 
       // 动态端口查找
@@ -131,11 +132,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
-});
-
-app.on('will-quit', () => {
-  // 注销所有快捷键
-  globalShortcut.unregisterAll();
 });
 
 app.on('quit', () => {

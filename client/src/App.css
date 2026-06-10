@@ -36,8 +36,16 @@ html, body, #root {
   border-bottom: 1px solid #e0e0e0;
 }
 
-.header > div:first-child {
-  flex: 1;
+.header-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding-top: 4px;
 }
 
 .header h1 {
@@ -387,8 +395,6 @@ html, body, #root {
   color: #333;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 150px;
-  overflow-y: auto;
 }
 
 .modal-overlay {
@@ -574,6 +580,7 @@ html, body, #root {
   border-radius: 8px;
   border: 1px solid #e0e0e0;
   overflow: hidden;
+  min-height: 0;
 }
 
 .right-panel {
@@ -583,7 +590,7 @@ html, body, #root {
   background: #fff;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
-  overflow: hidden;
+  min-height: 0;
 }
 
 .left-panel .scripts-container {
@@ -597,8 +604,10 @@ html, body, #root {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
+  min-height: 0;
 }
 
 .right-panel .outputs-container h2 {
@@ -625,7 +634,6 @@ html, body, #root {
   background: #fafafa;
   border-radius: 6px;
   margin-bottom: 10px;
-  overflow: hidden;
   border: 1px solid #f0f0f0;
 }
 
@@ -655,21 +663,27 @@ html, body, #root {
   font-weight: 500;
 }
 
+.output-content-wrapper {
+  width: 100%;
+  min-height: 60px;
+  max-height: 200px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
 .right-panel .output-content {
   background: #fff;
   border: 1px solid #e8e8e8;
   border-radius: 4px;
-  padding: 8px;
+  padding: 8px 8px 12px 8px;
   font-family: 'Consolas', 'Monaco', 'Menlo', monospace;
   font-size: 12px;
-  line-height: 1.4;
-  max-height: 200px;
-  overflow-y: auto;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
-.right-panel .output-section.error .output-content {
+.right-panel .output-section.error .output-content-wrapper .output-content {
   background: #fff5f5;
   border-color: #ffccc7;
   color: #d93026;
