@@ -144,7 +144,15 @@ function App() {
 
     const newOrder = allScripts.map(s => s.id)
     newOrder.splice(fromIndex, 1)
-    newOrder.push(draggedId) // 移到末尾
+
+    // 根据鼠标 Y 坐标判断插入到开头还是末尾
+    const rect = e.currentTarget.getBoundingClientRect()
+    const midY = rect.top + rect.height / 2
+    if (e.clientY < midY) {
+      newOrder.unshift(draggedId) // 插入到开头
+    } else {
+      newOrder.push(draggedId) // 插入到末尾
+    }
 
     const groups = {}
     const dragged = allScripts[fromIndex]
@@ -152,11 +160,14 @@ function App() {
       groups[draggedId] = targetGroup
     }
 
-    const updated = allScripts.map(s => {
+    const updated = allScripts.map((s, idx) => {
       if (s.id === draggedId) return { ...s, group: targetGroup }
       return s
     })
-    const reordered = newOrder.map(id => updated.find(s => s.id === id)).filter(Boolean)
+    const reordered = newOrder.map((id, idx) => {
+      const s = updated.find(s => s.id === id)
+      return s ? { ...s, orderNum: idx } : null
+    }).filter(Boolean)
     setScripts(reordered)
 
     try {
@@ -170,6 +181,7 @@ function App() {
   // 拖放到具体行：排序 + 可能切换分组
   const handleDrop = async (e, targetId, targetGroup) => {
     e.preventDefault()
+    e.stopPropagation()
     const draggedId = draggingId || e.nativeEvent.dataTransfer.getData('text/plain')
     setDraggingId(null)
     setDragOverId(null)
@@ -196,7 +208,10 @@ function App() {
       if (s.id === draggedId) return { ...s, group: groups[draggedId] || s.group }
       return s
     })
-    const reordered = newOrder.map(id => updated.find(s => s.id === id)).filter(Boolean)
+    const reordered = newOrder.map((id, idx) => {
+      const s = updated.find(s => s.id === id)
+      return s ? { ...s, orderNum: idx } : null
+    }).filter(Boolean)
     setScripts(reordered)
 
     try {
