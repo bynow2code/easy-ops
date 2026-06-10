@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import './App.css'
 
@@ -18,6 +18,8 @@ function App() {
   const eventSourceRef = useRef(null)
   const outputRefs = useRef({})
   const containerRef = useRef(null)
+  // 跟踪用户是否手动向上滚动（不在底部）
+  const userScrolledUp = useRef({})
 
   useEffect(() => {
     fetchScripts()
@@ -27,6 +29,13 @@ function App() {
         eventSourceRef.current.close()
       }
     }
+  }, [])
+
+  // 监听用户滚动事件
+  const handleOutputScroll = useCallback((id, e) => {
+    const el = e.target
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10
+    userScrolledUp.current[id] = !isAtBottom
   }, [])
 
   const fetchScripts = async () => {
@@ -232,16 +241,8 @@ function App() {
     const timestamp = Date.now()
     setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }))
 
-    // 点击执行时滚动到顶部
-    requestAnimationFrame(() => {
-      if (containerRef.current) {
-        containerRef.current.scrollTop = 0
-      }
-      const el = outputRefs.current[id]
-      if (el) {
-        el.scrollTop = 0
-      }
-    })
+    // 重置用户滚动状态，允许自动跟随
+    userScrolledUp.current[id] = false
 
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRef.current = es
@@ -257,12 +258,31 @@ function App() {
       } else if (data.type === 'stdout') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
-          return { ...prev, [id]: { ...curr, output: curr.output + data.content } }
+          const newOutput = { ...prev, [id]: { ...curr, output: curr.output + data.content } }
+          // 直接在这里执行滚动
+          if (!userScrolledUp.current[id]) {
+            requestAnimationFrame(() => {
+              const el = outputRefs.current[id]
+              if (el) {
+                el.scrollTop = el.scrollHeight
+              }
+            })
+          }
+          return newOutput
         })
       } else if (data.type === 'stderr') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
-          return { ...prev, [id]: { ...curr, output: curr.output + data.content } }
+          const newOutput = { ...prev, [id]: { ...curr, output: curr.output + data.content } }
+          if (!userScrolledUp.current[id]) {
+            requestAnimationFrame(() => {
+              const el = outputRefs.current[id]
+              if (el) {
+                el.scrollTop = el.scrollHeight
+              }
+            })
+          }
+          return newOutput
         })
       } else if (data.type === 'error') {
         setOutputs(prev => {
@@ -299,11 +319,9 @@ function App() {
 
     setExecutingBatch(true)
 
-    // 点击执行时滚动到顶部
-    requestAnimationFrame(() => {
-      if (containerRef.current) {
-        containerRef.current.scrollTop = 0
-      }
+    // 重置所有选中脚本的滚动状态，允许自动跟随
+    selectedIds.forEach(id => {
+      userScrolledUp.current[id] = false
     })
 
     // 为每个选中的脚本分配唯一时间戳（按选择顺序递减，保持展示顺序）
@@ -336,14 +354,32 @@ function App() {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
+            const newOutput = { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
+            if (!userScrolledUp.current[scriptId]) {
+              requestAnimationFrame(() => {
+                const el = outputRefs.current[scriptId]
+                if (el) {
+                  el.scrollTop = el.scrollHeight
+                }
+              })
+            }
+            return newOutput
           })
         }
       } else if (data.type === 'stderr') {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
+            const newOutput = { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
+            if (!userScrolledUp.current[scriptId]) {
+              requestAnimationFrame(() => {
+                const el = outputRefs.current[scriptId]
+                if (el) {
+                  el.scrollTop = el.scrollHeight
+                }
+              })
+            }
+            return newOutput
           })
         }
       } else if (data.type === 'error') {
@@ -599,6 +635,7 @@ function App() {
                       <div
                         className="output-content-wrapper"
                         ref={el => { outputRefs.current[script.id] = el }}
+                        onScroll={(e) => handleOutputScroll(script.id, e)}
                       >
                         <pre className="output-content">{output.output || 'Waiting for output...'}</pre>
                       </div>

@@ -774,7 +774,6 @@ html, body, #root {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
-  min-height: 100px;
   margin: 0;
 }
 
