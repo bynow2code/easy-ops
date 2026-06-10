@@ -12,10 +12,8 @@ app.commandLine.appendSwitch('force-device-scale-factor', '1');
 app.commandLine.appendSwitch('disable-gpu-compositing');
 
 function createWindow(port) {
-  // 开发模式隐藏菜单栏
-  if (isDev) {
-    Menu.setApplicationMenu(null);
-  }
+  // 隐藏菜单栏（开发和生产模式都隐藏）
+  Menu.setApplicationMenu(null);
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -29,11 +27,17 @@ function createWindow(port) {
       nodeIntegration: false,
       sandbox: false
     },
-    icon: path.join(__dirname, '..', 'frontend', 'public', 'logo.svg')
+    icon: path.join(__dirname, '..', 'client', 'public', 'logo.svg')
   });
 
-  const url = `http://localhost:${port}`;
+  // 开发模式使用 Vite 热更新（端口 5173），生产模式使用后端端口
+  const url = isDev ? 'http://localhost:5173' : `http://localhost:${port}`;
   mainWindow.loadURL(url);
+
+  // 开发模式：启用热更新并打开调试工具
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 
   // 开发模式：F12 打开内部调试工具
   if (isDev) {
@@ -64,7 +68,7 @@ function startBackend() {
 
       // 生产模式下，告知后端前端静态资源目录（在 extraResources 中）
       if (!isDev) {
-        process.env.FRONTEND_DIST_DIR = path.join(process.resourcesPath, 'frontend', 'dist');
+        process.env.FRONTEND_DIST_DIR = path.join(process.resourcesPath, 'client', 'dist');
       }
 
       // 动态端口查找
@@ -88,8 +92,8 @@ function startBackend() {
 
         // 加载后端 Express 服务
         const backendPath = isDev
-          ? path.join(__dirname, '..', 'backend', 'server.js')
-          : path.join(process.resourcesPath, 'backend', 'server.js');
+          ? path.join(__dirname, '..', 'server', 'index.js')
+          : path.join(process.resourcesPath, 'server', 'index.js');
 
         // require 后会启动 server.js 中的 startServer()
         delete require.cache[require.resolve(backendPath)];

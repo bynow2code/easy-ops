@@ -12,7 +12,10 @@ function App() {
   const [executingBatch, setExecutingBatch] = useState(false)
   const [outputs, setOutputs] = useState({})
   const [systemInfo, setSystemInfo] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
+  const [draggingId, setDraggingId] = useState(null)
   const eventSourceRef = useRef(null)
+  const outputRefs = useRef({})
 
   useEffect(() => {
     fetchScripts()
@@ -23,6 +26,15 @@ function App() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    Object.keys(outputs).forEach(id => {
+      const el = outputRefs.current[id]
+      if (el && outputs[id]?.live) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+  }, [outputs])
 
   const fetchScripts = async () => {
     try {
@@ -76,6 +88,60 @@ function App() {
     setEditingScript({ ...script })
   }
 
+  const handleDragStart = (e, id) => {
+    setDraggingId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+
+  const handleDragOver = (e, id) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverId !== id) {
+      setDragOverId(id)
+    }
+  }
+
+  const handleDragLeave = () => {
+    // do nothing - rely on over to update
+  }
+
+  const handleDragEnd = () => {
+    setDraggingId(null)
+    setDragOverId(null)
+  }
+
+  const handleDrop = async (e, targetId) => {
+    e.preventDefault()
+    const draggedId = e.dataTransfer.getData('text/plain') || draggingId
+    setDraggingId(null)
+    setDragOverId(null)
+
+    if (!draggedId || draggedId === targetId) return
+
+    const currentOrder = scripts.map(s => s.id)
+    const fromIndex = currentOrder.indexOf(draggedId)
+    const toIndex = currentOrder.indexOf(targetId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const newOrder = [...currentOrder]
+    newOrder.splice(fromIndex, 1)
+    newOrder.splice(toIndex, 0, draggedId)
+
+    // 立即乐观更新，让用户看到效果
+    const orderedMap = new Map(scripts.map(s => [s.id, s]))
+    const reordered = newOrder.map(id => orderedMap.get(id)).filter(Boolean)
+    setScripts(reordered)
+
+    try {
+      await axios.put('/api/scripts/reorder', { order: newOrder })
+    } catch (error) {
+      console.error('Error reordering scripts:', error)
+      alert('Failed to save order')
+      fetchScripts()
+    }
+  }
+
   const handleUpdateScript = async (e) => {
     e.preventDefault()
     if (!editingScript) return
@@ -100,7 +166,8 @@ function App() {
     if (executingId === id || executingBatch) return
 
     setExecutingId(id)
-    setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true } }))
+    const timestamp = Date.now()
+    setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }))
 
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRef.current = es
@@ -109,10 +176,13 @@ function App() {
       const data = JSON.parse(event.data)
 
       if (data.type === 'start') {
-        setOutputs(prev => ({
-          ...prev,
-          [id]: { output: '', error: '', exitCode: null, live: true }
-        }))
+        setOutputs(prev => {
+          const curr = prev[id]
+          return {
+            ...prev,
+            [id]: { output: '', error: '', exitCode: null, live: true, timestamp: curr?.timestamp || timestamp }
+          }
+        })
       } else if (data.type === 'stdout') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
@@ -130,8 +200,8 @@ function App() {
         })
       } else if (data.type === 'close') {
         setOutputs(prev => {
-          const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
-          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false } }
+          const curr = prev[id]
+          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp } }
         })
         setExecutingId(null)
         es.close()
@@ -159,9 +229,10 @@ function App() {
     setExecutingBatch(true)
 
     // 为每个选中的脚本初始化输出
+    const batchTimestamp = Date.now()
     const initialOutputs = {}
     selectedIds.forEach(id => {
-      initialOutputs[id] = { output: '', error: '', exitCode: null, live: true }
+      initialOutputs[id] = { output: '', error: '', exitCode: null, live: true, timestamp: batchTimestamp }
     })
     setOutputs(prev => ({ ...prev, ...initialOutputs }))
 
@@ -177,10 +248,13 @@ function App() {
 
       if (data.type === 'start') {
         currentId = data.scriptId
-        setOutputs(prev => ({
-          ...prev,
-          [scriptId]: { output: '', error: '', exitCode: null, live: true }
-        }))
+        setOutputs(prev => {
+          const curr = prev[scriptId]
+          return {
+            ...prev,
+            [scriptId]: { output: '', error: '', exitCode: null, live: true, timestamp: curr?.timestamp || batchTimestamp }
+          }
+        })
       } else if (data.type === 'stdout') {
         if (scriptId) {
           setOutputs(prev => {
@@ -205,8 +279,8 @@ function App() {
       } else if (data.type === 'close') {
         if (scriptId) {
           setOutputs(prev => {
-            const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
-            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false } }
+            const curr = prev[scriptId]
+            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp } }
           })
         }
       } else if (data.type === 'done') {
@@ -279,118 +353,162 @@ function App() {
         </div>
       </header>
 
-      {scripts.length === 0 ? (
-        <div className="empty-state">
-          <p>No scripts found. Click "Add Script" to create your first script.</p>
-        </div>
-      ) : (
-        <div className="scripts-container">
-          <table className="scripts-table">
-            <thead>
-              <tr>
-                <th className="checkbox-col">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.length === scripts.length && scripts.length > 0}
-                    onChange={toggleSelectAll}
-                  />
-                </th>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scripts.map(script => {
-                const out = outputs[script.id]
-                const isLive = out && out.live
-                const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
-                return (
-                  <tr key={script.id} className={selectedIds.includes(script.id) ? 'selected' : ''}>
-                    <td className="checkbox-col">
+      <div className="main-layout">
+        {/* 左侧：脚本列表 */}
+        <div className="left-panel">
+          {scripts.length === 0 ? (
+            <div className="empty-state">
+              <p>No scripts found. Click "Add Script" to create your first script.</p>
+            </div>
+          ) : (
+            <div className="scripts-container">
+              <table className="scripts-table">
+                <thead>
+                  <tr>
+                    <th className="drag-col"></th>
+                    <th className="checkbox-col">
                       <input
                         type="checkbox"
-                        checked={selectedIds.includes(script.id)}
-                        onChange={() => toggleSelect(script.id)}
+                        checked={selectedIds.length === scripts.length && scripts.length > 0}
+                        onChange={toggleSelectAll}
                       />
-                    </td>
-                    <td className="name-col">
-                      <div className="script-name">{script.name}</div>
-                    </td>
-                    <td>
-                      <span className={`status-badge ${isLive ? 'running' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : ''))}`}>
-                        {statusLabel}
-                      </span>
-                    </td>
-                    <td className="actions-col">
-                      <button
-                        onClick={() => handleExecuteScript(script.id)}
-                        disabled={executingId === script.id || executingBatch}
-                        className="btn btn-execute"
-                      >
-                        {executingId === script.id ? 'Running...' : 'Execute'}
-                      </button>
-                      <button
-                        onClick={() => handleEditScript(script)}
-                        className="btn btn-edit"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteScript(script.id)}
-                        className="btn btn-delete"
-                      >
-                        Delete
-                      </button>
-                    </td>
+                    </th>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {scripts.map(script => {
+                    const out = outputs[script.id]
+                    const isLive = out && out.live
+                    const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
+                    const isDragging = draggingId === script.id
+                    const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
+                    return (
+                      <tr
+                        key={script.id}
+                        className={`${selectedIds.includes(script.id) ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, script.id)}
+                        onDragOver={(e) => handleDragOver(e, script.id)}
+                        onDragLeave={handleDragLeave}
+                        onDragEnd={handleDragEnd}
+                        onDrop={(e) => handleDrop(e, script.id)}
+                      >
+                        <td className="drag-col">
+                          <span className="drag-handle" title="Drag to reorder">⋮⋮</span>
+                        </td>
+                        <td className="checkbox-col">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(script.id)}
+                            onChange={() => toggleSelect(script.id)}
+                          />
+                        </td>
+                        <td className="name-col">
+                          <div className="script-name">{script.name}</div>
+                        </td>
+                        <td>
+                          <span className={`status-badge ${isLive ? 'running' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : ''))}`}>
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td className="actions-col">
+                          <button
+                            onClick={() => handleExecuteScript(script.id)}
+                            disabled={executingId === script.id || executingBatch}
+                            className="btn btn-execute"
+                          >
+                            {executingId === script.id ? 'Running...' : 'Execute'}
+                          </button>
+                          <button
+                            onClick={() => handleEditScript(script)}
+                            className="btn btn-edit"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteScript(script.id)}
+                            className="btn btn-delete"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
 
-      {Object.keys(outputs).length > 0 && (
-        <div className="outputs-container">
-          <h2>Execution Outputs</h2>
-          {scripts.filter(s => outputs[s.id]).map(script => {
-            const output = outputs[script.id]
-            return (
-              <div key={script.id} className="output-panel">
-                <div className="output-header">
-                  <span className="output-name">{script.name} {output.live && <span className="live-dot"></span>}</span>
-                  <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
-                    {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Starting...')}
-                  </span>
-                  <button
-                    onClick={() => setOutputs(prev => {
-                      const newOutputs = { ...prev }
-                      delete newOutputs[script.id]
-                      return newOutputs
-                    })}
-                    className="btn btn-close"
-                  >
-                    Close
-                  </button>
-                </div>
-                {output.output && (
-                  <div className="output-section">
-                    <h3>Output</h3>
-                    <pre className="output-content">{output.output}</pre>
-                  </div>
-                )}
-                {output.error && (
-                  <div className="output-section error">
-                    <h3>Error</h3>
-                    <pre className="output-content">{output.error}</pre>
-                  </div>
-                )}
+        {/* 右侧：Execution Outputs */}
+        <div className="right-panel">
+          <div className="outputs-container">
+            <h2>Execution Outputs</h2>
+            {Object.keys(outputs).length === 0 ? (
+              <div className="empty-output">
+                <p>No execution output yet.</p>
+                <p>Execute a script to see output here.</p>
               </div>
-            )
-          })}
+            ) : (
+              scripts.filter(s => outputs[s.id]).sort((a, b) => {
+                const aOut = outputs[a.id]
+                const bOut = outputs[b.id]
+                // 正在运行的始终在最前
+                if (aOut.live && !bOut.live) return -1
+                if (!aOut.live && bOut.live) return 1
+                // 按执行时间倒序（最近的在前面）
+                return (bOut.timestamp || 0) - (aOut.timestamp || 0)
+              }).map(script => {
+                const output = outputs[script.id]
+                return (
+                  <div key={script.id} className="output-panel">
+                    <div className="output-header">
+                      <span className="output-name">{script.name} {output.live && <span className="live-dot"></span>}</span>
+                      <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
+                        {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Starting...')}
+                      </span>
+                      <button
+                        onClick={() => setOutputs(prev => {
+                          const newOutputs = { ...prev }
+                          delete newOutputs[script.id]
+                          return newOutputs
+                        })}
+                        className="btn btn-close"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    {output.output && (
+                      <div className="output-section">
+                        <h3>Output</h3>
+                        <pre
+                          ref={el => { outputRefs.current[script.id] = el }}
+                          className="output-content"
+                          onLoad={() => {
+                            if (output.live && outputRefs.current[script.id]) {
+                              outputRefs.current[script.id].scrollTop = outputRefs.current[script.id].scrollHeight
+                            }
+                          }}
+                        >{output.output}</pre>
+                      </div>
+                    )}
+                    {output.error && (
+                      <div className="output-section error">
+                        <h3>Error</h3>
+                        <pre className="output-content">{output.error}</pre>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
-      )}
+      </div>
 
       {showAddForm && (
         <div className="modal-overlay" onClick={() => setShowAddForm(false)}>

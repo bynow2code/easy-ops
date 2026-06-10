@@ -49,7 +49,30 @@ let SCRIPTS_FILE = resolveDataFile();
 const getScripts = () => {
   try {
     if (fs.existsSync(SCRIPTS_FILE)) {
-      return JSON.parse(fs.readFileSync(SCRIPTS_FILE, 'utf8'));
+      const scripts = JSON.parse(fs.readFileSync(SCRIPTS_FILE, 'utf8'));
+      // 兼容旧数据：补齐 orderNum，然后按 orderNum 升序
+      let maxOrder = -1;
+      scripts.forEach(s => {
+        if (s.orderNum == null) {
+          // 首次补字段时，用当前下标作为 orderNum（保持原顺序）
+          // 延迟赋值，先找最大 orderNum
+        } else if (s.orderNum > maxOrder) {
+          maxOrder = s.orderNum;
+        }
+      });
+      let hasMissingOrder = false;
+      scripts.forEach(s => {
+        if (s.orderNum == null) {
+          hasMissingOrder = true;
+          maxOrder += 1;
+          s.orderNum = maxOrder;
+        }
+      });
+      if (hasMissingOrder) {
+        saveScripts(scripts);
+      }
+      scripts.sort((a, b) => (a.orderNum || 0) - (b.orderNum || 0));
+      return scripts;
     }
   } catch (err) {
     console.error('Error reading scripts file:', err);
@@ -201,10 +224,12 @@ app.post('/api/scripts', (req, res) => {
   }
 
   const scripts = getScripts();
+  const maxOrder = scripts.reduce((max, s) => Math.max(max, s.orderNum != null ? s.orderNum : -1), -1);
   const newScript = {
     id: Date.now().toString(),
     name,
     content,
+    orderNum: maxOrder + 1,
     createdAt: new Date().toISOString()
   };
 
@@ -239,6 +264,37 @@ app.delete('/api/scripts/:id', (req, res) => {
   if (scripts.length === initialLength) {
     return res.status(404).json({ error: 'Script not found' });
   }
+
+  saveScripts(scripts);
+  res.json({ success: true });
+});
+
+// 批量重排序：body 传 { order: ['id1', 'id2', ...] }
+app.put('/api/scripts/reorder', (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: 'order must be an array of script ids' });
+  }
+
+  const scripts = getScripts();
+  const idToScript = new Map(scripts.map(s => [s.id, s]));
+
+  // 为出现在 order 中的脚本分配连续的 orderNum
+  order.forEach((id, idx) => {
+    const s = idToScript.get(id);
+    if (s) {
+      s.orderNum = idx;
+    }
+  });
+
+  // 不在 order 中的脚本，继续追加到末尾（保持它们自己的顺序）
+  let nextOrder = order.length;
+  scripts.forEach(s => {
+    if (!order.includes(s.id)) {
+      s.orderNum = nextOrder;
+      nextOrder += 1;
+    }
+  });
 
   saveScripts(scripts);
   res.json({ success: true });

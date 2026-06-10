@@ -4,24 +4,21 @@
   "description": "EasyOps - Script Manager Desktop App",
   "main": "electron/main.js",
   "scripts": {
-    "start": "node start.js",
-    "dev": "node start.js",
-    "build": "cd frontend && npm run build",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "node server/index.js",
+    "client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
     "electron-dev": "npm run build && electron .",
     "electron-build": "npm run build && electron-builder --win --x64",
-    "electron-build-dir": "if exist dist-electron rmdir /s /q dist-electron && npm run build && electron-builder --dir --win"
+    "electron-build-dir": "npm run build && electron-builder --dir --win",
+    "start": "electron ."
   },
-  "keywords": [
-    "electron",
-    "script-manager",
-    "easyops"
-  ],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
+    "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "electron": "^28.3.3",
     "electron-builder": "^23.3.2",
+    "npm-run-all2": "^5.0.2",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5"
   },
@@ -38,8 +35,8 @@
     ],
     "extraResources": [
       {
-        "from": "backend",
-        "to": "backend",
+        "from": "server",
+        "to": "server",
         "filter": [
           "**/*",
           "!package-lock.json",
@@ -47,8 +44,8 @@
         ]
       },
       {
-        "from": "frontend/dist",
-        "to": "frontend/dist"
+        "from": "client/dist",
+      "to": "client/dist"
       }
     ],
     "electronDownload": {
@@ -59,7 +56,7 @@
         "nsis",
         "zip"
       ],
-      "icon": "frontend/public/logo.ico"
+      "icon": "client/public/logo.ico"
     },
     "nsis": {
       "oneClick": false,

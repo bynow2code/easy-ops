@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 
 const getBackendPort = () => {
-  const portFile = path.join(__dirname, '../backend/port.txt')
+  const portFile = path.join(__dirname, '../server/port.txt')
   try {
     if (fs.existsSync(portFile)) {
       const port = parseInt(fs.readFileSync(portFile, 'utf8').trim())
