@@ -38,6 +38,19 @@ function App() {
     userScrolledUp.current[id] = !isAtBottom
   }, [])
 
+  // 每当 outputs 变化后，如果用户没有手动向上滚动，自动滚动到最新内容
+  useLayoutEffect(() => {
+    Object.keys(outputs).forEach(id => {
+      const out = outputs[id]
+      if (out && out.live && !userScrolledUp.current[id]) {
+        const el = outputRefs.current[id]
+        if (el) {
+          el.scrollTop = el.scrollHeight
+        }
+      }
+    })
+  }, [outputs])
+
   const fetchScripts = async () => {
     try {
       const response = await axios.get('/api/scripts')
@@ -258,31 +271,12 @@ function App() {
       } else if (data.type === 'stdout') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
-          const newOutput = { ...prev, [id]: { ...curr, output: curr.output + data.content } }
-          // 直接在这里执行滚动
-          if (!userScrolledUp.current[id]) {
-            requestAnimationFrame(() => {
-              const el = outputRefs.current[id]
-              if (el) {
-                el.scrollTop = el.scrollHeight
-              }
-            })
-          }
-          return newOutput
+          return { ...prev, [id]: { ...curr, output: curr.output + data.content } }
         })
       } else if (data.type === 'stderr') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
-          const newOutput = { ...prev, [id]: { ...curr, output: curr.output + data.content } }
-          if (!userScrolledUp.current[id]) {
-            requestAnimationFrame(() => {
-              const el = outputRefs.current[id]
-              if (el) {
-                el.scrollTop = el.scrollHeight
-              }
-            })
-          }
-          return newOutput
+          return { ...prev, [id]: { ...curr, output: curr.output + data.content } }
         })
       } else if (data.type === 'error') {
         setOutputs(prev => {
@@ -354,32 +348,14 @@ function App() {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
-            const newOutput = { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
-            if (!userScrolledUp.current[scriptId]) {
-              requestAnimationFrame(() => {
-                const el = outputRefs.current[scriptId]
-                if (el) {
-                  el.scrollTop = el.scrollHeight
-                }
-              })
-            }
-            return newOutput
+            return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
           })
         }
       } else if (data.type === 'stderr') {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
-            const newOutput = { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
-            if (!userScrolledUp.current[scriptId]) {
-              requestAnimationFrame(() => {
-                const el = outputRefs.current[scriptId]
-                if (el) {
-                  el.scrollTop = el.scrollHeight
-                }
-              })
-            }
-            return newOutput
+            return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
           })
         }
       } else if (data.type === 'error') {
