@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
+import ShellEditor from './components/ShellEditor'
 import './App.css'
 
 function App() {
@@ -17,9 +18,23 @@ function App() {
   const [activeDropGroup, setActiveDropGroup] = useState(null)
   const eventSourceRef = useRef(null)
   const outputRefs = useRef({})
-  const containerRef = useRef(null)
+  const outputsScrollRef = useRef(null)
+  const [showScrollTop, setShowScrollTop] = useState(false)
   // 跟踪用户是否手动向上滚动（不在底部）
   const userScrolledUp = useRef({})
+
+  // 监听 outputs 容器的滚动，控制回到顶部按钮显隐
+  useEffect(() => {
+    const el = outputsScrollRef.current
+    if (!el) return
+    const handleScroll = () => {
+      setShowScrollTop(el.scrollTop > 80)
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    // 初始检查一次
+    handleScroll()
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
 
   useEffect(() => {
     fetchScripts()
@@ -568,7 +583,10 @@ function App() {
         {/* 右侧：Execution Outputs */}
         <div className="right-panel">
           <h2 className="outputs-title">Execution Outputs</h2>
-          <div className="outputs-container" ref={containerRef}>
+          <div
+            className="outputs-container"
+            ref={outputsScrollRef}
+          >
             {Object.keys(outputs).length === 0 ? (
               <div className="empty-output">
                 <p>No execution output yet.</p>
@@ -628,6 +646,21 @@ function App() {
                 )
               })
             )}
+            {showScrollTop && (
+              <button
+                className="scroll-top-btn"
+                onClick={() => {
+                  if (outputsScrollRef.current) {
+                    outputsScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+                  }
+                }}
+                title="Back to top"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="18 15 12 9 6 15" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -659,13 +692,12 @@ function App() {
               </div>
               <div className="form-group">
                 <label>Script Content (Shell)</label>
-                <textarea
-                  value={newScript.content}
-                  onChange={e => setNewScript(prev => ({ ...prev, content: e.target.value }))}
-                  required
-                  placeholder="Enter shell script content..."
-                  rows={8}
-                />
+                <div className="shell-editor-wrapper">
+                  <ShellEditor
+                    value={newScript.content}
+                    onChange={val => setNewScript(prev => ({ ...prev, content: val }))}
+                  />
+                </div>
               </div>
               <div className="form-actions">
                 <button type="button" onClick={() => setShowAddForm(false)} className="btn btn-cancel">
@@ -707,13 +739,12 @@ function App() {
               </div>
               <div className="form-group">
                 <label>Script Content (Shell)</label>
-                <textarea
-                  value={editingScript.content}
-                  onChange={e => setEditingScript(prev => ({ ...prev, content: e.target.value }))}
-                  required
-                  placeholder="Enter shell script content..."
-                  rows={8}
-                />
+                <div className="shell-editor-wrapper">
+                  <ShellEditor
+                    value={editingScript.content}
+                    onChange={val => setEditingScript(prev => ({ ...prev, content: val }))}
+                  />
+                </div>
               </div>
               <div className="form-actions">
                 <button type="button" onClick={() => setEditingScript(null)} className="btn btn-cancel">
