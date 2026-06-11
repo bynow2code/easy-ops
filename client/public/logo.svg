@@ -2,9 +2,6 @@
   <!-- 背景圆角矩形 -->
   <rect width="256" height="256" rx="48" fill="#4F46E5"/>
 
-  <!-- 终端命令行图标 - 大于号 -->
-  <path d="M70 90 L130 128 L70 166" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-
-  <!-- 光标下划线 -->
-  <rect x="140" y="148" width="56" height="18" rx="9" fill="#FFFFFF"/>
+  <!-- sh 文本 -->
+  <text x="128" y="180" font-family="Consolas, 'Courier New', monospace" font-size="160" font-weight="bold" text-anchor="middle" fill="#FFFFFF">sh</text>
 </svg>
