@@ -422,6 +422,10 @@ html, body, #root {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
+.modal-confirm {
+  max-width: 420px;
+}
+
 .modal-content h2 {
   font-size: 16px;
   margin-bottom: 16px;

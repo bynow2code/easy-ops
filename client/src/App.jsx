@@ -16,6 +16,7 @@ function App() {
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null)
   const eventSourceRef = useRef(null)
   const outputRefs = useRef({})
   const outputsScrollRef = useRef(null)
@@ -88,7 +89,7 @@ function App() {
     e.preventDefault()
     try {
       await axios.post('/api/scripts', newScript)
-      setNewScript({ name: '', content: '' })
+      setNewScript({ name: '', content: '', group: 'backend' })
       setShowAddForm(false)
       fetchScripts()
     } catch (error) {
@@ -97,12 +98,18 @@ function App() {
     }
   }
 
-  const handleDeleteScript = async (id) => {
-    if (!confirm('Are you sure you want to delete this script?')) return
+  const handleDeleteScript = (id) => {
+    setDeleteConfirmId(id)
+  }
+
+  const confirmDeleteScript = async () => {
+    const id = deleteConfirmId
+    if (!id) return
+    setDeleteConfirmId(null)
     try {
       await axios.delete(`/api/scripts/${id}`)
-      setScripts(scripts.filter(s => s.id !== id))
-      setSelectedIds(selectedIds.filter(sid => sid !== id))
+      setScripts(prev => prev.filter(s => s.id !== id))
+      setSelectedIds(prev => prev.filter(sid => sid !== id))
       setOutputs(prev => {
         const next = { ...prev }
         delete next[id]
@@ -425,7 +432,10 @@ function App() {
               {executingBatch ? 'Executing...' : `Execute Selected (${selectedIds.length})`}
             </button>
             <button
-              onClick={() => setShowAddForm(true)}
+              onClick={() => {
+                setNewScript({ name: '', content: '', group: 'backend' })
+                setShowAddForm(true)
+              }}
               className="btn btn-success"
             >
               Add Script
@@ -666,6 +676,25 @@ function App() {
           </div>
         </div>
       </div>
+
+      {deleteConfirmId !== null && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirmId(null)}>
+          <div className="modal-content modal-confirm" onClick={e => e.stopPropagation()}>
+            <h2>Confirm Deletion</h2>
+            <p style={{ marginBottom: 16, color: '#666' }}>
+              Are you sure you want to delete this script? This action cannot be undone.
+            </p>
+            <div className="form-actions">
+              <button type="button" onClick={() => setDeleteConfirmId(null)} className="btn btn-cancel">
+                Cancel
+              </button>
+              <button type="button" onClick={confirmDeleteScript} className="btn btn-delete">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddForm && (
         <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
