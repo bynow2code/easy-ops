@@ -542,25 +542,27 @@ function App() {
                               </span>
                             </td>
                             <td className="actions-col">
-                              <button
-                                onClick={() => handleExecuteScript(script.id)}
-                                disabled={executingId === script.id || executingBatch}
-                                className="btn btn-execute"
-                              >
-                                {executingId === script.id ? 'Running...' : 'Execute'}
-                              </button>
-                              <button
-                                onClick={() => handleEditScript(script)}
-                                className="btn btn-edit"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteScript(script.id)}
-                                className="btn btn-delete"
-                              >
-                                Delete
-                              </button>
+                              <div className="actions-inner">
+                                <button
+                                  onClick={() => handleExecuteScript(script.id)}
+                                  disabled={executingId === script.id || executingBatch}
+                                  className="btn btn-execute"
+                                >
+                                  {executingId === script.id ? 'Running...' : 'Execute'}
+                                </button>
+                                <button
+                                  onClick={() => handleEditScript(script)}
+                                  className="btn btn-edit"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteScript(script.id)}
+                                  className="btn btn-delete"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )

@@ -319,10 +319,13 @@ html, body, #root {
 }
 
 .actions-col {
+  white-space: nowrap;
+}
+
+.actions-col .actions-inner {
   display: flex;
   flex-wrap: nowrap;
   gap: 3px;
-  white-space: nowrap;
 }
 
 .outputs-container {
@@ -539,8 +542,7 @@ html, body, #root {
     width: 70px;
   }
 
-  .actions-col {
-    display: flex;
+  .actions-col .actions-inner {
     flex-direction: column;
     gap: 2px;
   }
