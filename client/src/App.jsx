@@ -554,15 +554,18 @@ function App() {
                           <tr
                             key={script.id}
                             className={`${selectedIds.includes(script.id) ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, script.id)}
                             onDragOver={(e) => handleDragOver(e, script.id)}
                             onDragLeave={handleDragLeave}
-                            onDragEnd={handleDragEnd}
                             onDrop={(e) => handleDrop(e, script.id, groupName)}
                           >
                             <td className="drag-col">
-                              <span className="drag-handle" title="Drag to reorder / change group">⋮⋮</span>
+                              <span
+                                className="drag-handle"
+                                title="Drag to reorder / change group"
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, script.id)}
+                                onDragEnd={handleDragEnd}
+                              >⋮⋮</span>
                             </td>
                             <td className="checkbox-col">
                               <input

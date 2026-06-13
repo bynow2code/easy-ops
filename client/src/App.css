@@ -275,10 +275,6 @@ html, body, #root {
   color: #666;
 }
 
-.scripts-table tbody tr {
-  cursor: move;
-}
-
 .scripts-table tbody tr.dragging {
   opacity: 0.4;
 }
