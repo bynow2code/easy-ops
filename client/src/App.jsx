@@ -292,6 +292,12 @@ function App() {
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
 
+    // 关闭上一次的 EventSource，防止旧连接的残留事件干扰
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
+
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRef.current = es
 
@@ -355,6 +361,12 @@ function App() {
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
+
+    // 关闭上一次的 EventSource，防止旧连接的残留事件干扰
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
 
     // 为每个选中的脚本分配唯一时间戳（按选择顺序递减，保持展示顺序）
     const batchTimestamp = Date.now()
