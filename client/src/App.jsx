@@ -21,6 +21,8 @@ function App() {
   const outputRefs = useRef({})
   const outputsScrollRef = useRef(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
+  const [scrollToTopKey, setScrollToTopKey] = useState(0)
   // 跟踪用户是否手动向上滚动（不在底部）
   const userScrolledUp = useRef({})
 
@@ -66,6 +68,14 @@ function App() {
       }
     })
   }, [outputs])
+
+  // 当执行触发时，将外层 Execution Outputs 容器滚动到顶部
+  // useLayoutEffect 在 DOM 提交后、浏览器绘制前执行，避免竞态条件
+  useLayoutEffect(() => {
+    if (scrollToTopKey > 0 && outputsScrollRef.current) {
+      outputsScrollRef.current.scrollTop = 0
+    }
+  }, [scrollToTopKey])
 
   const fetchScripts = async () => {
     try {
@@ -279,6 +289,9 @@ function App() {
     // 重置用户滚动状态，允许自动跟随
     userScrolledUp.current[id] = false
 
+    // 触发外层 Execution Outputs 容器滚动到顶部
+    setScrollToTopKey(k => k + 1)
+
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRef.current = es
 
@@ -339,6 +352,9 @@ function App() {
     selectedIds.forEach(id => {
       userScrolledUp.current[id] = false
     })
+
+    // 触发外层 Execution Outputs 容器滚动到顶部
+    setScrollToTopKey(k => k + 1)
 
     // 为每个选中的脚本分配唯一时间戳（按选择顺序递减，保持展示顺序）
     const batchTimestamp = Date.now()
