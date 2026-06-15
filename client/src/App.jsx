@@ -704,7 +704,7 @@ function App() {
                         </span>
                         <span className="output-name">{script.name}</span>
                         {output.live && <span className="live-dot"></span>}
-                        {!output.live && output.timestamp && (
+                        {output.timestamp && (
                           <span className="output-meta">
                             {formatTimeAgo(output.timestamp)}
                           </span>
