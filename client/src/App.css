@@ -737,6 +737,14 @@ html, body, #root {
   text-overflow: ellipsis;
 }
 
+.output-meta {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
 .right-panel .output-section {
   padding: 10px 12px 4px 12px;
 }

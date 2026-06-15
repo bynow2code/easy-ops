@@ -25,6 +25,8 @@ function App() {
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
   // 跟踪用户是否手动向上滚动（不在底部）
   const userScrolledUp = useRef({})
+  // 每秒更新，用于刷新「多久前」显示
+  const [now, setNow] = useState(Date.now())
 
   // 监听 outputs 容器的滚动，控制回到顶部按钮显隐
   useEffect(() => {
@@ -42,7 +44,9 @@ function App() {
   useEffect(() => {
     fetchScripts()
     fetchSystemInfo()
+    const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => {
+      clearInterval(timer)
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
       }
@@ -327,7 +331,7 @@ function App() {
       } else if (data.type === 'close') {
         setOutputs(prev => {
           const curr = prev[id]
-          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp } }
+          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
         })
         setExecutingId(null)
         es.close()
@@ -419,7 +423,7 @@ function App() {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId]
-            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp } }
+            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
           })
         }
       } else if (data.type === 'done') {
@@ -444,6 +448,29 @@ function App() {
   const formatDate = (dateStr) => {
     const date = new Date(dateStr)
     return date.toLocaleString()
+  }
+
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return ''
+    const diff = now - timestamp
+    const seconds = Math.floor(diff / 1000)
+    if (seconds < 0) return 'just now'
+    if (seconds < 60) return `${seconds} s ago`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes} m ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours} h ago`
+    const days = Math.floor(hours / 24)
+    return `${days} d ago`
+  }
+
+  const formatDuration = (durationMs) => {
+    if (durationMs == null) return ''
+    if (durationMs < 1000) return `${durationMs} ms`
+    if (durationMs < 60000) return `${(durationMs / 1000).toFixed(1)} s`
+    const minutes = Math.floor(durationMs / 60000)
+    const secs = ((durationMs % 60000) / 1000).toFixed(0)
+    return `${minutes} m ${secs} s`
   }
 
   return (
@@ -651,6 +678,16 @@ function App() {
                         </span>
                         <span className="output-name">{script.name}</span>
                         {output.live && <span className="live-dot"></span>}
+                        {output.timestamp && (
+                          <span className="output-meta">
+                            {formatTimeAgo(output.timestamp)}
+                          </span>
+                        )}
+                        {!output.live && output.durationMs != null && (
+                          <span className="output-meta">
+                            {formatDuration(output.durationMs)}
+                          </span>
+                        )}
                       </div>
                       <div className="output-header-right">
                         <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>

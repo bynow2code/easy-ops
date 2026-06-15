@@ -373,6 +373,8 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
 
   res.write(`data: ${JSON.stringify({ type: 'start', scriptId: script.id, scriptName: script.name })}\n\n`);
 
+  const execStartTime = Date.now();
+
   // 通过 stdin 原样传入脚本，不做任何转义处理
   const child = spawn(shell.command, []);
   child.stdin.write(script.content);
@@ -387,12 +389,14 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   });
 
   child.on('close', (code) => {
-    res.write(`data: ${JSON.stringify({ type: 'close', exitCode: code })}\n\n`);
+    const durationMs = Date.now() - execStartTime;
+    res.write(`data: ${JSON.stringify({ type: 'close', exitCode: code, durationMs })}\n\n`);
     res.end();
   });
 
   child.on('error', (err) => {
-    res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+    const durationMs = Date.now() - execStartTime;
+    res.write(`data: ${JSON.stringify({ type: 'error', message: err.message, durationMs })}\n\n`);
     res.end();
   });
 
@@ -441,6 +445,8 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     const currentId = script.id;
     res.write(`data: ${JSON.stringify({ type: 'start', scriptId: currentId, scriptName: script.name })}\n\n`);
 
+    const execStartTime = Date.now();
+
     // 通过 stdin 原样传入脚本，不做任何转义处理
     childProcess = spawn(shell.command, []);
     childProcess.stdin.write(script.content);
@@ -455,13 +461,15 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     });
 
     childProcess.on('close', (code) => {
-      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: code })}\n\n`);
+      const durationMs = Date.now() - execStartTime;
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: code, durationMs })}\n\n`);
       setTimeout(() => executeNext(index + 1), 50);
     });
 
     childProcess.on('error', (err) => {
-      res.write(`data: ${JSON.stringify({ type: 'error', scriptId: currentId, message: err.message })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: -1 })}\n\n`);
+      const durationMs = Date.now() - execStartTime;
+      res.write(`data: ${JSON.stringify({ type: 'error', scriptId: currentId, message: err.message, durationMs })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: -1, durationMs })}\n\n`);
       setTimeout(() => executeNext(index + 1), 50);
     });
   };
