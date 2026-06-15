@@ -309,28 +309,34 @@ function App() {
       const data = JSON.parse(event.data)
 
       if (data.type === 'start') {
-        setOutputs(prev => ({
-          ...prev,
-          [id]: { output: '', error: '', exitCode: null, live: true, timestamp }
-        }))
+        setOutputs(prev => {
+          const curr = prev[id]
+          // 如果已经完成，忽略后续事件
+          if (curr && !curr.live) return prev
+          return { ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }
+        })
       } else if (data.type === 'stdout') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
+          if (!curr.live) return prev
           return { ...prev, [id]: { ...curr, output: curr.output + data.content } }
         })
       } else if (data.type === 'stderr') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
+          if (!curr.live) return prev
           return { ...prev, [id]: { ...curr, output: curr.output + data.content } }
         })
       } else if (data.type === 'error') {
         setOutputs(prev => {
           const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
+          if (!curr.live) return prev
           return { ...prev, [id]: { ...curr, error: curr.error + data.message + '\n', exitCode: data.exitCode || -1 } }
         })
       } else if (data.type === 'close') {
         setOutputs(prev => {
           const curr = prev[id]
+          if (curr && !curr.live) return prev
           return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
         })
         setExecutingId(null)
@@ -341,8 +347,10 @@ function App() {
     es.onerror = (err) => {
       console.error('EventSource error:', err)
       setOutputs(prev => {
-        const curr = prev[id] || { output: '', error: '', exitCode: null, live: true }
-        return { ...prev, [id]: { ...curr, live: false } }
+        const curr = prev[id]
+        // 如果已经完成，不再覆盖
+        if (curr && !curr.live) return prev
+        return { ...prev, [id]: { ...(curr || { output: '', error: '', exitCode: null, live: true }), live: false } }
       })
       setExecutingId(null)
       es.close()
@@ -394,14 +402,18 @@ function App() {
 
       if (data.type === 'start') {
         currentId = data.scriptId
-        setOutputs(prev => ({
-          ...prev,
-          [scriptId]: { output: '', error: '', exitCode: null, live: true, timestamp: scriptTimestamps[scriptId]?.timestamp || batchTimestamp }
-        }))
+        if (scriptId) {
+          setOutputs(prev => {
+            const curr = prev[scriptId]
+            if (curr && !curr.live) return prev
+            return { ...prev, [scriptId]: { output: '', error: '', exitCode: null, live: true, timestamp: scriptTimestamps[scriptId]?.timestamp || batchTimestamp } }
+          })
+        }
       } else if (data.type === 'stdout') {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
+            if (!curr.live) return prev
             return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
           })
         }
@@ -409,6 +421,7 @@ function App() {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
+            if (!curr.live) return prev
             return { ...prev, [scriptId]: { ...curr, output: curr.output + data.content } }
           })
         }
@@ -416,6 +429,7 @@ function App() {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId] || { output: '', error: '', exitCode: null, live: true }
+            if (!curr.live) return prev
             return { ...prev, [scriptId]: { ...curr, error: curr.error + data.message + '\n', exitCode: data.exitCode || -1 } }
           })
         }
@@ -423,6 +437,7 @@ function App() {
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId]
+            if (curr && !curr.live) return prev
             return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
           })
         }
@@ -434,6 +449,17 @@ function App() {
 
     es.onerror = (err) => {
       console.error('EventSource error:', err)
+      setOutputs(prev => {
+        const next = { ...prev }
+        let changed = false
+        Object.keys(next).forEach(key => {
+          if (next[key] && next[key].live) {
+            next[key] = { ...next[key], live: false }
+            changed = true
+          }
+        })
+        return changed ? next : prev
+      })
       setExecutingBatch(false)
       es.close()
     }
@@ -678,7 +704,7 @@ function App() {
                         </span>
                         <span className="output-name">{script.name}</span>
                         {output.live && <span className="live-dot"></span>}
-                        {output.timestamp && (
+                        {!output.live && output.timestamp && (
                           <span className="output-meta">
                             {formatTimeAgo(output.timestamp)}
                           </span>
