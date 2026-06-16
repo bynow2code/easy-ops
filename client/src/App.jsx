@@ -481,23 +481,23 @@ function App() {
     const diff = now - timestamp
     if (diff < 0) return '0 s ago'
     const totalSeconds = Math.floor(diff / 1000)
+    if (totalSeconds < 60) return `${totalSeconds} s ago`
     const days = Math.floor(totalSeconds / 86400)
     const hours = Math.floor((totalSeconds % 86400) / 3600)
     const minutes = Math.floor((totalSeconds % 3600) / 60)
-    const seconds = totalSeconds % 60
     const parts = []
     if (days > 0) parts.push(`${days} d`)
     if (hours > 0) parts.push(`${hours} h`)
-    if (minutes > 0) parts.push(`${minutes} m`)
-    if (seconds > 0 || parts.length === 0) parts.push(`${seconds} s`)
+    if (minutes > 0 || parts.length === 0) parts.push(`${minutes} m`)
     return parts.join(' ') + ' ago'
   }
 
   const formatDuration = (durationMs) => {
     if (durationMs == null) return ''
     const ms = Math.max(0, durationMs)
+    if (ms < 1000) return `${ms} ms`
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`
     const totalSeconds = Math.floor(ms / 1000)
-    if (totalSeconds === 0) return `${ms} ms`
     const days = Math.floor(totalSeconds / 86400)
     const hours = Math.floor((totalSeconds % 86400) / 3600)
     const minutes = Math.floor((totalSeconds % 3600) / 60)
