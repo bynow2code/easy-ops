@@ -479,24 +479,34 @@ function App() {
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return ''
     const diff = now - timestamp
-    const seconds = Math.floor(diff / 1000)
-    if (seconds < 0) return 'just now'
-    if (seconds < 60) return `${seconds} s ago`
-    const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return `${minutes} m ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours} h ago`
-    const days = Math.floor(hours / 24)
-    return `${days} d ago`
+    if (diff < 0) return '0 s'
+    const totalSeconds = Math.floor(diff / 1000)
+    const days = Math.floor(totalSeconds / 86400)
+    const hours = Math.floor((totalSeconds % 86400) / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    const parts = []
+    if (days > 0) parts.push(`${days} d`)
+    if (hours > 0) parts.push(`${hours} h`)
+    if (minutes > 0) parts.push(`${minutes} m`)
+    if (seconds > 0 || parts.length === 0) parts.push(`${seconds} s`)
+    return parts.join(' ')
   }
 
   const formatDuration = (durationMs) => {
     if (durationMs == null) return ''
-    if (durationMs < 1000) return `${durationMs} ms`
-    if (durationMs < 60000) return `${(durationMs / 1000).toFixed(1)} s`
-    const minutes = Math.floor(durationMs / 60000)
-    const secs = ((durationMs % 60000) / 1000).toFixed(0)
-    return `${minutes} m ${secs} s`
+    const totalSeconds = Math.floor(durationMs / 1000)
+    if (totalSeconds === 0) return `${durationMs} ms`
+    const days = Math.floor(totalSeconds / 86400)
+    const hours = Math.floor((totalSeconds % 86400) / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    const parts = []
+    if (days > 0) parts.push(`${days} d`)
+    if (hours > 0) parts.push(`${hours} h`)
+    if (minutes > 0) parts.push(`${minutes} m`)
+    if (seconds > 0 || parts.length === 0) parts.push(`${seconds} s`)
+    return parts.join(' ')
   }
 
   return (
@@ -704,14 +714,14 @@ function App() {
                         </span>
                         <span className="output-name">{script.name}</span>
                         {output.live && <span className="live-dot"></span>}
-                        {output.timestamp && (
-                          <span className="output-meta">
-                            {formatTimeAgo(output.timestamp)}
-                          </span>
-                        )}
                         {!output.live && output.durationMs != null && (
                           <span className="output-meta">
                             {formatDuration(output.durationMs)}
+                          </span>
+                        )}
+                        {!output.live && output.timestamp && (
+                          <span className="output-meta">
+                            {formatTimeAgo(output.timestamp)}
                           </span>
                         )}
                       </div>
