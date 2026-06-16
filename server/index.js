@@ -371,9 +371,18 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
+  // 禁用超时，防止长命令执行时断连
+  req.socket.setTimeout(0);
+  req.setTimeout(0);
+
   res.write(`data: ${JSON.stringify({ type: 'start', scriptId: script.id, scriptName: script.name })}\n\n`);
 
   const execStartTime = Date.now();
+
+  // 心跳保活：每 15 秒发送 SSE 注释，防止代理/浏览器断连
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 15000);
 
   // 通过 stdin 原样传入脚本，不做任何转义处理
   const child = spawn(shell.command, []);
@@ -388,19 +397,26 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
     res.write(`data: ${JSON.stringify({ type: 'stderr', content: data.toString() })}\n\n`);
   });
 
+  const cleanup = () => {
+    clearInterval(heartbeat);
+  };
+
   child.on('close', (code) => {
+    cleanup();
     const durationMs = Date.now() - execStartTime;
     res.write(`data: ${JSON.stringify({ type: 'close', exitCode: code, durationMs })}\n\n`);
     res.end();
   });
 
   child.on('error', (err) => {
+    cleanup();
     const durationMs = Date.now() - execStartTime;
     res.write(`data: ${JSON.stringify({ type: 'error', message: err.message, durationMs })}\n\n`);
     res.end();
   });
 
   req.on('close', () => {
+    cleanup();
     child.kill('SIGTERM');
   });
 });
@@ -421,11 +437,25 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
+  // 禁用超时，防止长命令执行时断连
+  req.socket.setTimeout(0);
+  req.setTimeout(0);
+
+  // 心跳保活
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 15000);
+
   const scripts = getScripts();
   let childProcess = null;
 
+  const cleanup = () => {
+    clearInterval(heartbeat);
+  };
+
   const executeNext = async (index) => {
     if (index >= ids.length) {
+      cleanup();
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
       return;
@@ -477,6 +507,7 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   executeNext(0);
 
   req.on('close', () => {
+    cleanup();
     if (childProcess) {
       childProcess.kill('SIGTERM');
     }
