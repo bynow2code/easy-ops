@@ -479,7 +479,7 @@ function App() {
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return ''
     const diff = now - timestamp
-    if (diff < 0) return '0 s'
+    if (diff < 0) return '0 s ago'
     const totalSeconds = Math.floor(diff / 1000)
     const days = Math.floor(totalSeconds / 86400)
     const hours = Math.floor((totalSeconds % 86400) / 3600)
@@ -490,13 +490,14 @@ function App() {
     if (hours > 0) parts.push(`${hours} h`)
     if (minutes > 0) parts.push(`${minutes} m`)
     if (seconds > 0 || parts.length === 0) parts.push(`${seconds} s`)
-    return parts.join(' ')
+    return parts.join(' ') + ' ago'
   }
 
   const formatDuration = (durationMs) => {
     if (durationMs == null) return ''
-    const totalSeconds = Math.floor(durationMs / 1000)
-    if (totalSeconds === 0) return `${durationMs} ms`
+    const ms = Math.max(0, durationMs)
+    const totalSeconds = Math.floor(ms / 1000)
+    if (totalSeconds === 0) return `${ms} ms`
     const days = Math.floor(totalSeconds / 86400)
     const hours = Math.floor((totalSeconds % 86400) / 3600)
     const minutes = Math.floor((totalSeconds % 3600) / 60)
@@ -613,6 +614,7 @@ function App() {
                         const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
                         const isDragging = draggingId === script.id
                         const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
+                        const isRunning = executingId === script.id || executingBatch
                         return (
                           <tr
                             key={script.id}
@@ -649,19 +651,21 @@ function App() {
                               <div className="actions-inner">
                                 <button
                                   onClick={() => handleExecuteScript(script.id)}
-                                  disabled={executingId === script.id || executingBatch}
+                                  disabled={isRunning}
                                   className="btn btn-execute"
                                 >
-                                  {executingId === script.id ? 'Running...' : 'Execute'}
+                                  Execute
                                 </button>
                                 <button
                                   onClick={() => handleEditScript(script)}
+                                  disabled={isRunning}
                                   className="btn btn-edit"
                                 >
                                   Edit
                                 </button>
                                 <button
                                   onClick={() => handleDeleteScript(script.id)}
+                                  disabled={isRunning}
                                   className="btn btn-delete"
                                 >
                                   Delete
@@ -714,9 +718,9 @@ function App() {
                         </span>
                         <span className="output-name">{script.name}</span>
                         {output.live && <span className="live-dot"></span>}
-                        {!output.live && output.durationMs != null && (
+                        {output.timestamp && (
                           <span className="output-meta">
-                            {formatDuration(output.durationMs)}
+                            {formatDuration(output.live ? (now - output.timestamp) : output.durationMs)}
                           </span>
                         )}
                         {!output.live && output.timestamp && (
