@@ -101,6 +101,10 @@ function App() {
 
   const handleAddScript = async (e) => {
     e.preventDefault()
+    if (!newScript.name.trim() || !newScript.content.trim()) {
+      alert('Name and content are required')
+      return
+    }
     try {
       await axios.post('/api/scripts', newScript)
       setNewScript({ name: '', content: '', group: 'backend' })
@@ -265,6 +269,10 @@ function App() {
   const handleUpdateScript = async (e) => {
     e.preventDefault()
     if (!editingScript) return
+    if (!editingScript.name.trim() || !editingScript.content.trim()) {
+      alert('Name and content are required')
+      return
+    }
 
     try {
       await axios.put(`/api/scripts/${editingScript.id}`, {

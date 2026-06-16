@@ -817,9 +817,9 @@ html, body, #root {
   position: sticky;
   bottom: 12px;
   align-self: flex-end;
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
   border: 1px solid #d9d9d9;
   background: #fff;
   color: #888;
@@ -835,8 +835,8 @@ html, body, #root {
 }
 
 .scroll-top-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   transition: transform 0.2s;
 }
 
