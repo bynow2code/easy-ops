@@ -9,15 +9,16 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [newScript, setNewScript] = useState({ name: '', content: '', group: 'backend' })
   const [editingScript, setEditingScript] = useState(null)
-  const [executingId, setExecutingId] = useState(null)
+  const [executingIds, setExecutingIds] = useState({})
   const [executingBatch, setExecutingBatch] = useState(false)
+  const [batchOrderIds, setBatchOrderIds] = useState([])
   const [outputs, setOutputs] = useState({})
   const [systemInfo, setSystemInfo] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
-  const eventSourceRef = useRef(null)
+  const eventSourceRefs = useRef({})
   const outputRefs = useRef({})
   const outputsScrollRef = useRef(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
@@ -47,9 +48,7 @@ function App() {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => {
       clearInterval(timer)
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-      }
+      Object.values(eventSourceRefs.current).forEach(es => es.close())
     }
   }, [])
 
@@ -292,9 +291,10 @@ function App() {
     const script = scripts.find(s => s.id === id)
     if (!script) return
 
-    if (executingId === id || (executingBatch && selectedIds.includes(id))) return
+    // 仅当该脚本自身正在执行时（单独或批量中）才阻止
+    if (executingIds[id] || (executingBatch && batchOrderIds.includes(id))) return
 
-    setExecutingId(id)
+    setExecutingIds(prev => ({ ...prev, [id]: true }))
     const timestamp = Date.now()
     setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }))
 
@@ -304,14 +304,8 @@ function App() {
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
 
-    // 关闭上一次的 EventSource（批量执行期间不关闭，保留批量流）
-    if (!executingBatch && eventSourceRef.current) {
-      eventSourceRef.current.close()
-      eventSourceRef.current = null
-    }
-
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
-    eventSourceRef.current = es
+    eventSourceRefs.current[id] = es
 
     es.onmessage = (event) => {
       const data = JSON.parse(event.data)
@@ -319,7 +313,6 @@ function App() {
       if (data.type === 'start') {
         setOutputs(prev => {
           const curr = prev[id]
-          // 如果已经完成，忽略后续事件
           if (curr && !curr.live) return prev
           return { ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }
         })
@@ -347,8 +340,13 @@ function App() {
           if (curr && !curr.live) return prev
           return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
         })
-        setExecutingId(null)
+        setExecutingIds(prev => {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
         es.close()
+        delete eventSourceRefs.current[id]
       }
     }
 
@@ -356,12 +354,16 @@ function App() {
       console.error('EventSource error:', err)
       setOutputs(prev => {
         const curr = prev[id]
-        // 如果已经完成，不再覆盖
         if (curr && !curr.live) return prev
         return { ...prev, [id]: { ...(curr || { output: '', error: '', exitCode: null, live: true }), live: false } }
       })
-      setExecutingId(null)
+      setExecutingIds(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
       es.close()
+      delete eventSourceRefs.current[id]
     }
   }
 
@@ -370,38 +372,34 @@ function App() {
       alert('Please select at least one script')
       return
     }
-    if (executingId || executingBatch) return
+    if (executingBatch) return
 
+    // 捕获当前选中的脚本 ID 列表，保持顺序
+    const batchIds = [...selectedIds]
+    setBatchOrderIds(batchIds)
     setExecutingBatch(true)
 
-    // 重置所有选中脚本的滚动状态，允许自动跟随
-    selectedIds.forEach(id => {
+    // 重置所有 batch 脚本的滚动状态，允许自动跟随
+    batchIds.forEach(id => {
       userScrolledUp.current[id] = false
     })
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
 
-    // 关闭上一次的 EventSource，防止旧连接的残留事件干扰
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close()
-      eventSourceRef.current = null
-    }
-
-    // 为每个选中的脚本分配唯一时间戳（按选择顺序递减，保持展示顺序）
+    // 为每个 batch 脚本初始化输出（按 batch 顺序分配递减时间戳以保持排序）
     const batchTimestamp = Date.now()
     const initialOutputs = {}
-    selectedIds.forEach((id, index) => {
+    batchIds.forEach((id, index) => {
       initialOutputs[id] = { output: '', error: '', exitCode: null, live: true, timestamp: batchTimestamp - index }
     })
     setOutputs(prev => ({ ...prev, ...initialOutputs }))
 
-    const ids = selectedIds.join(',')
+    const ids = batchIds.join(',')
     const es = new EventSource(`/api/scripts/batch-execute-stream?ids=${ids}`)
-    eventSourceRef.current = es
+    eventSourceRefs.current['__batch__'] = es
 
     let currentId = null
-    // 为每个脚本记录各自的启动时间戳
     const scriptTimestamps = { ...initialOutputs }
 
     es.onmessage = (event) => {
@@ -451,7 +449,9 @@ function App() {
         }
       } else if (data.type === 'done') {
         setExecutingBatch(false)
+        setBatchOrderIds([])
         es.close()
+        delete eventSourceRefs.current['__batch__']
       }
     }
 
@@ -469,7 +469,9 @@ function App() {
         return changed ? next : prev
       })
       setExecutingBatch(false)
+      setBatchOrderIds([])
       es.close()
+      delete eventSourceRefs.current['__batch__']
     }
   }
 
@@ -487,35 +489,36 @@ function App() {
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return ''
     const diff = now - timestamp
-    if (diff < 0) return '0 s ago'
+    if (diff < 0) return '0s ago'
     const totalSeconds = Math.floor(diff / 1000)
-    if (totalSeconds < 60) return `${totalSeconds} s ago`
+    if (totalSeconds < 60) return `${totalSeconds}s ago`
     const days = Math.floor(totalSeconds / 86400)
     const hours = Math.floor((totalSeconds % 86400) / 3600)
     const minutes = Math.floor((totalSeconds % 3600) / 60)
     const parts = []
-    if (days > 0) parts.push(`${days} d`)
-    if (hours > 0) parts.push(`${hours} h`)
-    if (minutes > 0 || parts.length === 0) parts.push(`${minutes} m`)
+    if (days > 0) parts.push(`${days}d`)
+    if (hours > 0) parts.push(`${hours}h`)
+    if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`)
     return parts.join(' ') + ' ago'
   }
 
   const formatDuration = (durationMs) => {
     if (durationMs == null) return ''
     const ms = Math.max(0, durationMs)
-    if (ms < 1000) return `${ms} ms`
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`
+    if (ms < 1000) return `${ms}ms`
     const totalSeconds = Math.floor(ms / 1000)
-    const days = Math.floor(totalSeconds / 86400)
-    const hours = Math.floor((totalSeconds % 86400) / 3600)
-    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    if (totalSeconds < 60) return `${totalSeconds}s`
+    const minutes = Math.floor(totalSeconds / 60)
     const seconds = totalSeconds % 60
-    const parts = []
-    if (days > 0) parts.push(`${days} d`)
-    if (hours > 0) parts.push(`${hours} h`)
-    if (minutes > 0) parts.push(`${minutes} m`)
-    if (seconds > 0 || parts.length === 0) parts.push(`${seconds} s`)
-    return parts.join(' ')
+    if (totalSeconds < 3600) {
+      if (seconds > 0) return `${minutes}m ${seconds}s`
+      return `${minutes}m`
+    }
+    const hours = Math.floor(minutes / 60)
+    const remainingMinutes = minutes % 60
+    if (seconds > 0) return `${hours}h ${remainingMinutes}m ${seconds}s`
+    if (remainingMinutes > 0) return `${hours}h ${remainingMinutes}m`
+    return `${hours}h`
   }
 
   return (
@@ -526,7 +529,7 @@ function App() {
           <div className="header-actions">
             <button
               onClick={handleBatchExecute}
-              disabled={selectedIds.length === 0 || executingBatch || executingId}
+              disabled={selectedIds.length === 0 || executingBatch}
               className="btn btn-primary btn-batch"
             >
               {executingBatch ? 'Executing...' : `Execute Selected (${selectedIds.length})`}
@@ -622,7 +625,7 @@ function App() {
                         const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
                         const isDragging = draggingId === script.id
                         const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
-                        const isRunning = executingId === script.id || (executingBatch && selectedIds.includes(script.id))
+                        const isRunning = executingIds[script.id] || (executingBatch && batchOrderIds.includes(script.id))
                         return (
                           <tr
                             key={script.id}
@@ -712,6 +715,14 @@ function App() {
               </div>
             ) : (
               scripts.filter(s => outputs[s.id]).sort((a, b) => {
+                // 批量执行期间按 batch 顺序排序
+                if (executingBatch && batchOrderIds.length > 0) {
+                  const aIdx = batchOrderIds.indexOf(a.id)
+                  const bIdx = batchOrderIds.indexOf(b.id)
+                  if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx
+                  if (aIdx !== -1) return -1
+                  if (bIdx !== -1) return 1
+                }
                 const aOut = outputs[a.id]
                 const bOut = outputs[b.id]
                 return (bOut.timestamp || 0) - (aOut.timestamp || 0)
@@ -742,11 +753,23 @@ function App() {
                           {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                         </span>
                         <button
-                          onClick={() => setOutputs(prev => {
-                            const newOutputs = { ...prev }
-                            delete newOutputs[script.id]
-                            return newOutputs
-                          })}
+                          onClick={() => {
+                            // 关闭并清理该脚本的 EventSource
+                            if (eventSourceRefs.current[script.id]) {
+                              eventSourceRefs.current[script.id].close()
+                              delete eventSourceRefs.current[script.id]
+                            }
+                            setExecutingIds(prev => {
+                              const next = { ...prev }
+                              delete next[script.id]
+                              return next
+                            })
+                            setOutputs(prev => {
+                              const newOutputs = { ...prev }
+                              delete newOutputs[script.id]
+                              return newOutputs
+                            })
+                          }}
                           className="btn btn-close"
                         >
                           Close
