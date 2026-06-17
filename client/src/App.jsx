@@ -292,7 +292,7 @@ function App() {
     const script = scripts.find(s => s.id === id)
     if (!script) return
 
-    if (executingId === id || executingBatch) return
+    if (executingId === id || (executingBatch && selectedIds.includes(id))) return
 
     setExecutingId(id)
     const timestamp = Date.now()
@@ -304,8 +304,8 @@ function App() {
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
 
-    // 关闭上一次的 EventSource，防止旧连接的残留事件干扰
-    if (eventSourceRef.current) {
+    // 关闭上一次的 EventSource（批量执行期间不关闭，保留批量流）
+    if (!executingBatch && eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
     }
@@ -622,7 +622,7 @@ function App() {
                         const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
                         const isDragging = draggingId === script.id
                         const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
-                        const isRunning = executingId === script.id || executingBatch
+                        const isRunning = executingId === script.id || (executingBatch && selectedIds.includes(script.id))
                         return (
                           <tr
                             key={script.id}
