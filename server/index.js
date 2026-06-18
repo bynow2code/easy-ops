@@ -121,7 +121,7 @@ const findAvailablePort = async (startPort, endPort) => {
 
 const detectShell = () => {
   const isWindows = process.platform === 'win32';
-  const result = { command: '', fullPath: '', args: [], type: '', name: '', version: '' };
+  const result = { command: '', fullPath: '', type: '', name: '', version: '' };
 
   const resolveFullPath = (cmd) => {
     try {
@@ -140,7 +140,6 @@ const detectShell = () => {
   if (!isWindows) {
     result.command = 'bash';
     result.fullPath = resolveFullPath('bash');
-    result.args = ['-c'];
     result.type = 'bash';
     result.name = result.fullPath;
     try {
@@ -170,7 +169,6 @@ const detectShell = () => {
       } else {
         result.fullPath = bashPath;
       }
-      result.args = ['-c'];
       result.type = 'bash';
       result.name = name;
       try {
@@ -182,7 +180,6 @@ const detectShell = () => {
 
   result.command = 'cmd.exe';
   result.fullPath = resolveFullPath('cmd.exe');
-  result.args = ['/c'];
   result.type = 'cmd';
   result.name = 'Windows cmd.exe';
   try {
@@ -199,7 +196,7 @@ console.log('[EasyOps] Script Manager - Backend starting...');
 console.log('========================================');
 console.log(`[Platform] ${process.platform} (${process.arch})`);
 console.log(`[Shell]   Type: ${shell.type.toUpperCase()}`);
-console.log(`[Shell]   Command: ${shell.command} ${shell.args.join(' ')}`);
+console.log(`[Shell]   Command: ${shell.command}`);
 if (shell.name) console.log(`[Shell]   Name: ${shell.name}`);
 if (shell.version) console.log(`[Shell]   Version: ${shell.version}`);
 console.log('========================================');
@@ -213,7 +210,7 @@ app.get('/api/system-info', (req, res) => {
       type: shell.type,
       command: shell.command,
       fullPath: shell.fullPath,
-      args: shell.args,
+
       name: shell.name,
       version: shell.version
     }

@@ -594,7 +594,7 @@ function App() {
                 <span className="info-badge">
                   {systemInfo.shell.type === 'bash' ? 'BASH' : systemInfo.shell.type.toUpperCase()}
                 </span>
-                <span className="info-path">{systemInfo.shell.fullPath || systemInfo.shell.command} {systemInfo.shell.args.join(' ')}</span>
+                <span className="info-path">{systemInfo.shell.fullPath || systemInfo.shell.command}</span>
               </div>
               {systemInfo.shell.version && (
                 <div className="info-row">
