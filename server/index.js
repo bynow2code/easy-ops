@@ -447,28 +447,33 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   }, 15000);
 
   const scripts = getScripts();
-  let childProcess = null;
+
+  // 并发执行所有脚本
+  const children = [];    // 跟踪所有子进程
+  let completedCount = 0;
+  const totalCount = ids.length;
 
   const cleanup = () => {
     clearInterval(heartbeat);
   };
 
-  const executeNext = async (index) => {
-    if (index >= ids.length) {
+  const tryFinish = () => {
+    if (completedCount >= totalCount) {
       cleanup();
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
-      return;
     }
+  };
 
-    const scriptId = ids[index];
+  ids.forEach((scriptId) => {
     const script = scripts.find(s => s.id === scriptId);
 
     if (!script) {
       res.write(`data: ${JSON.stringify({ type: 'start', scriptId, scriptName: 'Unknown' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'Script not found' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
-      executeNext(index + 1);
+      completedCount++;
+      tryFinish();
       return;
     }
 
@@ -477,40 +482,38 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
 
     const execStartTime = Date.now();
 
-    // 通过 stdin 原样传入脚本，不做任何转义处理
-    childProcess = spawn(shell.command, []);
-    childProcess.stdin.write(script.content);
-    childProcess.stdin.end();
+    const child = spawn(shell.command, []);
+    children.push(child);
+    child.stdin.write(script.content);
+    child.stdin.end();
 
-    childProcess.stdout.on('data', (data) => {
+    child.stdout.on('data', (data) => {
       res.write(`data: ${JSON.stringify({ type: 'stdout', scriptId: currentId, content: data.toString() })}\n\n`);
     });
 
-    childProcess.stderr.on('data', (data) => {
+    child.stderr.on('data', (data) => {
       res.write(`data: ${JSON.stringify({ type: 'stderr', scriptId: currentId, content: data.toString() })}\n\n`);
     });
 
-    childProcess.on('close', (code) => {
+    child.on('close', (code) => {
       const durationMs = Date.now() - execStartTime;
       res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: code, durationMs })}\n\n`);
-      setTimeout(() => executeNext(index + 1), 50);
+      completedCount++;
+      tryFinish();
     });
 
-    childProcess.on('error', (err) => {
+    child.on('error', (err) => {
       const durationMs = Date.now() - execStartTime;
       res.write(`data: ${JSON.stringify({ type: 'error', scriptId: currentId, message: err.message, durationMs })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: -1, durationMs })}\n\n`);
-      setTimeout(() => executeNext(index + 1), 50);
+      completedCount++;
+      tryFinish();
     });
-  };
-
-  executeNext(0);
+  });
 
   req.on('close', () => {
     cleanup();
-    if (childProcess) {
-      childProcess.kill('SIGTERM');
-    }
+    children.forEach(child => child.kill('SIGTERM'));
   });
 });
 
