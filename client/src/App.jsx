@@ -9,6 +9,8 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [newScript, setNewScript] = useState({ name: '', content: '', group: 'backend' })
   const [editingScript, setEditingScript] = useState(null)
+  const [formErrors, setFormErrors] = useState({})
+  const [editErrors, setEditErrors] = useState({})
   const [executingIds, setExecutingIds] = useState({})
   const [executingBatch, setExecutingBatch] = useState(false)
   const [batchOrderIds, setBatchOrderIds] = useState([])
@@ -124,10 +126,18 @@ function App() {
 
   const handleAddScript = async (e) => {
     e.preventDefault()
-    if (!newScript.name.trim() || !newScript.content.trim()) {
-      alert('Name and content are required')
+    const errors = {}
+    if (!newScript.name.trim()) {
+      errors.name = 'Please enter a script name'
+    }
+    if (!newScript.content.trim()) {
+      errors.content = 'Please enter script content'
+    }
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
       return
     }
+    setFormErrors({})
     try {
       await axios.post('/api/scripts', newScript)
       setNewScript({ name: '', content: '', group: 'backend' })
@@ -135,7 +145,7 @@ function App() {
       fetchScripts()
     } catch (error) {
       console.error('Error adding script:', error)
-      alert('Failed to add script')
+      setFormErrors({ submit: 'Failed to add script, please try again' })
     }
   }
 
@@ -292,10 +302,18 @@ function App() {
   const handleUpdateScript = async (e) => {
     e.preventDefault()
     if (!editingScript) return
-    if (!editingScript.name.trim() || !editingScript.content.trim()) {
-      alert('Name and content are required')
+    const errors = {}
+    if (!editingScript.name.trim()) {
+      errors.name = 'Please enter a script name'
+    }
+    if (!editingScript.content.trim()) {
+      errors.content = 'Please enter script content'
+    }
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors)
       return
     }
+    setEditErrors({})
 
     try {
       await axios.put(`/api/scripts/${editingScript.id}`, {
@@ -307,7 +325,7 @@ function App() {
       fetchScripts()
     } catch (error) {
       console.error('Error updating script:', error)
-      alert('Failed to update script')
+      setEditErrors({ submit: 'Failed to update script, please try again' })
     }
   }
 
@@ -560,7 +578,7 @@ function App() {
             </button>
             <button
               onClick={() => {
-                setNewScript({ name: '', content: '', group: 'backend' })
+                setFormErrors({})
                 setShowAddForm(true)
               }}
               className="btn btn-success"
@@ -875,6 +893,7 @@ function App() {
         <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>Add New Script</h2>
+            {formErrors.submit && <div className="form-error-banner">{formErrors.submit}</div>}
             <form onSubmit={handleAddScript}>
               <div className="form-group">
                 <label>Group</label>
@@ -887,26 +906,34 @@ function App() {
                 </select>
               </div>
               <div className="form-group">
-                <label>Script Name</label>
+                <label>Script Name <span className="required-mark">*</span></label>
                 <input
                   type="text"
                   value={newScript.name}
-                  onChange={e => setNewScript(prev => ({ ...prev, name: e.target.value }))}
-                  required
+                  onChange={e => {
+                    setNewScript(prev => ({ ...prev, name: e.target.value }))
+                    if (formErrors.name) setFormErrors(prev => ({ ...prev, name: undefined }))
+                  }}
                   placeholder="Enter script name"
+                  className={formErrors.name ? 'input-error' : ''}
                 />
+                {formErrors.name && <span className="field-error">{formErrors.name}</span>}
               </div>
               <div className="form-group">
-                <label>Script Content (Shell)</label>
-                <div className="shell-editor-wrapper">
+                <label>Script Content (Shell) <span className="required-mark">*</span></label>
+                <div className={`shell-editor-wrapper ${formErrors.content ? 'editor-error' : ''}`}>
                   <ShellEditor
                     value={newScript.content}
-                    onChange={val => setNewScript(prev => ({ ...prev, content: val }))}
+                    onChange={val => {
+                      setNewScript(prev => ({ ...prev, content: val }))
+                      if (formErrors.content) setFormErrors(prev => ({ ...prev, content: undefined }))
+                    }}
                   />
                 </div>
+                {formErrors.content && <span className="field-error">{formErrors.content}</span>}
               </div>
               <div className="form-actions">
-                <button type="button" onClick={() => setShowAddForm(false)} className="btn btn-cancel">
+                <button type="button" onClick={() => { setShowAddForm(false); setFormErrors({}) }} className="btn btn-cancel">
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-success">
@@ -922,6 +949,7 @@ function App() {
         <div className="modal-overlay" onClick={() => setEditingScript(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>Edit Script</h2>
+            {editErrors.submit && <div className="form-error-banner">{editErrors.submit}</div>}
             <form onSubmit={handleUpdateScript}>
               <div className="form-group">
                 <label>Group</label>
@@ -934,26 +962,34 @@ function App() {
                 </select>
               </div>
               <div className="form-group">
-                <label>Script Name</label>
+                <label>Script Name <span className="required-mark">*</span></label>
                 <input
                   type="text"
                   value={editingScript.name}
-                  onChange={e => setEditingScript(prev => ({ ...prev, name: e.target.value }))}
-                  required
+                  onChange={e => {
+                    setEditingScript(prev => ({ ...prev, name: e.target.value }))
+                    if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined }))
+                  }}
                   placeholder="Enter script name"
+                  className={editErrors.name ? 'input-error' : ''}
                 />
+                {editErrors.name && <span className="field-error">{editErrors.name}</span>}
               </div>
               <div className="form-group">
-                <label>Script Content (Shell)</label>
-                <div className="shell-editor-wrapper">
+                <label>Script Content (Shell) <span className="required-mark">*</span></label>
+                <div className={`shell-editor-wrapper ${editErrors.content ? 'editor-error' : ''}`}>
                   <ShellEditor
                     value={editingScript.content}
-                    onChange={val => setEditingScript(prev => ({ ...prev, content: val }))}
+                    onChange={val => {
+                      setEditingScript(prev => ({ ...prev, content: val }))
+                      if (editErrors.content) setEditErrors(prev => ({ ...prev, content: undefined }))
+                    }}
                   />
                 </div>
+                {editErrors.content && <span className="field-error">{editErrors.content}</span>}
               </div>
               <div className="form-actions">
-                <button type="button" onClick={() => setEditingScript(null)} className="btn btn-cancel">
+                <button type="button" onClick={() => { setEditingScript(null); setEditErrors({}) }} className="btn btn-cancel">
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">

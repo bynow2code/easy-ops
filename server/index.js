@@ -229,16 +229,13 @@ app.get('/api/scripts', (req, res) => {
 
 app.post('/api/scripts', (req, res) => {
   const { name, content, group } = req.body;
-  if (!name || !content) {
-    return res.status(400).json({ error: 'Name and content are required' });
-  }
 
   const scripts = getScripts();
   const maxOrder = scripts.reduce((max, s) => Math.max(max, s.orderNum != null ? s.orderNum : -1), -1);
   const newScript = {
     id: Date.now().toString(),
-    name,
-    content,
+    name: name || '',
+    content: content || '',
     group: group || 'backend',
     orderNum: maxOrder + 1,
     createdAt: new Date().toISOString()
