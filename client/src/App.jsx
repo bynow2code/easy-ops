@@ -84,6 +84,18 @@ function App() {
     }
   }, [outputs, maximizedScriptId])
 
+  // 监听 ESC 键关闭最大化窗口
+  useEffect(() => {
+    if (!maximizedScriptId) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setMaximizedScriptId(null)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [maximizedScriptId])
+
   // 当执行触发时，将外层 Execution Outputs 容器滚动到顶部
   // useLayoutEffect 在 DOM 提交后、浏览器绘制前执行，避免竞态条件
   useLayoutEffect(() => {
