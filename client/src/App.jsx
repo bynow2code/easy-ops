@@ -18,8 +18,10 @@ function App() {
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
+  const [maximizedScriptId, setMaximizedScriptId] = useState(null)
   const eventSourceRefs = useRef({})
   const outputRefs = useRef({})
+  const maximizedOutputRef = useRef(null)
   const outputsScrollRef = useRef(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
@@ -70,7 +72,17 @@ function App() {
         }
       }
     })
-  }, [outputs])
+    // 大窗口也自动追踪最新内容
+    if (maximizedScriptId) {
+      const out = outputs[maximizedScriptId]
+      if (out && out.live && !userScrolledUp.current[maximizedScriptId]) {
+        const el = maximizedOutputRef.current
+        if (el) {
+          el.scrollTop = el.scrollHeight
+        }
+      }
+    }
+  }, [outputs, maximizedScriptId])
 
   // 当执行触发时，将外层 Execution Outputs 容器滚动到顶部
   // useLayoutEffect 在 DOM 提交后、浏览器绘制前执行，避免竞态条件
@@ -753,6 +765,18 @@ function App() {
                           {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                         </span>
                         <button
+                          onClick={() => setMaximizedScriptId(script.id)}
+                          className="btn btn-maximize"
+                          title="Maximize output"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                            <polyline points="15 3 21 3 21 9" />
+                            <polyline points="9 21 3 21 3 15" />
+                            <line x1="21" y1="3" x2="14" y2="10" />
+                            <line x1="3" y1="21" x2="10" y2="14" />
+                          </svg>
+                        </button>
+                        <button
                           onClick={() => {
                             // 关闭并清理该脚本的 EventSource
                             if (eventSourceRefs.current[script.id]) {
@@ -928,6 +952,67 @@ function App() {
           </div>
         </div>
       )}
+
+      {maximizedScriptId && (() => {
+        const script = scripts.find(s => s.id === maximizedScriptId)
+        const output = outputs[maximizedScriptId]
+        if (!script || !output) return null
+        return (
+          <div className="modal-overlay" onClick={() => setMaximizedScriptId(null)}>
+            <div className="modal-content modal-maximized" onClick={e => e.stopPropagation()}>
+              <div className="maximized-header">
+                <div className="maximized-header-left">
+                  <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''}`}>
+                    {script.group === 'frontend' ? 'FE' : 'BE'}
+                  </span>
+                  <span className="maximized-name">{script.name}</span>
+                  {output.live && <span className="live-dot"></span>}
+                  {output.timestamp && (
+                    <span className="output-meta">
+                      {formatDuration(output.live ? (now - output.timestamp) : output.durationMs)}
+                    </span>
+                  )}
+                  {!output.live && output.timestamp && (
+                    <span className="output-meta">
+                      {formatTimeAgo(output.timestamp)}
+                    </span>
+                  )}
+                </div>
+                <div className="maximized-header-right">
+                  <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
+                    {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                  </span>
+                  <button
+                    onClick={() => setMaximizedScriptId(null)}
+                    className="btn btn-close"
+                    title="Close"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="maximized-body">
+                <div
+                  className="maximized-output-wrapper"
+                  ref={maximizedOutputRef}
+                  onScroll={(e) => handleOutputScroll(maximizedScriptId, e)}
+                >
+                  <pre className="maximized-output-content">{output.output || 'Waiting for output...'}</pre>
+                </div>
+                {output.error && (
+                  <div className="maximized-error-section">
+                    <div className="output-section-label">Error</div>
+                    <pre className="maximized-output-content error">{output.error}</pre>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
