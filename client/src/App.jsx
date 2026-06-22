@@ -24,8 +24,8 @@ function App() {
   const eventSourceRefs = useRef({})
   const outputRefs = useRef({})
   const maximizedOutputRef = useRef(null)
-  const outputsScrollRef = useRef(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const outputsScrollRef = useRef(null)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
   // 跟踪用户是否手动向上滚动（不在底部）
@@ -33,17 +33,21 @@ function App() {
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
 
-  // 监听 outputs 容器的滚动，控制回到顶部按钮显隐
-  useEffect(() => {
-    const el = outputsScrollRef.current
+  // 使用 callback ref 绑定滚动监听，确保 DOM 挂载时 100% 就绪
+  const setOutputsScrollRef = useCallback((el) => {
+    // 清理旧元素上的监听器
+    if (outputsScrollRef.current) {
+      outputsScrollRef.current.removeEventListener('scroll', outputsScrollRef._handler)
+    }
+    outputsScrollRef.current = el
     if (!el) return
     const handleScroll = () => {
       setShowScrollTop(el.scrollTop > 80)
     }
+    outputsScrollRef._handler = handleScroll
     el.addEventListener('scroll', handleScroll, { passive: true })
     // 初始检查一次
     handleScroll()
-    return () => el.removeEventListener('scroll', handleScroll)
   }, [])
 
   useEffect(() => {
@@ -748,7 +752,7 @@ function App() {
           <h2 className="outputs-title">Execution Outputs</h2>
           <div
             className="outputs-container"
-            ref={outputsScrollRef}
+            ref={setOutputsScrollRef}
           >
             {Object.keys(outputs).length === 0 ? (
               <div className="empty-output">
