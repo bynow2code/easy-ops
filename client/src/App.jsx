@@ -53,19 +53,21 @@ function App() {
   // ==================== 系统通知 ====================
 
   // 请求通知权限（Electron 内 Web Notification API 对应系统原生通知）
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
-
   // 发送脚本执行完成的系统通知
-  const sendCompletionNotification = (scriptName, exitCode, durationMs) => {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return
+  // Electron 环境走原生 Notification API（preload 注入），浏览器环境降级为 Web Notification
+  const sendCompletionNotification = (scriptName, exitCode, durationMs, remaining) => {
     const dur = durationMs != null ? ` (${(durationMs / 1000).toFixed(1)}s)` : ''
     const emoji = exitCode === 0 ? '✅' : '❌'
     const status = exitCode === 0 ? 'Completed successfully' : `Failed (exit code: ${exitCode})`
-    new Notification(`${emoji} ${scriptName}`, { body: `${status}${dur}` })
+    const remainStr = remaining != null ? ` — ${remaining} remaining` : ''
+    const title = `${emoji} ${scriptName}`
+    const body = `${status}${dur}${remainStr}`
+
+    if (window.electronAPI?.showNotification) {
+      window.electronAPI.showNotification(title, body, '/logo.png')
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/logo.png' })
+    }
   }
 
   useEffect(() => {
@@ -481,8 +483,7 @@ function App() {
 
     let currentId = null
     const scriptTimestamps = { ...initialOutputs }
-    // 追踪每个脚本的执行结果，用于 done 时汇总通知
-    const batchResults = {}
+    let finishedCount = 0
 
     es.onmessage = (event) => {
       const data = JSON.parse(event.data)
@@ -528,25 +529,19 @@ function App() {
             if (curr && !curr.live) return prev
             return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
           })
-          // 记录每个脚本的结果
-          batchResults[scriptId] = { exitCode: data.exitCode, durationMs: data.durationMs }
+          // 记录完成数，并立即发送完成通知
+          finishedCount++
+          const remaining = batchIds.length - finishedCount
+          const s = scripts.find(s => s.id === scriptId)
+          if (s) {
+            sendCompletionNotification(s.name, data.exitCode, data.durationMs, remaining)
+          }
         }
       } else if (data.type === 'done') {
         setExecutingBatch(false)
         setBatchOrderIds([])
         es.close()
         delete eventSourceRefs.current['__batch__']
-        // 批量执行完成，发送汇总通知
-        if ('Notification' in window && Notification.permission === 'granted') {
-          const results = Object.values(batchResults)
-          const succeeded = results.filter(r => r.exitCode === 0).length
-          const failed = results.length - succeeded
-          const totalDur = results.reduce((sum, r) => sum + (r.durationMs || 0), 0)
-          const durStr = totalDur > 0 ? ` (total ${(totalDur / 1000).toFixed(1)}s)` : ''
-          new Notification(`📦 Batch execution completed`, {
-            body: `${succeeded} succeeded, ${failed} failed${durStr}`
-          })
-        }
       }
     }
 

@@ -1,10 +1,13 @@
-const { app, BrowserWindow, ipcMain, shell, Menu, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { fork } = require('child_process');
 
 let mainWindow = null;
 let backendProcess = null;
+
+// 设置应用名称，确保系统通知显示 "EasyOps" 而非 "electron.app"
+app.setName('EasyOps')
 
 const isDev = !app.isPackaged;
 
@@ -13,22 +16,89 @@ const isDev = !app.isPackaged;
 const isBuiltMode = isDev && fs.existsSync(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
 
 // 日志函数 - 同时输出到控制台和文件
-const logFile = path.join(app.getPath('userData'), 'easyops-debug.log');
-function log(msg, ...args) {
-  const timestamp = new Date().toISOString();
-  let line = `[${timestamp}] ${msg}`;
-  if (args.length > 0) {
-    line += ' ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-  }
-  console.log(msg, ...args);
+const log = (message) => {
+  console.log(`[Main] ${message}`);
   try {
-    fs.appendFileSync(logFile, line + '\n');
+    const logDir = path.join(app.getPath('userData'), 'logs');
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    const logFile = path.join(logDir, 'main.log');
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
   } catch (e) {}
-}
+};
 
-function createWindow(port) {
-  // 隐藏菜单栏（开发和生产模式都隐藏）
-  Menu.setApplicationMenu(null);
+// 找到未占用的端口并启动后端服务
+const startBackend = () => {
+  return new Promise((resolve, reject) => {
+    const net = require('net');
+    const findPort = (start, end) => {
+      return new Promise((resolvePort) => {
+        const tryPort = (port) => {
+          if (port > end) {
+            resolvePort(null);
+            return;
+          }
+          const server = net.createServer();
+          server.once('error', () => tryPort(port + 1));
+          server.once('listening', () => {
+            server.close(() => resolvePort(port));
+          });
+          server.listen(port);
+        };
+        tryPort(start);
+      });
+    };
+
+    findPort(3001, 3100).then(port => {
+      if (!port) {
+        reject(new Error('No available port found in range 3001-3100'));
+        return;
+      }
+
+      const serverDir = path.join(__dirname, '..', 'server');
+      const env = {
+        ...process.env,
+        PORT: port.toString(),
+        ELECTRON_MODE: '1',
+        FRONTEND_DIST_DIR: path.join(__dirname, '..', 'client', 'dist'),
+        SCRIPT_DATA_DIR: app.getPath('userData')
+      };
+
+      backendProcess = fork(path.join(serverDir, 'index.js'), [], {
+        cwd: serverDir,
+        env,
+        stdio: ['pipe', 'pipe', 'pipe', 'ipc']
+      });
+
+      backendProcess.stdout.on('data', (data) => {
+        process.stdout.write(data);
+      });
+
+      backendProcess.stderr.on('data', (data) => {
+        process.stderr.write(data);
+      });
+
+      backendProcess.on('exit', (code) => {
+        log(`Backend process exited with code ${code}`);
+        backendProcess = null;
+      });
+
+      // 等待后端启动完成信号
+      backendProcess.on('message', (msg) => {
+        if (msg === 'ready') {
+          resolve(port);
+        }
+      });
+
+      // 超时回退：如果 5 秒内没收到 ready 消息，直接使用端口
+      setTimeout(() => {
+        resolve(port);
+      }, 5000);
+    }).catch(reject);
+  });
+};
+
+const createWindow = (port) => {
+  const iconPath = path.join(__dirname, '..', 'client', 'public', 'logo.png');
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -42,148 +112,36 @@ function createWindow(port) {
       nodeIntegration: false,
       sandbox: false
     },
-    icon: path.join(__dirname, '..', 'client', 'public', 'logo.png')
+    icon: iconPath
   });
 
-  // Vite 开发模式（热更新），已构建模式/生产模式使用后端端口
-  const useViteDev = isDev && !isBuiltMode;
-  const url = useViteDev ? 'http://localhost:5173' : `http://localhost:${port}`;
-  log('[Main] Loading URL:', url);
+  const url = `http://localhost:${port}`;
   mainWindow.loadURL(url);
+  log(`Window loaded with URL: ${url}`);
 
-  // 开发模式：F12 呼出调试工具，并自动打开开发者工具
   if (isDev) {
-    mainWindow.webContents.openDevTools();
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      if (input.key === 'F12' && input.type === 'keyDown') {
-        mainWindow.webContents.toggleDevTools();
-        event.preventDefault();
-      }
-    });
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+};
 
-  // 打开外链使用系统浏览器
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
-}
+// ==================== 应用生命周期 ====================
 
-function startBackend() {
-  return new Promise((resolve, reject) => {
-    try {
-      // 传递用户数据目录，让后端将 scripts.json 写到该目录下
-      process.env.SCRIPT_DATA_DIR = app.getPath('userData');
-      process.env.ELECTRON_MODE = '1';
+const gotTheLock = app.requestSingleInstanceLock();
 
-      // 调试日志
-      log('[Main] isDev:', isDev);
-      log('[Main] app.isPackaged:', app.isPackaged);
-      log('[Main] process.resourcesPath:', process.resourcesPath);
-      log('[Main] __dirname:', __dirname);
-
-      // 告知后端前端静态资源目录
-      if (!isDev) {
-        // 生产模式：extraResources 中的路径
-        const frontendPath = path.join(process.resourcesPath, 'client', 'dist');
-        log('[Main] FRONTEND_DIST_DIR:', frontendPath);
-        log('[Main] FRONTEND_DIST_DIR exists:', fs.existsSync(frontendPath));
-        process.env.FRONTEND_DIST_DIR = frontendPath;
-      } else if (isBuiltMode) {
-        // 已构建模式：本地 client/dist
-        process.env.FRONTEND_DIST_DIR = path.join(__dirname, '..', 'client', 'dist');
-      }
-
-      // 动态端口查找
-      const net = require('net');
-      const findPort = (startPort) => new Promise((res) => {
-        const server = net.createServer();
-        server.once('error', () => {
-          server.close();
-          res(findPort(startPort + 1));
-        });
-        server.once('listening', () => {
-          const port = server.address().port;
-          server.close();
-          res(port);
-        });
-        server.listen(startPort, '127.0.0.1');
-      });
-
-      findPort(3001).then((port) => {
-        process.env.PORT = String(port);
-
-        // 加载后端 Express 服务 - 使用 fork 而不是 require
-        const backendPath = isDev
-          ? path.join(__dirname, '..', 'server', 'index.js')
-          : path.join(process.resourcesPath, 'server', 'index.js');
-
-        log('[Main] backendPath:', backendPath);
-        log('[Main] backendPath exists:', fs.existsSync(backendPath));
-
-        // 使用 child_process.fork 启动后端进程
-        const execArgv = [];
-        backendProcess = fork(backendPath, [], {
-          env: process.env,
-          execArgv,
-          stdio: ['pipe', 'pipe', 'pipe', 'ipc']
-        });
-
-        backendProcess.stdout.on('data', (data) => {
-          log('[Backend]', data.toString().trim());
-        });
-
-        backendProcess.stderr.on('data', (data) => {
-          log('[Backend ERROR]', data.toString().trim());
-        });
-
-        backendProcess.on('error', (err) => {
-          log('[Backend] Process error:', err.message);
-        });
-
-        backendProcess.on('exit', (code, signal) => {
-          log('[Backend] Exited with code:', code, 'signal:', signal);
-        });
-
-        // 等待后端启动完成
-        setTimeout(() => {
-          resolve(port);
-        }, 500);
-      });
-    } catch (err) {
-      reject(err);
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
   });
 }
-
-app.whenReady().then(async () => {
-  // 自动授权通知权限（无需弹窗，让 Web Notification API 静默可用）
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'notifications') {
-      callback(true)
-    } else {
-      callback(false)
-    }
-  })
-
-  try {
-    const port = await startBackend();
-    createWindow(port);
-  } catch (err) {
-    console.error('Failed to start backend:', err);
-    process.exit(1);
-  }
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -198,6 +156,8 @@ app.on('quit', () => {
   }
 });
 
+// ==================== IPC 处理 ====================
+
 ipcMain.handle('get-app-info', () => {
   return {
     version: app.getVersion(),
@@ -205,4 +165,45 @@ ipcMain.handle('get-app-info', () => {
     userData: app.getPath('userData'),
     isDev
   };
+});
+
+// ==================== 原生系统通知（队列） ====================
+const iconPath = path.join(__dirname, '..', 'client', 'public', 'logo.png');
+const notifQueue = [];
+let notifRunning = false;
+
+const processNotifQueue = () => {
+  if (notifRunning || notifQueue.length === 0) return;
+  notifRunning = true;
+  const { title, body, immediate } = notifQueue.shift();
+  const n = new Notification({
+    title,
+    body,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined
+  });
+  n.show();
+  const duration = immediate ? 4000 : 1500;
+  setTimeout(() => {
+    try { n.close(); } catch (e) {}
+    notifRunning = false;
+    processNotifQueue();
+  }, duration);
+};
+
+ipcMain.on('show-notification', (event, { title, body }) => {
+  // immediate: 单脚本立即显示；否则走队列逐一展示
+  notifQueue.push({ title, body, immediate: !notifQueue.length && !notifRunning });
+  processNotifQueue();
+});
+
+// ==================== 启动应用 ====================
+
+app.whenReady().then(async () => {
+  try {
+    const port = await startBackend();
+    createWindow(port);
+  } catch (err) {
+    log(`Failed to start: ${err.message}`);
+    app.quit();
+  }
 });
