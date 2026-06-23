@@ -64,7 +64,7 @@ function App() {
     const body = `${status}${dur}${remainStr}`
 
     if (window.electronAPI?.showNotification) {
-      window.electronAPI.showNotification(title, body, '/logo.png')
+      window.electronAPI.showNotification(title, body, remaining == null)
     } else if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(title, { body, icon: '/logo.png' })
     }

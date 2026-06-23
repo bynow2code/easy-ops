@@ -182,14 +182,15 @@ let notifRunning = false;
 const processNotifQueue = () => {
   if (notifRunning || notifQueue.length === 0) return;
   notifRunning = true;
-  const { title, body, immediate } = notifQueue.shift();
+  const { title, body, single } = notifQueue.shift();
   const n = new Notification({
     title,
     body,
     icon: fs.existsSync(notifIconPath) ? notifIconPath : undefined
   });
   n.show();
-  const duration = immediate ? 4000 : 1500;
+  // 单脚本显示 4 秒，批量每条显示 1.5 秒
+  const duration = single ? 4000 : 1500;
   setTimeout(() => {
     try { n.close(); } catch (e) {}
     notifRunning = false;
@@ -197,9 +198,8 @@ const processNotifQueue = () => {
   }, duration);
 };
 
-ipcMain.on('show-notification', (event, { title, body }) => {
-  // immediate: 单脚本立即显示；否则走队列逐一展示
-  notifQueue.push({ title, body, immediate: !notifQueue.length && !notifRunning });
+ipcMain.on('show-notification', (event, { title, body, single }) => {
+  notifQueue.push({ title, body, single });
   processNotifQueue();
 });
 
