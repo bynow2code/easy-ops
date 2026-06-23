@@ -351,6 +351,20 @@ function App() {
     }
   }
 
+  // 关闭所有 Execution Outputs
+  const handleCloseAllOutputs = () => {
+    // 关闭所有活跃的 EventSource
+    Object.keys(eventSourceRefs.current).forEach(key => {
+      eventSourceRefs.current[key]?.close()
+      delete eventSourceRefs.current[key]
+    })
+    // 清空所有输出
+    setOutputs({})
+    setExecutingIds({})
+    setExecutingBatch(false)
+    setBatchOrderIds([])
+  }
+
   const handleExecuteScript = (id) => {
     const script = scripts.find(s => s.id === id)
     if (!script) return
@@ -784,7 +798,14 @@ function App() {
 
         {/* 右侧：Execution Outputs */}
         <div className="right-panel">
-          <h2 className="outputs-title">Execution Outputs</h2>
+          <div className="outputs-header">
+            <h2 className="outputs-title">Execution Outputs</h2>
+            {Object.keys(outputs).length > 0 && (
+              <button className="btn-close-all" onClick={handleCloseAllOutputs} title="Close all outputs">
+                Close all
+              </button>
+            )}
+          </div>
           <div
             className="outputs-container"
             ref={setOutputsScrollRef}
