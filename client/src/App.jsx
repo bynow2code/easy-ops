@@ -56,12 +56,22 @@ function App() {
   // 发送脚本执行完成的系统通知
   // Electron 环境走原生 Notification API（preload 注入），浏览器环境降级为 Web Notification
   const sendCompletionNotification = (scriptName, exitCode, durationMs, remaining) => {
-    const dur = durationMs != null ? ` (${(durationMs / 1000).toFixed(1)}s)` : ''
+    let durStr = ''
+    if (durationMs != null) {
+      const ms = Math.max(0, durationMs)
+      if (ms < 1000) durStr = ` (${ms}ms)`
+      else if (ms < 60000) durStr = ` (${(ms / 1000).toFixed(1)}s)`
+      else {
+        const s = Math.floor(ms / 1000)
+        const m = Math.floor(s / 60)
+        durStr = s % 60 > 0 ? ` (${m}m ${s % 60}s)` : ` (${m}m)`
+      }
+    }
     const emoji = exitCode === 0 ? '✅' : '❌'
     const status = exitCode === 0 ? 'Completed successfully' : `Failed (exit code: ${exitCode})`
     const remainStr = remaining != null ? ` — ${remaining} remaining` : ''
     const title = `${emoji} ${scriptName}`
-    const body = `${status}${dur}${remainStr}`
+    const body = `${status}${durStr}${remainStr}`
 
     if (window.electronAPI?.showNotification) {
       window.electronAPI.showNotification(title, body, remaining == null)
@@ -596,8 +606,8 @@ function App() {
     if (durationMs == null) return ''
     const ms = Math.max(0, durationMs)
     if (ms < 1000) return `${ms}ms`
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
     const totalSeconds = Math.floor(ms / 1000)
-    if (totalSeconds < 60) return `${totalSeconds}s`
     const minutes = Math.floor(totalSeconds / 60)
     const seconds = totalSeconds % 60
     if (totalSeconds < 3600) {
