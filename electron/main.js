@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { fork } = require('child_process');
@@ -161,6 +161,15 @@ function startBackend() {
 }
 
 app.whenReady().then(async () => {
+  // 自动授权通知权限（无需弹窗，让 Web Notification API 静默可用）
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'notifications') {
+      callback(true)
+    } else {
+      callback(false)
+    }
+  })
+
   try {
     const port = await startBackend();
     createWindow(port);
