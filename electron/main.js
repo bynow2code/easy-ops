@@ -206,6 +206,7 @@ ipcMain.on('show-notification', (event, { title, body, single }) => {
 // ==================== 启动应用 ====================
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null) // 隐藏默认菜单栏
   try {
     const port = await startBackend();
     createWindow(port);
