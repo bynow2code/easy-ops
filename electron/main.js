@@ -11,9 +11,16 @@ app.setName('EasyOps')
 
 const isDev = !app.isPackaged;
 
+// 资源路径辅助：开发时相对项目根，打包后使用 extraResources 目录
+const resPath = (relativePath) => {
+  if (!app.isPackaged) {
+    return path.join(__dirname, '..', relativePath);
+  }
+  return path.join(process.resourcesPath, relativePath);
+};
+
 // 检查是否为「已构建前端 + Electron 开发」模式（electron-dev）
-// 此时 client/dist 已构建好，应直接使用后端端口而非 Vite 开发服务器
-const isBuiltMode = isDev && fs.existsSync(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
+const isBuiltMode = isDev && fs.existsSync(resPath('client/dist/index.html'));
 
 // 日志函数 - 同时输出到控制台和文件
 const log = (message) => {
@@ -54,12 +61,12 @@ const startBackend = () => {
         return;
       }
 
-      const serverDir = path.join(__dirname, '..', 'server');
+      const serverDir = resPath('server');
       const env = {
         ...process.env,
         PORT: port.toString(),
         ELECTRON_MODE: '1',
-        FRONTEND_DIST_DIR: path.join(__dirname, '..', 'client', 'dist'),
+        FRONTEND_DIST_DIR: resPath('client/dist'),
         SCRIPT_DATA_DIR: app.getPath('userData')
       };
 
@@ -98,7 +105,7 @@ const startBackend = () => {
 };
 
 const createWindow = (port) => {
-  const iconPath = path.join(__dirname, '..', 'client', 'public', 'logo.png');
+  const iconPath = resPath('client/dist/logo.png');
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -168,7 +175,7 @@ ipcMain.handle('get-app-info', () => {
 });
 
 // ==================== 原生系统通知（队列） ====================
-const iconPath = path.join(__dirname, '..', 'client', 'public', 'logo.png');
+const notifIconPath = resPath('client/dist/logo.png');
 const notifQueue = [];
 let notifRunning = false;
 
@@ -179,7 +186,7 @@ const processNotifQueue = () => {
   const n = new Notification({
     title,
     body,
-    icon: fs.existsSync(iconPath) ? iconPath : undefined
+    icon: fs.existsSync(notifIconPath) ? notifIconPath : undefined
   });
   n.show();
   const duration = immediate ? 4000 : 1500;
