@@ -190,7 +190,7 @@ const processNotifQueue = () => {
   });
   n.show();
   // 单脚本显示 4 秒，批量每条显示 1.5 秒
-  const duration = single ? 4000 : 1500;
+  const duration = single ? 4000 : 2000;
   setTimeout(() => {
     try { n.close(); } catch (e) {}
     notifRunning = false;
