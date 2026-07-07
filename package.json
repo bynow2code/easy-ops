@@ -41,7 +41,7 @@
       },
       {
         "from": "client/dist",
-      "to": "client/dist"
+        "to": "client/dist"
       }
     ],
     "electronDownload": {
