@@ -1,23 +1,9 @@
 [
   {
     "id": "1780975444026",
-    "name": "PMS 开发-后端",
-    "content": "#!/bin/bash\nssh root@47.107.79.135 \"\n  echo '========== dev_mns_pms =========='\n  cd /var/www/dev_mns_pms && echo '当前分支: '\\$(git branch --show-current) && \\\n  echo '开始拉取最新代码......' && git pull\n\"\n",
+    "name": "测试",
+    "content": "",
     "createdAt": "2026-06-09T03:24:04.026Z",
     "orderNum": 0
-  },
-  {
-    "id": "1780977535774",
-    "name": "PMS 测试-后端",
-    "content": "#!/bin/bash\nssh root@47.107.79.135 \"\n  echo '========== mns_pms ==============' && \\\n  cd /var/www/mns_pms && echo '当前分支: '\\$(git branch --show-current) && \\\n  echo '开始拉取最新代码......' && git pull\n\"",
-    "createdAt": "2026-06-09T03:58:55.774Z",
-    "orderNum": 1
-  },
-  {
-    "id": "1781001130861",
-    "name": "PMS 测试-前端",
-    "content": "#!/bin/bash\nssh root@47.107.79.135 \"\n  source ~/.nvm/nvm.sh  && \\\n  echo '========== fe_pms_erp ==========' && \\\n  cd /var/www/fe_pms_erp && \\\n  echo '当前分支: '\\$(git branch --show-current) && \\\n  echo '开始拉取最新代码......' && git pull && \\\n  echo '开始打包: ' && pnpm build:clean\n\"",
-    "createdAt": "2026-06-09T10:32:10.861Z",
-    "orderNum": 2
   }
 ]
