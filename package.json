@@ -11,6 +11,8 @@
     "electron-dev": "npm run build && electron .",
     "electron-build": "npm run build && electron-builder --win --x64",
     "electron-build-dir": "npm run build && electron-builder --dir --win",
+    "electron-build-mac-intel": "npm run build && electron-builder --mac --x64",
+    "electron-build-mac-arm": "npm run build && electron-builder --mac --arm64",
     "start": "electron ."
   },
   "devDependencies": {
@@ -46,6 +48,15 @@
     ],
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "client/public/logo-1024.png",
+      "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
