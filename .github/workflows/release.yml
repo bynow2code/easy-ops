@@ -9,12 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Windows：构建 nsis 安装包 + zip，可选代码签名
-  # 需要的 secrets（可选，不填则产物为未签名）：
-  #   WIN_CSC_LINK        证书文件（.pfx）的 base64 或下载地址
-  #   WIN_CSC_KEY_PASSWORD 证书私钥密码
-  # ---------------------------------------------------------------------------
+  # 推送 v* tag → 在 Windows 上构建未签名安装包并发布到 GitHub Release
+  # 个人发布，无需任何证书或 secret，开箱即用
   release-windows:
     name: Build & Release (Windows)
     runs-on: windows-latest
@@ -28,6 +24,7 @@ jobs:
           node-version: 24
           cache: 'npm'
 
+      # 让打出来的包版本号与 tag 保持一致（去掉前面的 v）
       - name: Sync version with tag
         shell: pwsh
         run: |
@@ -41,20 +38,11 @@ jobs:
         working-directory: client
         run: npm ci
 
-      # 仅当 secret 真正存在时才注入签名变量，避免空字符串导致 electron-builder 报错
-      - name: Prepare signing env (Windows)
-        shell: pwsh
-        run: |
-          if ("${{ secrets.WIN_CSC_LINK }}") {
-            echo "CSC_LINK=${{ secrets.WIN_CSC_LINK }}" >> $env:GITHUB_ENV
-            echo "CSC_KEY_PASSWORD=${{ secrets.WIN_CSC_KEY_PASSWORD }}" >> $env:GITHUB_ENV
-            Write-Host "Signing enabled"
-          } else {
-            Write-Host "No WIN_CSC_LINK secret, building unsigned"
-          }
-
+      # electron-build = 先 build client，再 electron-builder --win --x64（未签名）
       - name: Build & package (Windows)
         run: npm run electron-build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -68,19 +56,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ---------------------------------------------------------------------------
-  # macOS：构建 dmg + zip（x64 + arm64），可选 Apple 签名 + 公证
-  # 需要的 secrets（可选，不填则产物为未签名、未公证）：
-  #   MAC_CSC_LINK                  Apple 开发者证书 .p12 的 base64 或下载地址
-  #   MAC_CSC_KEY_PASSWORD          p12 导出密码
-  #   APPLE_ID                      苹果账号邮箱
-  #   APPLE_APP_SPECIFIC_PASSWORD   专用密码（appleid.apple.com 生成）
-  #   APPLE_TEAM_ID                 开发者团队 ID（10 位）
-  # ---------------------------------------------------------------------------
+  # 推送 v* tag → 在 macOS 上构建未签名 dmg + zip（x64 + arm64）并发布
+  # 个人发布，未签名/未公证；用户下载后需到「系统设置→隐私与安全性」手动放行
   release-macos:
     name: Build & Release (macOS)
     runs-on: macos-latest
-    needs: release-windows
+    needs: release-windows   # 串行，避免两个 job 并发写同一个 Release
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -104,21 +85,11 @@ jobs:
         working-directory: client
         run: npm ci
 
-      - name: Prepare signing env (macOS)
-        run: |
-          if [ -n "${{ secrets.MAC_CSC_LINK }}" ]; then
-            echo "CSC_LINK=${{ secrets.MAC_CSC_LINK }}" >> "$GITHUB_ENV"
-            echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
-            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
-            echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
-            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
-            echo "Signing enabled"
-          else
-            echo "No MAC_CSC_LINK secret, building unsigned"
-          fi
-
+      # 先 build client，再打包 macOS 双架构（未签名）
       - name: Build & package (macOS)
         run: npm run build && npx electron-builder --mac --x64 --arm64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
