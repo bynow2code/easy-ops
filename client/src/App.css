@@ -12,6 +12,36 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Firefox 滚动条（thin） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d0d0d0 transparent;
+}
+
+/* ==================== 全局自定义滚动条（替代 Windows 默认宽滚动条） ==================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #d0d0d0;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #b0b0b0;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: #909090;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -29,31 +59,37 @@ html, body, #root {
 
 .header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
   margin-bottom: 8px;
   padding-bottom: 8px;
   border-bottom: 1px solid #e0e0e0;
 }
 
-.header-left {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
+.header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 6px 0;
 }
 
-.header-right {
+/* ==================== 工具栏行：按钮在左，图标在右，全部对齐同一基线 ==================== */
+.toolbar-row {
   display: flex;
-  flex-direction: row;
+  justify-content: space-between;
   align-items: center;
+}
+
+.toolbar-left {
+  display: flex;
   gap: 8px;
 }
 
-.header h1 {
-  font-size: 16px;
-  color: #333;
-  margin: 0;
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* BASH 徽标：仅保留徽标，悬停显示完整 shell 路径与版本 */
@@ -111,17 +147,20 @@ html, body, #root {
   color: #bae0ff;
 }
 
-.info-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  background-color: #e6f7ff;
-  color: #1890ff;
-  border: 1px solid #91d5ff;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 11px;
+/* 统一图标按钮内的 SVG 尺寸（已内联到 .tool-icon-btn svg 中，此处保留兼容） */
+.icon-svg {
+  width: 16px;
+  height: 16px;
+  display: block;
   flex-shrink: 0;
-  cursor: default;
+}
+
+.bash-tooltip-title {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  color: #fff;
 }
 
 .header-actions {
@@ -1068,27 +1107,43 @@ html, body, #root {
   font-size: 13px;
 }
 
-/* ==================== 自动更新（检查更新按钮 / 弹窗） ==================== */
-/* 检查更新：小图标按钮，风格与 BASH 徽标保持一致（Ant Design 蓝） */
-.header-icon-btn {
-  position: relative;
+/* ==================== 轻量工具图标：无背景、灰色线条，hover 变蓝 ==================== */
+.tool-icon-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  background-color: #e6f7ff;
-  color: #1890ff;
-  border: 1px solid #91d5ff;
-  border-radius: 6px;
+  gap: 4px;
+  padding: 3px 8px;
+  background: transparent;
+  color: #888;
+  border: 1px solid transparent;
+  border-radius: 5px;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  line-height: 1;
 }
 
-.header-icon-btn:hover {
-  background-color: #bae0ff;
-  border-color: #4096ff;
-  color: #096dd9;
+.tool-icon-btn:hover {
+  color: #1890ff;
+  background-color: #f0f7ff;
+  border-color: #d6eaff;
+}
+
+.tool-icon-btn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.tool-icon-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* BASH 指示器不需要额外点击样式 */
+.bash-indicator .tool-icon-btn {
+  cursor: default;
 }
 
 .update-badge {

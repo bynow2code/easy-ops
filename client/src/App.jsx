@@ -709,9 +709,11 @@ function App() {
   return (
     <div className="app-container">
       <header className="header">
-        <div className="header-left">
-          <h1>Script Manager</h1>
-          <div className="header-actions">
+        <h1>Script Manager</h1>
+
+        {/* 工具栏：按钮在左，BASH + 检查更新图标在右，全部对齐同一基线 */}
+        <div className="toolbar-row">
+          <div className="toolbar-left">
             <button
               onClick={handleBatchExecute}
               disabled={selectedIds.length === 0 || executingBatch}
@@ -729,33 +731,32 @@ function App() {
               Add Script
             </button>
           </div>
-        </div>
-        <div className="header-right">
-          {systemInfo && (
-            <div className="bash-indicator">
-              <span className="info-badge" title="Detected shell environment">
-                {systemInfo.shell.type === 'bash' ? 'BASH' : systemInfo.shell.type.toUpperCase()}
-              </span>
-              <div className="bash-tooltip">
-                <div className="bash-tooltip-path">{systemInfo.shell.fullPath || systemInfo.shell.command}</div>
-                {systemInfo.shell.version && (
-                  <div className="bash-tooltip-version">{systemInfo.shell.version}</div>
-                )}
+
+          <div className="toolbar-right">
+            {systemInfo && (
+              <div className="bash-indicator">
+                <span className="tool-icon-btn" title={`Shell: ${systemInfo.shell.type}`}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                  <span className="tool-icon-label">{systemInfo.shell.type === 'bash' ? 'Bash' : systemInfo.shell.type}</span>
+                </span>
+                <div className="bash-tooltip">
+                  <div className="bash-tooltip-title">{systemInfo.shell.type.toUpperCase()}</div>
+                  <div className="bash-tooltip-path">{systemInfo.shell.fullPath || systemInfo.shell.command}</div>
+                  {systemInfo.shell.version && (
+                    <div className="bash-tooltip-version">{systemInfo.shell.version}</div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-          <button
-            className="header-icon-btn"
-            onClick={handleCheckUpdates}
-            title="Check for updates"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-            {updateState === 'downloaded' && <span className="update-badge">!</span>}
-          </button>
+            )}
+            <button
+              className="tool-icon-btn"
+              onClick={handleCheckUpdates}
+              title="Check for updates"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+              {updateState === 'downloaded' && <span className="update-badge">!</span>}
+            </button>
+          </div>
         </div>
       </header>
 
