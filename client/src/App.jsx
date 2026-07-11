@@ -132,6 +132,25 @@ function App() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [maximizedScriptId])
 
+  // 监听 ESC 键关闭 Add / Edit Script 弹窗
+  useEffect(() => {
+    if (!showAddForm && !editingScript) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (showAddForm) {
+          setShowAddForm(false)
+          setFormErrors({})
+        }
+        if (editingScript) {
+          setEditingScript(null)
+          setEditErrors({})
+        }
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [showAddForm, editingScript])
+
   // 当执行触发时，将外层 Execution Outputs 容器滚动到顶部
   // useLayoutEffect 在 DOM 提交后、浏览器绘制前执行，避免竞态条件
   useLayoutEffect(() => {
@@ -955,8 +974,8 @@ function App() {
       )}
 
       {showAddForm && (
-        <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             <h2>Add New Script</h2>
             {formErrors.submit && <div className="form-error-banner">{formErrors.submit}</div>}
             <form onSubmit={handleAddScript}>
@@ -1011,8 +1030,8 @@ function App() {
       )}
 
       {editingScript && (
-        <div className="modal-overlay" onClick={() => setEditingScript(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             <h2>Edit Script</h2>
             {editErrors.submit && <div className="form-error-banner">{editErrors.submit}</div>}
             <form onSubmit={handleUpdateScript}>
