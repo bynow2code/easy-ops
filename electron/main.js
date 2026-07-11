@@ -58,6 +58,7 @@ const log = (message) => {
 // 找到未占用的端口并启动后端服务
 const startBackend = () => {
   return new Promise((resolve, reject) => {
+    let backendResolved = false;
     const net = require('net');
     const findPort = (start, end) => {
       return new Promise((resolvePort) => {
@@ -98,28 +99,43 @@ const startBackend = () => {
         stdio: ['pipe', 'pipe', 'pipe', 'ipc']
       });
 
+      // 累积后端输出，便于后端崩溃时把真实错误暴露给用户（打包后 stderr 不可见）
+      let backendStderr = '';
+      let backendStdout = '';
+
       backendProcess.stdout.on('data', (data) => {
         process.stdout.write(data);
+        backendStdout += data.toString();
+        log(`[Backend] ${data.toString().trim()}`);
       });
 
       backendProcess.stderr.on('data', (data) => {
         process.stderr.write(data);
+        backendStderr += data.toString();
+        log(`[Backend-ERR] ${data.toString().trim()}`);
       });
 
       backendProcess.on('exit', (code) => {
         log(`Backend process exited with code ${code}`);
+        // 后端非正常退出：把累积的错误输出抛给上层，直接弹窗显示，而不是加载一个死链接
+        if (code !== 0 && !backendResolved) {
+          const detail = (backendStderr || backendStdout || '(后端无任何输出，退出码 ' + code + ')').trim();
+          reject(new Error(`后端进程退出码 ${code}。后端报错：\n${detail}`));
+        }
         backendProcess = null;
       });
 
       // 等待后端启动完成信号
       backendProcess.on('message', (msg) => {
         if (msg === 'ready') {
+          backendResolved = true;
           resolve(port);
         }
       });
 
       // 超时回退：如果 5 秒内没收到 ready 消息，直接使用端口
       setTimeout(() => {
+        backendResolved = true;
         resolve(port);
       }, 5000);
     }).catch(reject);

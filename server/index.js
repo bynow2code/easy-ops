@@ -546,8 +546,13 @@ const startServer = async () => {
     console.error('[Server] Warning: could not write port file:', e.message);
   }
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
+  });
+  // 捕获监听失败（端口被占 / 无权限等），把真实错误打到 stderr（会被主进程记入 main.log）
+  server.on('error', (err) => {
+    console.error(`[Server] 监听端口 ${port} 失败:`, err.message);
+    process.exit(1);
   });
 };
 
