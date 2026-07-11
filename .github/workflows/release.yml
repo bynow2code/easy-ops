@@ -66,6 +66,13 @@ jobs:
         working-directory: client
         run: npm ci
 
+      # 步骤5.5：安装后端（server）依赖（Express + CORS 等）
+      # ⚠️ 这一步之前缺失，导致 CI 上 server/node_modules 不存在，
+      #    打包时 extraResources 拷贝的是没有依赖的空壳 → 用户安装后闪退报错 Cannot find module 'express'
+      - name: 安装后端依赖
+        working-directory: server
+        run: npm ci
+
       # 步骤6：构建并打包 Windows 安装包（未签名）
       # npm run electron-build = 先 build 前端（vite build），再用 electron-builder 打包 --win --x64
       # 产物：dist-electron/ 下的 nsis 安装包（.exe）和 zip 压缩包
@@ -146,6 +153,12 @@ jobs:
       # 步骤5：安装前端依赖
       - name: 安装前端依赖
         working-directory: client
+        run: npm ci
+
+      # 步骤5.5：安装后端（server）依赖（Express + CORS 等）
+      # ⚠️ 与 Windows 作业同理——缺失此步骤会导致打包后端缺少 node_modules → 运行时报错找不到 express 模块
+      - name: 安装后端依赖
+        working-directory: server
         run: npm ci
 
       # 步骤6：构建前端并打包 macOS（未签名，双架构）

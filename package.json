@@ -43,6 +43,7 @@
         "to": "server",
         "filter": [
           "**/*",
+          "node_modules/**/*",
           "!package-lock.json",
           "!package.json"
         ]
