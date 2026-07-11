@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Windows：构建 nsis 安装包 + zip，可选代码签名
+  # 需要的 secrets（可选，不填则产物为未签名）：
+  #   WIN_CSC_LINK        证书文件（.pfx）的 base64 或下载地址
+  #   WIN_CSC_KEY_PASSWORD 证书私钥密码
+  # ---------------------------------------------------------------------------
+  release-windows:
+    name: Build & Release (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 让打出来的包版本号与 tag 保持一致（去掉前面的 v）
+      - name: Sync version with tag
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          npm version $ver --no-git-tag-version --allow-same-version
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install client dependencies
+        run: cd client && npm ci
+
+      # electron-build = 先 build client，再 electron-builder --win --x64
+      # 若设置了 WIN_CSC_LINK，electron-builder 会自动签名；否则构建未签名包
+      - name: Build & package (Windows)
+        run: npm run electron-build
+        env:
+          # CI 在海外，改用 GitHub 官方源下载 electron 二进制（不影响本地开发）
+          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          # 发布到当前触发的 tag（如 v1.0.0），并自动生成更新日志
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist-electron/*.exe
+            dist-electron/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # macOS：构建 dmg + zip（x64 + arm64），可选 Apple 签名 + 公证
+  # 需要的 secrets（可选，不填则产物为未签名、未公证）：
+  #   MAC_CSC_LINK                  Apple 开发者证书 .p12 的 base64 或下载地址
+  #   MAC_CSC_KEY_PASSWORD          p12 导出密码
+  #   APPLE_ID                      苹果账号邮箱
+  #   APPLE_APP_SPECIFIC_PASSWORD   专用密码（appleid.apple.com 生成）
+  #   APPLE_TEAM_ID                 开发者团队 ID（10 位）
+  # ---------------------------------------------------------------------------
+  release-macos:
+    name: Build & Release (macOS)
+    runs-on: macos-latest
+    needs: release-windows   # 串行，避免两个 job 同时创建/写入同一个 Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sync version with tag
+        run: |
+          ver="${{ github.ref_name }}"
+          ver="${ver#v}"
+          npm version "$ver" --no-git-tag-version --allow-same-version
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install client dependencies
+        run: cd client && npm ci
+
+      # 先 build client，再打包 macOS 双架构；签名/公证由下面 env 控制
+      - name: Build & package (macOS)
+        run: npm run build && npx electron-builder --mac --x64 --arm64
+        env:
+          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
