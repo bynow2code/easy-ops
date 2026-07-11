@@ -47,8 +47,6 @@ jobs:
       - name: Build & package (Windows)
         run: npm run electron-build
         env:
-          # CI 在海外，改用 GitHub 官方源下载 electron 二进制（不影响本地开发）
-          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
@@ -103,7 +101,6 @@ jobs:
       - name: Build & package (macOS)
         run: npm run build && npx electron-builder --mac --x64 --arm64
         env:
-          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
