@@ -26,9 +26,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'npm'          # 缓存 npm，加速后续 npm ci
+          cache: 'npm'
 
-      # 让打出来的包版本号与 tag 保持一致（去掉前面的 v）
       - name: Sync version with tag
         shell: pwsh
         run: |
@@ -42,13 +41,20 @@ jobs:
         working-directory: client
         run: npm ci
 
-      # electron-build = 先 build client，再 electron-builder --win --x64
-      # 若设置了 WIN_CSC_LINK，electron-builder 会自动签名；否则构建未签名包
+      # 仅当 secret 真正存在时才注入签名变量，避免空字符串导致 electron-builder 报错
+      - name: Prepare signing env (Windows)
+        shell: pwsh
+        run: |
+          if ("${{ secrets.WIN_CSC_LINK }}") {
+            echo "CSC_LINK=${{ secrets.WIN_CSC_LINK }}" >> $env:GITHUB_ENV
+            echo "CSC_KEY_PASSWORD=${{ secrets.WIN_CSC_KEY_PASSWORD }}" >> $env:GITHUB_ENV
+            Write-Host "Signing enabled"
+          } else {
+            Write-Host "No WIN_CSC_LINK secret, building unsigned"
+          }
+
       - name: Build & package (Windows)
         run: npm run electron-build
-        env:
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -98,14 +104,21 @@ jobs:
         working-directory: client
         run: npm ci
 
+      - name: Prepare signing env (macOS)
+        run: |
+          if [ -n "${{ secrets.MAC_CSC_LINK }}" ]; then
+            echo "CSC_LINK=${{ secrets.MAC_CSC_LINK }}" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+            echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+            echo "Signing enabled"
+          else
+            echo "No MAC_CSC_LINK secret, building unsigned"
+          fi
+
       - name: Build & package (macOS)
         run: npm run build && npx electron-builder --mac --x64 --arm64
-        env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
