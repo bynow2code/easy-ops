@@ -25,7 +25,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          cache: 'npm'          # 缓存 npm，加速后续 npm ci
 
       # 让打出来的包版本号与 tag 保持一致（去掉前面的 v）
       - name: Sync version with tag
@@ -38,7 +39,8 @@ jobs:
         run: npm ci
 
       - name: Install client dependencies
-        run: cd client && npm ci
+        working-directory: client
+        run: npm ci
 
       # electron-build = 先 build client，再 electron-builder --win --x64
       # 若设置了 WIN_CSC_LINK，electron-builder 会自动签名；否则构建未签名包
@@ -54,7 +56,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          # 发布到当前触发的 tag（如 v1.0.0），并自动生成更新日志
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
@@ -75,7 +76,7 @@ jobs:
   release-macos:
     name: Build & Release (macOS)
     runs-on: macos-latest
-    needs: release-windows   # 串行，避免两个 job 同时创建/写入同一个 Release
+    needs: release-windows
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,7 +84,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          cache: 'npm'
 
       - name: Sync version with tag
         run: |
@@ -95,9 +97,9 @@ jobs:
         run: npm ci
 
       - name: Install client dependencies
-        run: cd client && npm ci
+        working-directory: client
+        run: npm ci
 
-      # 先 build client，再打包 macOS 双架构；签名/公证由下面 env 控制
       - name: Build & package (macOS)
         run: npm run build && npx electron-builder --mac --x64 --arm64
         env:
