@@ -20,11 +20,17 @@ const formatReleaseNotes = (notes) => {
   if (typeof notes === 'object') {
     return notes.notes || notes.note || notes.body || '';
   }
-  // 字符串：若为 XML / HTML 标记，去掉标签只保留纯文本
+  // 字符串：若含 HTML 标记，仅剥离危险/无关标签，保留 <a><strong><em><ul><li><br><p>
   let text = String(notes);
   if (/<[^>]+>/.test(text)) {
     text = text
-      .replace(/<[^>]+>/g, ' ')
+      .replace(/<(script|style|iframe|object|embed|form|input)[^>]*>[\s\S]*?<\/\1>/gi, '')   // 去掉危险容器
+      .replace(/<[^>]+>/g, (tag) => {
+        const t = tag.toLowerCase();
+        // 只保留这些安全标签，其余去掉（但保留标签内的文字）
+        if (/^<\/?(a|strong|b|em|i|u|ul|ol|li|br|p|h[1-6]|code|blockquote)\b/.test(t)) return tag;
+        return '';
+      })
       .replace(/\s{2,}/g, ' ')
       .trim();
   }
@@ -1098,7 +1104,12 @@ function App() {
                   <p>A new version <strong>v{updateInfo.version}</strong> is available.</p>
                   {(() => {
                     const notes = formatReleaseNotes(updateInfo.releaseNotes);
-                    return notes ? <pre className="update-notes">{notes.slice(0, 800)}</pre> : null;
+                    return notes ? (
+                      <div
+                        className="update-notes"
+                        dangerouslySetInnerHTML={{ __html: notes.slice(0, 2000) }}
+                      />
+                    ) : null;
                   })()}
                   <p className="update-hint">Do you want to download and install this update?</p>
                 </div>

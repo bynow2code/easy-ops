@@ -1179,9 +1179,30 @@ html, body, #root {
   border-radius: 4px;
   padding: 8px 10px;
   font-size: 12px;
-  white-space: pre-wrap;
+  line-height: 1.6;
   word-break: break-word;
   margin: 8px 0 4px;
+}
+
+/* 更新日志中的链接：可点击、蓝色、悬停下划线 */
+.update-notes a {
+  color: #1890ff;
+  text-decoration: none;
+}
+
+.update-notes a:hover {
+  text-decoration: underline;
+  color: #40a9ff;
+}
+
+.update-notes ul,
+.update-notes ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.update-notes li {
+  margin: 2px 0;
 }
 
 .update-error-text {
