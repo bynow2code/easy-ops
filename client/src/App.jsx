@@ -3,6 +3,34 @@ import axios from 'axios'
 import ShellEditor from './components/ShellEditor'
 import './App.css'
 
+// 统一格式化 electron-updater 返回的 release notes，兼容多种格式：
+// - 字符串（纯文本 / markdown / 偶发 XML）
+// - 数组（多版本累计更新，每项含 {version, notes}）
+// - 对象（含 notes / note / body 字段）
+const formatReleaseNotes = (notes) => {
+  if (!notes) return '';
+  // 数组：多版本累计，逐项提取 notes 文本并拼接
+  if (Array.isArray(notes)) {
+    return notes
+      .map((n) => (typeof n === 'string' ? n : (n && (n.notes || n.note || n.body)) || ''))
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  // 对象：取 notes 字段
+  if (typeof notes === 'object') {
+    return notes.notes || notes.note || notes.body || '';
+  }
+  // 字符串：若为 XML / HTML 标记，去掉标签只保留纯文本
+  let text = String(notes);
+  if (/<[^>]+>/.test(text)) {
+    text = text
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  return text;
+};
+
 function App() {
   const [scripts, setScripts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
@@ -1061,9 +1089,10 @@ function App() {
               {updateState === 'available' && (
                 <div>
                   <p>A new version <strong>v{updateInfo.version}</strong> is available.</p>
-                  {updateInfo.releaseNotes && (
-                    <pre className="update-notes">{String(updateInfo.releaseNotes).slice(0, 800)}</pre>
-                  )}
+                  {(() => {
+                    const notes = formatReleaseNotes(updateInfo.releaseNotes);
+                    return notes ? <pre className="update-notes">{notes.slice(0, 800)}</pre> : null;
+                  })()}
                   <p className="update-hint">Downloading update…</p>
                 </div>
               )}
