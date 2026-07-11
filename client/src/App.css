@@ -30,7 +30,7 @@ html, body, #root {
 .header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 8px;
   padding-bottom: 8px;
   border-bottom: 1px solid #e0e0e0;
@@ -38,63 +38,90 @@ html, body, #root {
 
 .header-left {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
 }
 
 .header-right {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  padding-top: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 
 .header h1 {
   font-size: 16px;
   color: #333;
-  margin-bottom: 4px;
+  margin: 0;
 }
 
-.system-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 4px;
-}
-
-.info-row {
-  display: flex;
+/* BASH 徽标：仅保留徽标，悬停显示完整 shell 路径与版本 */
+.bash-indicator {
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+}
+
+.bash-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  max-width: 380px;
+  background-color: #1f1f1f;
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 6px;
   font-size: 11px;
-  color: #666;
+  line-height: 1.5;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* 小三角指向徽标 */
+.bash-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 14px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid #1f1f1f;
+}
+
+.bash-indicator:hover .bash-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.bash-tooltip-path {
+  font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
+  word-break: break-all;
+}
+
+.bash-tooltip-version {
+  margin-top: 2px;
+  color: #bae0ff;
 }
 
 .info-badge {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 2px 8px;
   background-color: #e6f7ff;
   color: #1890ff;
+  border: 1px solid #91d5ff;
   border-radius: 8px;
   font-weight: 600;
   font-size: 11px;
   flex-shrink: 0;
-}
-
-.info-path {
-  font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
-  font-size: 11px;
-  color: #444;
-  background: #f0f0f0;
-  padding: 1px 6px;
-  border-radius: 3px;
-  word-break: break-all;
-}
-
-.info-version {
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 10px;
-  color: #999;
-  padding-left: 2px;
+  cursor: default;
 }
 
 .header-actions {
@@ -525,6 +552,16 @@ html, body, #root {
   .header-actions {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .header-left {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .scripts-table th,
@@ -1029,4 +1066,87 @@ html, body, #root {
   margin-bottom: 12px;
   color: #ff4d4f;
   font-size: 13px;
+}
+
+/* ==================== 自动更新（检查更新按钮 / 弹窗） ==================== */
+/* 检查更新：小图标按钮，风格与 BASH 徽标保持一致（Ant Design 蓝） */
+.header-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.header-icon-btn:hover {
+  background-color: #bae0ff;
+  border-color: #4096ff;
+  color: #096dd9;
+}
+
+.update-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background-color: #ff4d4f;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.update-body {
+  margin: 12px 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.update-hint {
+  color: #888;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.update-notes {
+  max-height: 200px;
+  overflow: auto;
+  background-color: #f5f5f5;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 8px 0 4px;
+}
+
+.update-error-text {
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.update-progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.update-progress-fill {
+  height: 100%;
+  background-color: #4096ff;
+  transition: width 0.2s ease;
 }

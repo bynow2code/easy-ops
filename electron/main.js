@@ -203,6 +203,71 @@ ipcMain.on('show-notification', (event, { title, body, single }) => {
   processNotifQueue();
 });
 
+// ==================== 自动更新（electron-updater，读取 GitHub Releases） ====================
+// 仅在打包后的生产环境启用：开发模式下不检查更新，避免无谓的网络请求与报错
+const initAutoUpdater = () => {
+  if (!app.isPackaged) {
+    log('Auto updater disabled in dev mode');
+    return;
+  }
+
+  const { autoUpdater } = require('electron-updater');
+
+  // 发现新版本后自动下载（自动升级的第一步）
+  autoUpdater.autoDownload = true;
+  // 用户关闭应用时自动完成安装
+  autoUpdater.autoInstallOnAppQuit = true;
+  // 从 GitHub Releases 拉取更新（仓库为公开仓库，无需 token）
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'bynow2code',
+    repo: 'easy-ops'
+  });
+
+  // 把更新事件统一转发给渲染进程
+  const send = (payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-event', payload);
+    }
+  };
+
+  autoUpdater.on('checking-for-update', () => send({ type: 'checking' }));
+  autoUpdater.on('update-available', (info) =>
+    send({ type: 'available', version: info.version, releaseNotes: info.releaseNotes || '' })
+  );
+  autoUpdater.on('update-not-available', (info) =>
+    send({ type: 'not-available', version: info.version })
+  );
+  autoUpdater.on('download-progress', (p) =>
+    send({ type: 'downloading', percent: Math.round(p.percent || 0), transferred: p.transferred, total: p.total })
+  );
+  autoUpdater.on('update-downloaded', (info) =>
+    send({ type: 'downloaded', version: info.version })
+  );
+  autoUpdater.on('error', (err) =>
+    send({ type: 'error', message: err && err.message ? err.message : String(err) })
+  );
+
+  // 手动检查更新（前端「检查更新」按钮触发）
+  ipcMain.handle('app:check-updates', async () => {
+    try {
+      await autoUpdater.checkForUpdates();
+    } catch (e) {
+      log(`checkForUpdates failed: ${e.message}`);
+    }
+  });
+
+  // 下载完成后，由前端「重启并更新」按钮调用，退出并安装
+  ipcMain.handle('app:start-update', () => {
+    autoUpdater.quitAndInstall();
+  });
+
+  // 启动后静默检查一次（延迟 3 秒，避免拖慢首屏）
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((e) => log(`initial check failed: ${e.message}`));
+  }, 3000);
+};
+
 // ==================== 启动应用 ====================
 
 app.whenReady().then(async () => {
@@ -210,6 +275,7 @@ app.whenReady().then(async () => {
   try {
     const port = await startBackend();
     createWindow(port);
+    initAutoUpdater(); // 窗口建好后再启动更新检查
   } catch (err) {
     log(`Failed to start: ${err.message}`);
     app.quit();

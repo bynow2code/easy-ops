@@ -33,6 +33,15 @@ function App() {
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
 
+  // ==================== 自动更新相关状态 ====================
+  const [appVersion, setAppVersion] = useState('')
+  const [showUpdateModal, setShowUpdateModal] = useState(false)
+  // idle | checking | available | not-available | downloading | downloaded | error
+  const [updateState, setUpdateState] = useState('idle')
+  const [updateInfo, setUpdateInfo] = useState({ version: '', releaseNotes: '' })
+  const [updateProgress, setUpdateProgress] = useState(0)
+  const [updateError, setUpdateError] = useState('')
+
   // 使用 callback ref 绑定滚动监听，确保 DOM 挂载时 100% 就绪
   const setOutputsScrollRef = useCallback((el) => {
     // 清理旧元素上的监听器
@@ -88,6 +97,46 @@ function App() {
       clearInterval(timer)
       Object.values(eventSourceRefs.current).forEach(es => es.close())
     }
+  }, [])
+
+  // ==================== 自动更新：获取版本号 + 订阅主进程事件 ====================
+  useEffect(() => {
+    if (window.electronAPI?.getAppInfo) {
+      window.electronAPI.getAppInfo()
+        .then(info => setAppVersion(info.version))
+        .catch(() => {})
+    }
+    if (!window.electronAPI?.onUpdateEvent) return
+    const unsub = window.electronAPI.onUpdateEvent((data) => {
+      switch (data.type) {
+        case 'checking':
+          setUpdateState('checking')
+          setUpdateError('')
+          break
+        case 'available':
+          setUpdateState('available')
+          setUpdateInfo({ version: data.version, releaseNotes: data.releaseNotes || '' })
+          break
+        case 'not-available':
+          setUpdateState('not-available')
+          break
+        case 'downloading':
+          setUpdateState('downloading')
+          setUpdateProgress(data.percent || 0)
+          break
+        case 'downloaded':
+          setUpdateState('downloaded')
+          setUpdateInfo(prev => ({ ...prev, version: data.version || prev.version }))
+          break
+        case 'error':
+          setUpdateState('error')
+          setUpdateError(data.message || '未知错误')
+          break
+        default:
+          break
+      }
+    })
+    return unsub
   }, [])
 
   // 监听用户滚动事件
@@ -640,6 +689,23 @@ function App() {
     return `${hours}h`
   }
 
+  // ==================== 自动更新：交互处理 ====================
+  const handleCheckUpdates = () => {
+    setShowUpdateModal(true)
+    setUpdateError('')
+    if (updateState !== 'downloaded') setUpdateState('checking')
+    if (window.electronAPI?.checkForUpdates) {
+      window.electronAPI.checkForUpdates().catch(() => {
+        setUpdateState('error')
+        setUpdateError('Running in dev mode. Auto-update only works in packaged builds.')
+      })
+    }
+  }
+
+  const handleStartUpdate = () => {
+    if (window.electronAPI?.startUpdate) window.electronAPI.startUpdate()
+  }
+
   return (
     <div className="app-container">
       <header className="header">
@@ -666,20 +732,30 @@ function App() {
         </div>
         <div className="header-right">
           {systemInfo && (
-            <div className="system-info">
-              <div className="info-row">
-                <span className="info-badge">
-                  {systemInfo.shell.type === 'bash' ? 'BASH' : systemInfo.shell.type.toUpperCase()}
-                </span>
-                <span className="info-path">{systemInfo.shell.fullPath || systemInfo.shell.command}</span>
+            <div className="bash-indicator">
+              <span className="info-badge" title="Detected shell environment">
+                {systemInfo.shell.type === 'bash' ? 'BASH' : systemInfo.shell.type.toUpperCase()}
+              </span>
+              <div className="bash-tooltip">
+                <div className="bash-tooltip-path">{systemInfo.shell.fullPath || systemInfo.shell.command}</div>
+                {systemInfo.shell.version && (
+                  <div className="bash-tooltip-version">{systemInfo.shell.version}</div>
+                )}
               </div>
-              {systemInfo.shell.version && (
-                <div className="info-row">
-                  <span className="info-version">{systemInfo.shell.version}</span>
-                </div>
-              )}
             </div>
           )}
+          <button
+            className="header-icon-btn"
+            onClick={handleCheckUpdates}
+            title="Check for updates"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {updateState === 'downloaded' && <span className="update-badge">!</span>}
+          </button>
         </div>
       </header>
 
@@ -968,6 +1044,55 @@ function App() {
               <button type="button" onClick={confirmDeleteScript} className="btn btn-delete">
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpdateModal && (
+        <div className="modal-overlay" onClick={() => setShowUpdateModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>Check for Updates</h2>
+            <div className="update-body">
+              {updateState === 'idle' && <p>Click below to check for the latest version.</p>}
+              {updateState === 'checking' && <p>Checking for updates…</p>}
+              {updateState === 'not-available' && <p>You're on the latest version (v{appVersion}).</p>}
+              {updateState === 'available' && (
+                <div>
+                  <p>A new version <strong>v{updateInfo.version}</strong> is available.</p>
+                  {updateInfo.releaseNotes && (
+                    <pre className="update-notes">{String(updateInfo.releaseNotes).slice(0, 800)}</pre>
+                  )}
+                  <p className="update-hint">Downloading update…</p>
+                </div>
+              )}
+              {updateState === 'downloading' && (
+                <div>
+                  <p>Downloading update: {updateProgress}%</p>
+                  <div className="update-progress-bar">
+                    <div className="update-progress-fill" style={{ width: `${updateProgress}%` }} />
+                  </div>
+                </div>
+              )}
+              {updateState === 'downloaded' && (
+                <div>
+                  <p>Update downloaded (v{updateInfo.version}).</p>
+                  <p className="update-hint">Restart the app to apply the update.</p>
+                </div>
+              )}
+              {updateState === 'error' && (
+                <div>
+                  <p className="update-error-text">Update check failed:</p>
+                  <pre className="update-notes">{updateError}</pre>
+                </div>
+              )}
+            </div>
+            <div className="form-actions">
+              {updateState === 'downloaded' ? (
+                <button className="btn btn-primary" onClick={handleStartUpdate}>Restart &amp; Update</button>
+              ) : (
+                <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Close</button>
+              )}
             </div>
           </div>
         </div>

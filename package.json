@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "EasyOps - Script Manager Desktop App",
   "main": "electron/main.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bynow2code/easy-ops.git"
+  },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node server/index.js",
@@ -19,6 +23,9 @@
     "concurrently": "^8.2.2",
     "electron": "^28.3.3",
     "electron-builder": "^23.3.2"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "build": {
     "appId": "com.easyops.app",

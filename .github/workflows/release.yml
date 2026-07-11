@@ -86,9 +86,12 @@ jobs:
           fail_on_unmatched_files: true
           # 要上传到 Release 的文件（支持通配符）
           # .exe = nsis 安装包；.zip = 便携压缩包
+          # latest.yml / *.blockmap = electron-updater 自动更新所需的元数据与增量更新信息
           files: |
             dist-electron/*.exe
             dist-electron/*.zip
+            dist-electron/latest.yml
+            dist-electron/*.blockmap
         env:
           # Release 操作同样需要写入权限的 token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -156,8 +159,11 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           # .dmg = macOS 磁盘镜像安装包；.zip = 便携压缩包
+          # latest-mac.yml = electron-updater 在 macOS 上定位更新所需的元数据
           files: |
             dist-electron/*.dmg
             dist-electron/*.zip
+            dist-electron/latest-mac.yml
+            dist-electron/*.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
