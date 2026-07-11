@@ -21,10 +21,20 @@ const showFatal = (title, detail) => {
 };
 
 // 捕获主进程未处理的异常 / Promise 拒绝，转成可见弹窗（否则进程直接退出 = 闪退）
+// 注意：更新相关的网络/下载错误（404、ECONNREFUSED 等）已在 update modal 中展示，
+//       此处过滤掉，避免重复弹窗干扰用户
+const isUpdateRelatedError = (reason) => {
+  const msg = (reason && reason.message) || String(reason);
+  return /Cannot download|update|release|status\s*\d{3}|net::|ECONNREFUSED|ETIMEDOUT/i.test(msg);
+};
 process.on('uncaughtException', (err) => {
   showFatal('未捕获异常', err && err.stack ? err.stack : String(err));
 });
 process.on('unhandledRejection', (reason) => {
+  if (isUpdateRelatedError(reason)) {
+    log(`[UPDATE-REJECTION] ${String(reason)}`);
+    return;
+  }
   showFatal('未处理的 Promise 拒绝', reason && reason.stack ? reason.stack : String(reason));
 });
 

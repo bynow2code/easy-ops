@@ -70,6 +70,7 @@
         "nsis",
         "zip"
       ],
+      "artifactName": "${productName}-Setup-${version}.${ext}",
       "icon": "client/public/logo.png"
     },
     "nsis": {

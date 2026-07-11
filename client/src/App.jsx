@@ -1051,8 +1051,8 @@ function App() {
       )}
 
       {showUpdateModal && (
-        <div className="modal-overlay" onClick={() => setShowUpdateModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             <h2>Check for Updates</h2>
             <div className="update-body">
               {updateState === 'idle' && <p>Click below to check for the latest version.</p>}
