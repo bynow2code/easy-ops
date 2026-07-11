@@ -730,6 +730,13 @@ function App() {
     }
   }
 
+  // 用户在弹窗里确认更新后，开始下载
+  const handleDownloadUpdate = () => {
+    setUpdateProgress(0)
+    setUpdateState('downloading')
+    if (window.electronAPI?.downloadUpdate) window.electronAPI.downloadUpdate()
+  }
+
   const handleStartUpdate = () => {
     if (window.electronAPI?.startUpdate) window.electronAPI.startUpdate()
   }
@@ -1093,7 +1100,7 @@ function App() {
                     const notes = formatReleaseNotes(updateInfo.releaseNotes);
                     return notes ? <pre className="update-notes">{notes.slice(0, 800)}</pre> : null;
                   })()}
-                  <p className="update-hint">Downloading update…</p>
+                  <p className="update-hint">Do you want to download and install this update?</p>
                 </div>
               )}
               {updateState === 'downloading' && (
@@ -1120,6 +1127,11 @@ function App() {
             <div className="form-actions">
               {updateState === 'downloaded' ? (
                 <button className="btn btn-primary" onClick={handleStartUpdate}>Restart &amp; Update</button>
+              ) : updateState === 'available' ? (
+                <>
+                  <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Later</button>
+                  <button className="btn btn-primary" onClick={handleDownloadUpdate}>Download &amp; Update</button>
+                </>
               ) : (
                 <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Close</button>
               )}

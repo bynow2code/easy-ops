@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 手动检查更新（主进程调用 electron-updater.checkForUpdates）
   checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),
 
+  // 用户确认更新后，开始下载新版本
+  downloadUpdate: () => ipcRenderer.invoke('app:download-update'),
+
   // 下载完成后，退出并安装更新
   startUpdate: () => ipcRenderer.invoke('app:start-update'),
 

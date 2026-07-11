@@ -285,8 +285,8 @@ const initAutoUpdater = () => {
     return;
   }
 
-  // 发现新版本后自动下载（自动升级的第一步）
-  autoUpdater.autoDownload = true;
+  // 发现新版本后【不】自动下载：先把版本与更新内容展示给用户，用户确认后再下载
+  autoUpdater.autoDownload = false;
   // 用户关闭应用时自动完成安装
   autoUpdater.autoInstallOnAppQuit = true;
   // 从 GitHub Releases 拉取更新（仓库为公开仓库，无需 token）
@@ -326,6 +326,16 @@ const initAutoUpdater = () => {
       await autoUpdater.checkForUpdates();
     } catch (e) {
       log(`checkForUpdates failed: ${e.message}`);
+    }
+  });
+
+  // 用户在弹窗里确认更新后，由前端调用，开始下载新版本
+  ipcMain.handle('app:download-update', async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch (e) {
+      log(`downloadUpdate failed: ${e.message}`);
+      send({ type: 'error', message: e && e.message ? e.message : String(e) });
     }
   });
 
