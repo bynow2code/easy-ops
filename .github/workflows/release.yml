@@ -32,13 +32,15 @@ jobs:
     steps:
       # 步骤1：将代码仓库克隆到虚拟机中
       - name: 检出代码仓库
-        # 使用 GitHub 官方的 checkout Action 来获取代码
-        uses: actions/checkout@v4
+        # 使用 GitHub 官方的 checkout Action（v5，原生支持 Node.js 24 运行时）
+        uses: actions/checkout@v5
 
       # 步骤2：在虚拟机中安装 Node.js 环境
       - name: 设置 Node.js 环境
-        # 使用 GitHub 官方的 setup-node Action 来安装 Node.js
-        uses: actions/setup-node@v4
+        # 使用 GitHub 官方的 setup-node Action（v5，原生支持 Node.js 24 运行时）
+        # ⚠️ v5 breaking change：当 package.json 含 packageManager 字段时会自动启用缓存
+        #    我们显式指定了 cache: 'npm'，所以不受影响
+        uses: actions/setup-node@v5
         with:
           # 指定要安装的 Node.js 版本
           node-version: 24
@@ -75,8 +77,8 @@ jobs:
 
       # 步骤7：在 GitHub 上创建 Release 并上传安装包
       - name: 创建 GitHub Release
-        # 使用第三方 Action 自动创建 Release 并上传产物
-        uses: softprops/action-gh-release@v2
+        # 使用第三方 Action 自动创建 Release 并上传产物（v3，原生支持 Node.js 24 运行时）
+        uses: softprops/action-gh-release@v3
         # 仅当前面步骤都成功时才发布
         if: success()
         with:
@@ -103,8 +105,10 @@ jobs:
     # 作业名称
     name: 构建并发布 macOS ${{ github.ref_name }}
 
-    # 运行作业的机器类型（使用 GitHub 托管的 macOS 最新版虚拟机）
-    runs-on: macos-latest
+    # 运行作业的机器类型
+    # 使用 macOS 26 (Tahoe) 镜像——GitHub 已于 2026-06-15 起
+    # 将 macos-latest 默认标签从此处迁移至 macOS 26，显式指定可消除弃用警告
+    runs-on: macos-26
 
     # 串行依赖：等 Windows 作业完成后才开始
     # 原因：两个作业都会往同一个 tag 的 Release 写文件，并行可能冲突，串行最稳妥
@@ -118,11 +122,12 @@ jobs:
     steps:
       # 步骤1：检出代码
       - name: 检出代码仓库
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # 步骤2：安装 Node.js
       - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
+        # v5：原生支持 Node.js 24；显式 cache: 'npm' 覆盖 v5 的自动缓存行为
+        uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: 'npm'
@@ -153,7 +158,7 @@ jobs:
 
       # 步骤7：上传到同一个 Release
       - name: 创建 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: success()
         with:
           generate_release_notes: true

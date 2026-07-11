@@ -1,10 +1,32 @@
-const { app, BrowserWindow, ipcMain, shell, Menu, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { fork } = require('child_process');
 
 let mainWindow = null;
 let backendProcess = null;
+
+// 致命错误统一处理：写日志 + 弹窗，避免「打开即静默闪退」看不到原因
+const showFatal = (title, detail) => {
+  log(`[FATAL] ${title}: ${detail}`);
+  let logPathHint = '';
+  try {
+    logPathHint = `\n\n日志已保存，可在以下路径查看详情：\n${path.join(app.getPath('userData'), 'logs', 'main.log')}`;
+  } catch (e) {
+    logPathHint = '\n\n（无法定位日志目录，请检查应用数据目录下的 logs/main.log）';
+  }
+  try {
+    dialog.showErrorBox(`EasyOps 启动失败 - ${title}`, `${detail}${logPathHint}`);
+  } catch (e) {}
+};
+
+// 捕获主进程未处理的异常 / Promise 拒绝，转成可见弹窗（否则进程直接退出 = 闪退）
+process.on('uncaughtException', (err) => {
+  showFatal('未捕获异常', err && err.stack ? err.stack : String(err));
+});
+process.on('unhandledRejection', (reason) => {
+  showFatal('未处理的 Promise 拒绝', reason && reason.stack ? reason.stack : String(reason));
+});
 
 // 设置应用名称，确保系统通知显示 "EasyOps" 而非 "electron.app"
 app.setName('EasyOps')
@@ -126,6 +148,18 @@ const createWindow = (port) => {
   mainWindow.loadURL(url);
   log(`Window loaded with URL: ${url}`);
 
+  // 加载失败（如后端没起来、端口不通）时记录，便于排查白屏/闪退
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    log(`[did-fail-load] code=${errorCode} desc=${errorDescription} url=${url}`);
+    showFatal('页面加载失败', `无法加载 ${url}\n错误码: ${errorCode}\n${errorDescription}\n\n请确认后端服务是否正常启动（查看 main.log）。`);
+  });
+
+  // 渲染进程意外崩溃 / 假死时给出提示，而不是默默消失
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    log(`[render-process-gone] reason=${details.reason}`);
+    showFatal('渲染进程崩溃', `原因: ${details.reason}`);
+  });
+
   if (isDev) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
@@ -140,6 +174,10 @@ const createWindow = (port) => {
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
+  // 不是静默退出，而是提示用户已有实例在运行，避免「双击一下就没了」
+  try {
+    dialog.showErrorBox('EasyOps 已在运行', '检测到另一个 EasyOps 实例正在运行，请先关闭后再启动。');
+  } catch (e) {}
   app.quit();
 } else {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
@@ -211,7 +249,15 @@ const initAutoUpdater = () => {
     return;
   }
 
-  const { autoUpdater } = require('electron-updater');
+  // 防御性加载：若 electron-updater 未正确打包，仅记录日志并退出本函数，
+  // 绝不让 require 抛错导致整个应用闪退
+  let autoUpdater;
+  try {
+    autoUpdater = require('electron-updater').autoUpdater;
+  } catch (e) {
+    log(`Auto updater unavailable: ${e.message}`);
+    return;
+  }
 
   // 发现新版本后自动下载（自动升级的第一步）
   autoUpdater.autoDownload = true;
@@ -277,7 +323,7 @@ app.whenReady().then(async () => {
     createWindow(port);
     initAutoUpdater(); // 窗口建好后再启动更新检查
   } catch (err) {
-    log(`Failed to start: ${err.message}`);
-    app.quit();
+    showFatal('启动失败', err && err.stack ? err.stack : err.message);
+    setTimeout(() => app.quit(), 500); // 留时间让弹窗显示
   }
 });

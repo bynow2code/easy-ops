@@ -35,8 +35,7 @@
     },
     "files": [
       "electron/**/*",
-      "package.json",
-      "!node_modules/**/*"
+      "package.json"
     ],
     "extraResources": [
       {

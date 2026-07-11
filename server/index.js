@@ -9,7 +9,9 @@ const app = express();
 const DEFAULT_PORT = 3001;
 const PORT_RANGE_START = 3001;
 const PORT_RANGE_END = 3100;
-const PORT_FILE = path.join(__dirname, 'port.txt');
+// ⚠️ 不能写 __dirname（打包后在 Program Files\...\resources\server 下，普通用户无写权限会直接崩）
+// 改为写到系统临时目录，跨平台可写
+const PORT_FILE = path.join(require('os').tmpdir(), 'easyops-port.txt');
 
 // 决定脚本数据文件存储位置：Electron 打包后使用用户数据目录，避免写入只读安装目录
 const resolveDataFile = () => {
@@ -538,7 +540,11 @@ const startServer = async () => {
     console.log(`Warning: Port ${DEFAULT_PORT} is in use, using port ${port} instead`);
   }
 
-  fs.writeFileSync(PORT_FILE, port.toString());
+  try {
+    fs.writeFileSync(PORT_FILE, port.toString());
+  } catch (e) {
+    console.error('[Server] Warning: could not write port file:', e.message);
+  }
 
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);
