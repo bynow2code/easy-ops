@@ -24,6 +24,10 @@ const normalizeReleaseNotes = (notes) => {
   return String(notes);
 };
 
+// 路径用于界面展示时转义空格（如 ~/Library/Application\ Support/...），
+// 与终端书写一致，避免长路径在含空格处被换行割裂，也方便直接复制到 shell 使用。
+const escapePathForShell = (p) => (p || '').replace(/ /g, '\\ ');
+
 function App() {
   const [scripts, setScripts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
@@ -174,42 +178,59 @@ function App() {
 
   // 记录每个输出容器最近一次「真实用户交互」的时间戳（滚轮/触摸/拖动滚动条/按键）
   const userInteractRef = useRef({})
+  // 记录每个输出容器当前的滚动位置，重排/重渲染后用于还原，避免滚动条被重置到起始位置
+  const scrollPositions = useRef({})
   const markUserInteract = useCallback((id) => {
     userInteractRef.current[id] = Date.now()
   }, [])
 
   // 监听用户滚动事件
   const handleOutputScroll = useCallback((id, e) => {
+    const el = e.target
+    // 先记录最新滚动位置，供重渲染后还原
+    scrollPositions.current[id] = el.scrollTop
     // 仅当用户近期有真实交互时，才依据滚动位置更新「是否自动跟随」。
     // 否则（如列表重排导致 scrollTop 被浏览器重置为 0、或程序自动滚动触发的 scroll 事件）
     // 会被误判为「用户上滚」，从而永久关闭自动跟随、滚动条停在起始位置。
     const last = userInteractRef.current[id] || 0
     if (Date.now() - last > 400) return
-    const el = e.target
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20
     userScrolledUp.current[id] = !isAtBottom
   }, [])
 
-  // 每当 outputs 变化后，如果用户没有手动向上滚动，自动滚动到最新内容
+  // 每当 outputs 变化后：正在运行且未手动上滚的，自动追踪最新内容；
+  // 其它（已完成 / 用户已上滚）的，还原重排前记录的滚动位置，避免滚动条归零。
   useLayoutEffect(() => {
-    Object.keys(outputs).forEach(id => {
+    const follow = (id, el) => {
+      // 先立即贴底（layout 阶段）
+      el.scrollTop = el.scrollHeight
+      // 长文本（尤其是 word-break:break-all 的换行）可能在绘制后才完成最终布局，
+      // 导致本次测量的 scrollHeight 偏小、滚动条偶尔差几像素不到底部。
+      // 下一帧再补一次贴底，确保严格到底。
+      requestAnimationFrame(() => {
+        const out = outputs[id]
+        if (out && out.live && !userScrolledUp.current[id] && el.isConnected) {
+          el.scrollTop = el.scrollHeight
+        }
+      })
+    }
+    const restore = (id, el) => {
       const out = outputs[id]
       if (out && out.live && !userScrolledUp.current[id]) {
-        const el = outputRefs.current[id]
-        if (el) {
-          el.scrollTop = el.scrollHeight
-        }
+        follow(id, el)
+      } else {
+        const saved = scrollPositions.current[id]
+        if (typeof saved === 'number') el.scrollTop = saved
       }
+    }
+    Object.keys(outputs).forEach(id => {
+      const el = outputRefs.current[id]
+      if (el) restore(id, el)
     })
-    // 大窗口也自动追踪最新内容
+    // 大窗口也自动追踪 / 还原
     if (maximizedScriptId) {
-      const out = outputs[maximizedScriptId]
-      if (out && out.live && !userScrolledUp.current[maximizedScriptId]) {
-        const el = maximizedOutputRef.current
-        if (el) {
-          el.scrollTop = el.scrollHeight
-        }
-      }
+      const el = maximizedOutputRef.current
+      if (el) restore(maximizedScriptId, el)
     }
   }, [outputs, maximizedScriptId])
 
@@ -1302,7 +1323,7 @@ function App() {
                   <div className="info-row">
                     <label>Scripts Config</label>
                     <div className="info-path">
-                      <span className="info-path-text">{appInfo.scriptsConfigPath}</span>
+                      <span className="info-path-text">{escapePathForShell(appInfo.scriptsConfigPath)}</span>
                       <button
                         className="btn btn-copy"
                         onClick={() => navigator.clipboard.writeText(appInfo.scriptsConfigPath)}
@@ -1314,7 +1335,7 @@ function App() {
                   <div className="info-row">
                     <label>Log File</label>
                     <div className="info-path">
-                      <span className="info-path-text">{appInfo.logFilePath}</span>
+                      <span className="info-path-text">{escapePathForShell(appInfo.logFilePath)}</span>
                       <button
                         className="btn btn-copy"
                         onClick={() => navigator.clipboard.writeText(appInfo.logFilePath)}

@@ -1294,13 +1294,15 @@ html, body, #root {
   border-radius: 4px;
   padding: 6px 8px;
   font-size: 12px;
-  word-break: break-all;
 }
 
 .info-path-text {
   flex: 1;
+  min-width: 0;
   font-family: monospace;
   color: #333;
+  white-space: nowrap;
+  overflow-x: auto;
 }
 
 .btn-copy {
