@@ -178,7 +178,7 @@ html, body, #root {
   background-color: #e8e8e8;
 }
 
-交互问题.btn-locate {
+.btn-locate {
   background-color: #13c2c2;
   color: white;
   padding: 3px 8px;
@@ -343,7 +343,6 @@ html, body, #root {
 
 .outputs-container {
   margin-top: 10px;
-  padding-top: 8px;
 }
 
 .outputs-container h2 {
@@ -362,13 +361,13 @@ html, body, #root {
 }
 
 .output-panel.highlight {
-  animation: panel-flash 2s ease;
+  animation: panel-flash 3s ease;
 }
 
 @keyframes panel-flash {
-  0% { outline: 3px solid rgba(19, 194, 194, 0.6); outline-offset: 2px; }
-  30% { outline: 3px solid rgba(19, 194, 194, 0.6); outline-offset: 2px; }
-  100% { outline: 3px solid rgba(19, 194, 194, 0); outline-offset: 2px; }
+  0% { outline: 3px solid rgba(19, 194, 194, 0.6); }
+  30% { outline: 3px solid rgba(19, 194, 194, 0.6); }
+  100% { outline: 3px solid rgba(19, 194, 194, 0); }
 }
 
 .output-header {
@@ -767,7 +766,7 @@ html, body, #root {
   gap: 10px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 12px 12px 12px;
+  padding: 8px 12px 12px 12px;
   min-height: 0;
 }
 

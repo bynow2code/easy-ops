@@ -380,7 +380,7 @@ function App() {
         const panel = outputPanelRefs.current[id]
         if (panel) {
           panel.classList.add('highlight')
-          setTimeout(() => panel.classList.remove('highlight'), 2100)
+          setTimeout(() => panel.classList.remove('highlight'), 3100)
         }
       }
     }
@@ -437,7 +437,7 @@ function App() {
     Object.values(outputPanelRefs.current).forEach(p => p.classList.remove('highlight'))
 
     panel.classList.add('highlight')
-    setTimeout(() => panel.classList.remove('highlight'), 2100)
+    setTimeout(() => panel.classList.remove('highlight'), 3100)
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
