@@ -54,46 +54,30 @@ jobs:
           $ver = "${{ github.ref_name }}".TrimStart('v')
           npm version $ver --no-git-tag-version --allow-same-version
 
-      # 缓存 client/node_modules，基于 client/package-lock.json 的 hash
-      - name: 缓存前端依赖
+      - name: 缓存 electron-builder（Electron 二进制等）
         uses: actions/cache@v5
         with:
-          path: client/node_modules
-          key: client-npm-${{ runner.os }}-${{ hashFiles('client/package-lock.json') }}
-          restore-keys: client-npm-${{ runner.os }}-
-
-      # 缓存 server/node_modules
-      - name: 缓存后端依赖
-        uses: actions/cache@v5
-        with:
-          path: server/node_modules
-          key: server-npm-${{ runner.os }}-${{ hashFiles('server/package-lock.json') }}
-          restore-keys: server-npm-${{ runner.os }}-
-
-      # 缓存 electron-builder 下载的 Electron 二进制文件
-      - name: 缓存 Electron 二进制
-        uses: actions/cache@v5
-        with:
-          path: ${{ runner.temp }}/electron
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-${{ runner.os }}-
+          path: |
+            ~/AppData/Local/electron-builder/Cache
+            ~/AppData/Local/electron/Cache
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-${{ runner.os }}-
 
       - name: 安装根目录依赖
         run: npm ci
 
       - name: 安装前端依赖
         working-directory: client
-        run: npm ci --prefer-offline
+        run: npm ci
 
       - name: 安装后端依赖
         working-directory: server
-        run: npm ci --prefer-offline
+        run: npm ci
 
       - name: 构建并打包 Windows 安装包
         run: npm run electron-build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ELECTRON_CACHE: ${{ runner.temp }}/electron
 
       - name: 上传 Windows 产物到 Release
         uses: softprops/action-gh-release@v3
@@ -133,37 +117,25 @@ jobs:
           ver="${ver#v}"
           npm version "$ver" --no-git-tag-version --allow-same-version
 
-      - name: 缓存前端依赖
+      - name: 缓存 electron-builder（Electron 二进制等）
         uses: actions/cache@v5
         with:
-          path: client/node_modules
-          key: client-npm-${{ runner.os }}-${{ hashFiles('client/package-lock.json') }}
-          restore-keys: client-npm-${{ runner.os }}-
-
-      - name: 缓存后端依赖
-        uses: actions/cache@v5
-        with:
-          path: server/node_modules
-          key: server-npm-${{ runner.os }}-${{ hashFiles('server/package-lock.json') }}
-          restore-keys: server-npm-${{ runner.os }}-
-
-      - name: 缓存 Electron 二进制
-        uses: actions/cache@v5
-        with:
-          path: ~/Library/Caches/electron
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-${{ runner.os }}-
+          path: |
+            ~/Library/Caches/electron-builder
+            ~/Library/Caches/electron
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-${{ runner.os }}-
 
       - name: 安装根目录依赖
         run: npm ci
 
       - name: 安装前端依赖
         working-directory: client
-        run: npm ci --prefer-offline
+        run: npm ci
 
       - name: 安装后端依赖
         working-directory: server
-        run: npm ci --prefer-offline
+        run: npm ci
 
       - name: 构建并打包 macOS 安装包
         run: npm run build && npx electron-builder --mac --x64 --arm64
