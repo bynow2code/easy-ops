@@ -899,6 +899,7 @@ function App() {
                           <input
                             type="checkbox"
                             checked={scripts.every(s => selectedIds.includes(s.id)) && scripts.length > 0}
+                            disabled={scripts.some(s => executingIds[s.id] || batchRunningIds[s.id])}
                             onChange={() => {
                               const allIds = scripts.map(s => s.id)
                               const allSelected = allIds.every(id => selectedIds.includes(id))
@@ -946,6 +947,7 @@ function App() {
                               <input
                                 type="checkbox"
                                 checked={selectedIds.includes(script.id)}
+                                disabled={isRunning}
                                 onChange={() => toggleSelect(script.id)}
                               />
                             </td>
@@ -1226,7 +1228,7 @@ function App() {
                 </div>
               )}
             </div>
-            <div className="form-actions">
+            <div className={updateState === 'downloaded' || updateState === 'available' ? 'form-actions' : 'form-actions form-actions-center'}>
               {updateState === 'downloaded' ? (
                 <>
                   <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Later</button>

@@ -260,6 +260,11 @@ html, body, #root {
   cursor: pointer;
 }
 
+.checkbox-col input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .drag-col {
   width: 36px;
 }
@@ -480,6 +485,10 @@ html, body, #root {
   margin-top: 16px;
 }
 
+.form-actions-center {
+  justify-content: center;
+}
+
 .status-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -626,16 +635,29 @@ html, body, #root {
   flex: 1;
   overflow: hidden;
   max-height: none;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 0 2px;
 }
 
-/* 分组区域 */
+/* 分组区域：上下两组各占 1/2 高度，内部独立滚动 */
 .script-group {
   border: 2px solid transparent;
   border-radius: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   transition: border-color 0.15s, background-color 0.15s;
+}
+
+.group-table {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 }
 
 .script-group.drop-active {
@@ -646,8 +668,8 @@ html, body, #root {
 .group-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 6px 8px 2px 8px;
+  position: relative;
 }
 
 .group-title {
@@ -665,6 +687,9 @@ html, body, #root {
   background: #f0f0f0;
   border-radius: 10px;
   padding: 1px 8px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .group-table .scripts-table {
@@ -904,63 +929,42 @@ html, body, #root {
   transform: translateY(-2px);
 }
 
-/* Maximize button */
-.btn-maximize {
+/* 输出栏图标按钮统一基础样式：rerun / maximize / stop */
+.btn-rerun,
+.btn-maximize,
+.btn-stop {
   background-color: transparent;
   color: #999;
   padding: 2px 6px;
   font-size: 11px;
-  display: flex;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
+.btn-rerun:hover:not(:disabled),
 .btn-maximize:hover {
   background-color: #f5f5f5;
   color: #1890ff;
 }
 
-/* 重新执行按钮 */
-.btn-rerun {
-  background-color: transparent;
-  color: #999;
-  padding: 2px 6px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-rerun:hover:not(:disabled) {
-  background-color: #e6f7ff;
-  color: #1890ff;
-  border-color: #1890ff;
-}
-
+/* 重新执行按钮禁用态 */
 .btn-rerun:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* 强制中断按钮 */
+/* 强制中断按钮：保留红色语义，但无边框，与其他图标按钮一致 */
 .btn-stop {
-  background-color: transparent;
   color: #ff4d4f;
-  padding: 2px 6px;
-  border: 1px solid #ffccc7;
-  border-radius: 4px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .btn-stop:hover {
   background-color: #fff1f0;
   color: #d93026;
-  border-color: #d93026;
 }
 
 .btn-stop-all {
