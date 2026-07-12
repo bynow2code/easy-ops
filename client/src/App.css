@@ -677,8 +677,8 @@ html, body, #root {
 .group-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 6px 8px 2px 8px;
-  position: relative;
 }
 
 .group-title {
@@ -696,9 +696,6 @@ html, body, #root {
   background: #f0f0f0;
   border-radius: 10px;
   padding: 1px 8px;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
 }
 
 .group-table .scripts-table {
