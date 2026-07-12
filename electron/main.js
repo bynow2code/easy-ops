@@ -157,8 +157,8 @@ const createWindow = (port) => {
   const iconPath = resPath('client/dist/logo.png');
 
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1500,
+    height: 950,
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#f5f5f5',
