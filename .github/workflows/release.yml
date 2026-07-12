@@ -46,22 +46,12 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: 'npm'
 
       - name: 同步版本号与 tag
         shell: pwsh
         run: |
           $ver = "${{ github.ref_name }}".TrimStart('v')
           npm version $ver --no-git-tag-version --allow-same-version
-
-      - name: 缓存 electron-builder（Electron 二进制等）
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/AppData/Local/electron-builder/Cache
-            ~/AppData/Local/electron/Cache
-          key: electron-builder-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-builder-${{ runner.os }}-
 
       - name: 安装根目录依赖
         run: npm ci
@@ -109,22 +99,12 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: 'npm'
 
       - name: 同步版本号与 tag
         run: |
           ver="${{ github.ref_name }}"
           ver="${ver#v}"
           npm version "$ver" --no-git-tag-version --allow-same-version
-
-      - name: 缓存 electron-builder（Electron 二进制等）
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/Library/Caches/electron-builder
-            ~/Library/Caches/electron
-          key: electron-builder-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: electron-builder-${{ runner.os }}-
 
       - name: 安装根目录依赖
         run: npm ci
