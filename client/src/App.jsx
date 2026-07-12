@@ -172,10 +172,21 @@ function App() {
     return unsub
   }, [])
 
+  // 记录每个输出容器最近一次「真实用户交互」的时间戳（滚轮/触摸/拖动滚动条/按键）
+  const userInteractRef = useRef({})
+  const markUserInteract = useCallback((id) => {
+    userInteractRef.current[id] = Date.now()
+  }, [])
+
   // 监听用户滚动事件
   const handleOutputScroll = useCallback((id, e) => {
+    // 仅当用户近期有真实交互时，才依据滚动位置更新「是否自动跟随」。
+    // 否则（如列表重排导致 scrollTop 被浏览器重置为 0、或程序自动滚动触发的 scroll 事件）
+    // 会被误判为「用户上滚」，从而永久关闭自动跟随、滚动条停在起始位置。
+    const last = userInteractRef.current[id] || 0
+    if (Date.now() - last > 400) return
     const el = e.target
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20
     userScrolledUp.current[id] = !isAtBottom
   }, [])
 
@@ -1123,6 +1134,10 @@ function App() {
                         className="output-content-wrapper"
                         ref={el => { outputRefs.current[script.id] = el }}
                         onScroll={(e) => handleOutputScroll(script.id, e)}
+                        onWheel={() => markUserInteract(script.id)}
+                        onTouchMove={() => markUserInteract(script.id)}
+                        onMouseDown={() => markUserInteract(script.id)}
+                        onKeyDown={() => markUserInteract(script.id)}
                       >
                         <pre className="output-content">{output.output || 'Waiting for output...'}</pre>
                       </div>
@@ -1502,6 +1517,10 @@ function App() {
                   className="maximized-output-wrapper"
                   ref={maximizedOutputRef}
                   onScroll={(e) => handleOutputScroll(maximizedScriptId, e)}
+                  onWheel={() => markUserInteract(maximizedScriptId)}
+                  onTouchMove={() => markUserInteract(maximizedScriptId)}
+                  onMouseDown={() => markUserInteract(maximizedScriptId)}
+                  onKeyDown={() => markUserInteract(maximizedScriptId)}
                 >
                   <pre className="maximized-output-content">{output.output || 'Waiting for output...'}</pre>
                 </div>
