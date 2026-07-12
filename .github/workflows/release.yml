@@ -169,12 +169,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 步骤7：上传到同一个 Release
-      - name: 创建 GitHub Release
+      # 步骤7：上传到同一个 Release（不重新生成 notes，避免与 Windows job 重复）
+      - name: 上传 macOS 产物到 GitHub Release
         uses: softprops/action-gh-release@v3
         if: success()
         with:
-          generate_release_notes: true
           fail_on_unmatched_files: true
           # .dmg = macOS 磁盘镜像安装包；.zip = 便携压缩包
           # latest-mac.yml = electron-updater 在 macOS 上定位更新所需的元数据
