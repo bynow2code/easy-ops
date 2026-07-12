@@ -368,20 +368,18 @@ const initAutoUpdater = () => {
   });
 
   // 下载完成后，由前端「重启并更新」按钮调用，退出并安装
+  // macOS: Squirrel.Mac 已经在下载阶段把更新包保存到了本地，
+  // 这里直接调用 app.relaunch() + app.quit() 即可，
+  // 应用重启后 Squirrel 会自动检测并安装已下载的更新。
   ipcMain.handle('app:start-update', () => {
     log('[UPDATE] quitAndInstall called');
-    // 先关闭窗口，确保 IPC 响应能正常返回给渲染进程，
-    // 然后用 setTimeout 延迟执行 quitAndInstall，避免 app.quit() 阻断 IPC 通道
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      try { mainWindow.close(); } catch (e) { log(`[UPDATE] close window failed: ${e.message}`); }
+    try {
+      app.relaunch();
+      app.quit();
+    } catch (e) {
+      log(`[UPDATE] quitAndInstall failed: ${e.message}`);
+      throw e;
     }
-    setTimeout(() => {
-      try {
-        autoUpdater.quitAndInstall();
-      } catch (e) {
-        log(`[UPDATE] quitAndInstall failed: ${e.message}`);
-      }
-    }, 200);
   });
 
   // 启动后静默检查一次（延迟 5 秒，避免与用户手动操作冲突）
