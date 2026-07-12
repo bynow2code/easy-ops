@@ -231,11 +231,14 @@ app.on('quit', () => {
 // ==================== IPC 处理 ====================
 
 ipcMain.handle('get-app-info', () => {
+  const userData = app.getPath('userData');
   return {
     version: app.getVersion(),
     name: app.getName(),
-    userData: app.getPath('userData'),
-    isDev
+    userData,
+    isDev,
+    scriptsConfigPath: path.join(userData, 'scripts.json'),
+    logFilePath: path.join(userData, 'logs', 'main.log')
   };
 });
 

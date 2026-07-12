@@ -35,6 +35,7 @@ function App() {
   const [executingIds, setExecutingIds] = useState({})
   const [executingBatch, setExecutingBatch] = useState(false)
   const [batchOrderIds, setBatchOrderIds] = useState([])
+  const [batchRunningIds, setBatchRunningIds] = useState({})  // 批量执行中尚未结束的脚本 id -> true
   const [outputs, setOutputs] = useState({})
   const [runIds, setRunIds] = useState({})  // scriptId -> 执行 runId，用于「强制中断」
   const [systemInfo, setSystemInfo] = useState(null)
@@ -58,7 +59,9 @@ function App() {
 
   // ==================== 自动更新相关状态 ====================
   const [appVersion, setAppVersion] = useState('')
+  const [appInfo, setAppInfo] = useState(null)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const [showInfoModal, setShowInfoModal] = useState(false)
   // idle | checking | available | not-available | downloading | downloaded | error
   const [updateState, setUpdateState] = useState('idle')
   const [updateInfo, setUpdateInfo] = useState({ version: '', releaseNotes: '' })
@@ -126,7 +129,10 @@ function App() {
   useEffect(() => {
     if (window.electronAPI?.getAppInfo) {
       window.electronAPI.getAppInfo()
-        .then(info => setAppVersion(info.version))
+        .then(info => {
+          setAppVersion(info.version)
+          setAppInfo(info)
+        })
         .catch(() => {})
     }
     if (!window.electronAPI?.onUpdateEvent) return
@@ -227,6 +233,18 @@ function App() {
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [showAddForm, editingScript])
+
+  // 监听 ESC 键关闭 App Info 弹窗
+  useEffect(() => {
+    if (!showInfoModal) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowInfoModal(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [showInfoModal])
 
   // 当执行触发时，将外层 Execution Outputs 容器滚动到顶部
   // useLayoutEffect 在 DOM 提交后、浏览器绘制前执行，避免竞态条件
@@ -472,14 +490,15 @@ function App() {
     setRunIds({})
     setExecutingBatch(false)
     setBatchOrderIds([])
+    setBatchRunningIds({})
   }
 
   const handleExecuteScript = (id) => {
     const script = scripts.find(s => s.id === id)
     if (!script) return
 
-    // 仅当该脚本自身正在执行时（单独或批量中）才阻止
-    if (executingIds[id] || (executingBatch && batchOrderIds.includes(id))) return
+    // 仅当该脚本自身正在执行时（单独执行，或仍在批量运行中）才阻止
+    if (executingIds[id] || batchRunningIds[id]) return
 
     setExecutingIds(prev => ({ ...prev, [id]: true }))
     const timestamp = Date.now()
@@ -526,7 +545,7 @@ function App() {
         setOutputs(prev => {
           const curr = prev[id]
           if (curr && !curr.live) return prev
-          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
+          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, terminated: !!data.terminated, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
         })
         setExecutingIds(prev => {
           const next = { ...prev }
@@ -588,6 +607,9 @@ function App() {
     const batchIds = [...selectedIds]
     setBatchOrderIds(batchIds)
     setExecutingBatch(true)
+    // 记录本次批量中正在运行的脚本，脚本结束即从该集合移除，
+    // 使其「Execute」按钮即时可点击，不必等整批跑完
+    setBatchRunningIds(Object.fromEntries(batchIds.map(id => [id, true])))
 
     // 重置所有 batch 脚本的滚动状态，允许自动跟随
     batchIds.forEach(id => {
@@ -657,10 +679,11 @@ function App() {
       } else if (data.type === 'close') {
         if (scriptId) {
           setRunIds(prev => { const n = { ...prev }; delete n[scriptId]; return n })
+          setBatchRunningIds(prev => { const n = { ...prev }; delete n[scriptId]; return n })
           setOutputs(prev => {
             const curr = prev[scriptId]
             if (curr && !curr.live) return prev
-            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
+            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, terminated: !!data.terminated, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
           })
           // 记录完成数，并立即发送完成通知
           finishedCount++
@@ -673,6 +696,7 @@ function App() {
       } else if (data.type === 'done') {
         setExecutingBatch(false)
         setBatchOrderIds([])
+        setBatchRunningIds({})
         if (batchRunIdRef.current) {
           setRunIds(prev => {
             const n = { ...prev }
@@ -701,6 +725,7 @@ function App() {
       })
       setExecutingBatch(false)
       setBatchOrderIds([])
+      setBatchRunningIds({})
       if (batchRunIdRef.current) {
         setRunIds(prev => {
           const n = { ...prev }
@@ -796,7 +821,7 @@ function App() {
       <header className="header">
         <h1>Script Manager</h1>
 
-        {/* 工具栏：按钮在左，BASH + 检查更新图标在右，全部对齐同一基线 */}
+        {/* 工具栏：按钮在左，检查更新 + App Info 图标在右 */}
         <div className="toolbar-row">
           <div className="toolbar-left">
             <button
@@ -818,20 +843,6 @@ function App() {
           </div>
 
           <div className="toolbar-right">
-            {systemInfo && (
-              <div className="bash-indicator">
-                <span className="tool-icon-btn" title={`Shell: ${systemInfo.shell.type}`}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                </span>
-                <div className="bash-tooltip">
-                  <div className="bash-tooltip-title">{systemInfo.shell.type.toUpperCase()}</div>
-                  <div className="bash-tooltip-path">{systemInfo.shell.fullPath || systemInfo.shell.command}</div>
-                  {systemInfo.shell.version && (
-                    <div className="bash-tooltip-version">{systemInfo.shell.version}</div>
-                  )}
-                </div>
-              </div>
-            )}
             <button
               className="tool-icon-btn"
               onClick={handleCheckUpdates}
@@ -839,6 +850,13 @@ function App() {
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
               {updateState === 'downloaded' && <span className="update-badge">!</span>}
+            </button>
+            <button
+              className="tool-icon-btn"
+              onClick={() => setShowInfoModal(true)}
+              title="App info"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             </button>
           </div>
         </div>
@@ -902,10 +920,11 @@ function App() {
                       {scripts.map(script => {
                         const out = outputs[script.id]
                         const isLive = out && out.live
-                        const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
+                        const isStopped = out && out.terminated
+                        const statusLabel = isLive ? 'Running' : (isStopped ? 'Stopped' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle'))
                         const isDragging = draggingId === script.id
                         const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
-                        const isRunning = executingIds[script.id] || (executingBatch && batchOrderIds.includes(script.id))
+                        const isRunning = executingIds[script.id] || batchRunningIds[script.id]
                         return (
                           <tr
                             key={script.id}
@@ -934,7 +953,7 @@ function App() {
                               <div className="script-name">{script.name}</div>
                             </td>
                             <td>
-                              <span className={`status-badge ${isLive ? 'running' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : ''))}`}>
+                              <span className={`status-badge ${isLive ? 'running' : (isStopped ? 'stopped' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : '')))}`}>
                                 {statusLabel}
                               </span>
                             </td>
@@ -1043,8 +1062,8 @@ function App() {
                         )}
                       </div>
                       <div className="output-header-right">
-                        <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
-                          {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                        <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
+                          {output.live ? 'Running...' : output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                         </span>
                         <button
                           onClick={() => setMaximizedScriptId(script.id)}
@@ -1213,6 +1232,90 @@ function App() {
         </div>
       )}
 
+      {showInfoModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2>App Info</h2>
+            <div className="info-body">
+              <div className="info-row">
+                <label>Version</label>
+                <div className="info-value">v{appVersion}</div>
+              </div>
+              {systemInfo && (
+                <>
+                  <div className="info-row">
+                    <label>Server Port</label>
+                    <div className="info-value">
+                      {systemInfo.port}
+                      <button
+                        className="btn btn-copy"
+                        onClick={() => navigator.clipboard.writeText(String(systemInfo.port))}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  <div className="info-row">
+                    <label>Shell</label>
+                    <div className="info-value">
+                      {systemInfo.shell?.type?.toUpperCase() || 'Unknown'}
+                      {systemInfo.shell?.version && (
+                        <span className="info-sub">{systemInfo.shell.version}</span>
+                      )}
+                    </div>
+                    {(systemInfo.shell?.fullPath || systemInfo.shell?.command) && (
+                      <div className="info-path">
+                        <span className="info-path-text">{systemInfo.shell.fullPath || systemInfo.shell.command}</span>
+                        <button
+                          className="btn btn-copy"
+                          onClick={() => navigator.clipboard.writeText(systemInfo.shell.fullPath || systemInfo.shell.command)}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {appInfo && (
+                <>
+                  <div className="info-row">
+                    <label>Scripts Config</label>
+                    <div className="info-path">
+                      <span className="info-path-text">{appInfo.scriptsConfigPath}</span>
+                      <button
+                        className="btn btn-copy"
+                        onClick={() => navigator.clipboard.writeText(appInfo.scriptsConfigPath)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  <div className="info-row">
+                    <label>Log File</label>
+                    <div className="info-path">
+                      <span className="info-path-text">{appInfo.logFilePath}</span>
+                      <button
+                        className="btn btn-copy"
+                        onClick={() => navigator.clipboard.writeText(appInfo.logFilePath)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+              {!window.electronAPI && (
+                <p className="info-hint">Config &amp; log paths are only available in the Electron app.</p>
+              )}
+            </div>
+            <div className="form-actions">
+              <button className="btn btn-cancel" onClick={() => setShowInfoModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddForm && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -1351,8 +1454,8 @@ function App() {
                   )}
                 </div>
                 <div className="maximized-header-right">
-                  <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
-                    {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                  <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
+                    {output.live ? 'Running...' : output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                   </span>
                   {output.live && runIds[maximizedScriptId] && (
                     <button
