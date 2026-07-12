@@ -1228,7 +1228,7 @@ function App() {
                 </div>
               )}
             </div>
-            <div className={updateState === 'downloaded' || updateState === 'available' ? 'form-actions' : 'form-actions form-actions-center'}>
+            <div className="form-actions">
               {updateState === 'downloaded' ? (
                 <>
                   <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Later</button>

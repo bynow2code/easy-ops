@@ -284,6 +284,18 @@ const GH_REPO = 'easy-ops';
 const initAutoUpdater = () => {
   if (!app.isPackaged) {
     log('Auto updater disabled in dev mode');
+    // 开发模式下仍需注册 IPC 处理，否则渲染进程调用 checkForUpdates 会报
+    // "No handler registered" 并打到控制台。这里直接向前端下发「dev 模式不可用」提示。
+    ipcMain.handle('app:check-updates', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-event', {
+          type: 'error',
+          message: 'Running in dev mode. Auto-update only works in packaged builds.'
+        });
+      }
+    });
+    ipcMain.handle('app:download-update', () => {});
+    ipcMain.handle('app:start-update', () => {});
     return;
   }
   if (process.platform === 'darwin') {

@@ -485,10 +485,6 @@ html, body, #root {
   margin-top: 16px;
 }
 
-.form-actions-center {
-  justify-content: center;
-}
-
 .status-badge {
   display: inline-block;
   padding: 2px 8px;
