@@ -395,14 +395,8 @@ const initWinUpdater = () => {
     }
   });
 
-  // 启动后静默检查一次（延迟 5 秒，避免与用户手动操作冲突）
-  setTimeout(() => {
-    if (isChecking || isDownloading) {
-      log('[UPDATE] initial check skipped - update already in progress');
-      return;
-    }
-    autoUpdater.checkForUpdates().catch((e) => log(`initial check failed: ${e.message}`));
-  }, 5000);
+  // 注意：不在这里做启动后自动检查。更新检查完全由用户点击「Check for Updates」触发，
+  // 避免启动即用缓存状态把弹窗预设成「已是最新」，造成「点了没反应 / 没真正检查」的错觉。
 };
 
 // -------------------- macOS：自研更新器（绕开签名/Squirrel） --------------------
@@ -654,26 +648,8 @@ open "$TARGET_APP"
     }
   });
 
-  // 启动后静默检查一次（延迟 5 秒）
-  setTimeout(async () => {
-    if (isChecking || isDownloading) return;
-    isChecking = true;
-    send({ type: 'checking' });
-    try {
-      const { version, releaseNotes, asset } = await fetchLatestRelease();
-      const current = app.getVersion();
-      isChecking = false;
-      if (version && cmpVersion(version, current) > 0 && asset) {
-        pendingVersion = version;
-        send({ type: 'available', version, releaseNotes });
-      } else {
-        send({ type: 'not-available', version: current });
-      }
-    } catch (e) {
-      isChecking = false;
-      log(`[UPDATE][mac] initial check failed: ${e.message}`);
-    }
-  }, 5000);
+  // 注意：不在这里做启动后自动检查。更新检查完全由用户点击「Check for Updates」触发，
+  // 避免启动即用缓存状态把弹窗预设成「已是最新」，造成「点了没反应 / 没真正检查」的错觉。
 };
 
 // ==================== 启动应用 ====================
