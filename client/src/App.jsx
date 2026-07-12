@@ -2,12 +2,12 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import axios from 'axios'
 import ShellEditor from './components/ShellEditor'
 import './App.css'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
-// 统一格式化 electron-updater 返回的 release notes，兼容多种格式：
-// - 字符串（纯文本 / markdown / 偶发 XML）
-// - 数组（多版本累计更新，每项含 {version, notes}）
-// - 对象（含 notes / note / body 字段）
-const formatReleaseNotes = (notes) => {
+// 统一格式化 release notes（来自 electron-updater / GitHub API），兼容多种输入格式：
+// 先用成熟的 marked 库把 markdown 渲染成 HTML，再用 DOMPurify 过滤危险标签。
+const normalizeReleaseNotes = (notes) => {
   if (!notes) return '';
   // 数组：多版本累计，逐项提取 notes 文本并拼接
   if (Array.isArray(notes)) {
@@ -20,21 +20,17 @@ const formatReleaseNotes = (notes) => {
   if (typeof notes === 'object') {
     return notes.notes || notes.note || notes.body || '';
   }
-  // 字符串：若含 HTML 标记，仅剥离危险/无关标签，保留 <a><strong><em><ul><li><br><p>
-  let text = String(notes);
-  if (/<[^>]+>/.test(text)) {
-    text = text
-      .replace(/<(script|style|iframe|object|embed|form|input)[^>]*>[\s\S]*?<\/\1>/gi, '')   // 去掉危险容器
-      .replace(/<[^>]+>/g, (tag) => {
-        const t = tag.toLowerCase();
-        // 只保留这些安全标签，其余去掉（但保留标签内的文字）
-        if (/^<\/?(a|strong|b|em|i|u|ul|ol|li|br|p|h[1-6]|code|blockquote)\b/.test(t)) return tag;
-        return '';
-      })
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-  }
-  return text;
+  // 字符串：原样返回
+  return String(notes);
+};
+
+const formatReleaseNotes = (notes) => {
+  const text = normalizeReleaseNotes(notes);
+  if (!text) return '';
+  const rawHtml = marked.parse(text, { gfm: true, breaks: true });
+  // DOMPurify 过滤 script/iframe 等危险标签；保留 a 的 target/rel 以便新标签打开
+  return DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] })
+    .replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
 };
 
 function App() {
@@ -1114,12 +1110,9 @@ function App() {
                 <div>
                   <p>A new version <strong>v{updateInfo.version}</strong> is available.</p>
                   {(() => {
-                    const notes = formatReleaseNotes(updateInfo.releaseNotes);
-                    return notes ? (
-                      <div
-                        className="update-notes"
-                        dangerouslySetInnerHTML={{ __html: notes.slice(0, 2000) }}
-                      />
+                    const html = formatReleaseNotes(updateInfo.releaseNotes);
+                    return html ? (
+                      <div className="update-notes" dangerouslySetInnerHTML={{ __html: html.slice(0, 2000) }} />
                     ) : null;
                   })()}
                   <p className="update-hint">Do you want to download and install this update?</p>

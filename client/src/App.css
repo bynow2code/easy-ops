@@ -1184,6 +1184,35 @@ html, body, #root {
   margin: 8px 0 4px;
 }
 
+/* 更新日志内 markdown 元素的基础样式 */
+.update-notes h1, .update-notes h2, .update-notes h3,
+.update-notes h4, .update-notes h5, .update-notes h6 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.update-notes p { margin: 4px 0; }
+.update-notes ul, .update-notes ol { margin: 4px 0; padding-left: 18px; }
+.update-notes code {
+  background: #ececec;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: monospace;
+}
+.update-notes pre {
+  background: #ececec;
+  border-radius: 4px;
+  padding: 8px;
+  overflow: auto;
+}
+.update-notes pre code { background: transparent; padding: 0; }
+.update-notes blockquote {
+  margin: 4px 0;
+  padding-left: 8px;
+  border-left: 3px solid #d9d9d9;
+  color: #666;
+}
+
 /* 更新日志中的链接：可点击、蓝色、悬停下划线 */
 .update-notes a {
   color: #1890ff;

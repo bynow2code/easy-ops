@@ -17,6 +17,8 @@
     "@codemirror/view": "^6.43.1",
     "@uiw/react-codemirror": "^4.25.10",
     "axios": "^1.17.0",
+    "dompurify": "^3.4.12",
+    "marked": "^18.0.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
