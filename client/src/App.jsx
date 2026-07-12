@@ -1041,6 +1041,7 @@ function App() {
                 return (bOut.timestamp || 0) - (aOut.timestamp || 0)
               }).map(script => {
                 const output = outputs[script.id]
+                const isRunning = executingIds[script.id] || batchRunningIds[script.id]
                 return (
                   <div key={script.id} className="output-panel">
                     <div className="output-header">
@@ -1065,6 +1066,18 @@ function App() {
                         <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
                           {output.live ? 'Running...' : output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                         </span>
+                        <button
+                          onClick={() => handleExecuteScript(script.id)}
+                          disabled={isRunning}
+                          className="btn btn-rerun"
+                          title="Re-execute"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                            <polyline points="23 4 23 10 17 10" />
+                            <polyline points="1 20 1 14 7 14" />
+                            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                          </svg>
+                        </button>
                         <button
                           onClick={() => setMaximizedScriptId(script.id)}
                           className="btn btn-maximize"
