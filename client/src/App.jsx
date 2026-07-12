@@ -1189,7 +1189,7 @@ function App() {
 
       {showUpdateModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content update-modal">
             <h2>Check for Updates</h2>
             <div className="update-body">
               {updateState === 'idle' && <p>Click below to check for the latest version.</p>}

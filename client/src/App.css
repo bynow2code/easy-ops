@@ -432,6 +432,20 @@ html, body, #root {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
+/* 更新弹窗：内容 flex 纵向，让 footer 始终在底部 */
+.modal-content.update-modal {
+  display: flex;
+  flex-direction: column;
+}
+
+.update-modal .update-body {
+  flex: 1;
+}
+
+.update-modal .form-actions {
+  flex-shrink: 0;
+}
+
 .modal-confirm {
   max-width: 420px;
   min-height: auto;
@@ -653,7 +667,6 @@ html, body, #root {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-}
 }
 
 .script-group.drop-active {
