@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <!-- 背景圆角矩形 -->
-  <rect width="256" height="256" rx="48" fill="#4F46E5"/>
+  <!-- 背景圆角矩形 - 深色 -->
+  <rect width="256" height="256" rx="56" fill="#1E1E2E"/>
 
-  <!-- sh 文本 -->
-  <text x="128" y="180" font-family="Consolas, 'Courier New', monospace" font-size="160" font-weight="bold" text-anchor="middle" fill="#FFFFFF">sh</text>
+  <!-- SH 文字 - 粗体无衬线大写 -->
+  <text x="128" y="175" font-family="-apple-system, 'SF Pro Display', 'Segoe UI', Inter, Helvetica Neue, Arial, sans-serif" font-size="130" font-weight="800" letter-spacing="-4" text-anchor="middle" fill="#FFFFFF">SH</text>
 </svg>

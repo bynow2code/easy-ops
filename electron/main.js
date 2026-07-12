@@ -5,6 +5,7 @@ const { fork } = require('child_process');
 
 let mainWindow = null;
 let backendProcess = null;
+let backendPort = null;
 
 // 致命错误统一处理：写日志 + 弹窗，避免「打开即静默闪退」看不到原因
 const showFatal = (title, detail) => {
@@ -340,8 +341,14 @@ const initAutoUpdater = () => {
   });
 
   // 下载完成后，由前端「重启并更新」按钮调用，退出并安装
+  // macOS 上必须传 (true, true) 才能确保：强制静默安装 + 安装后自动重启应用
   ipcMain.handle('app:start-update', () => {
-    autoUpdater.quitAndInstall();
+    log('[UPDATE] quitAndInstall called');
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (e) {
+      log(`[UPDATE] quitAndInstall failed: ${e.message}`);
+    }
   });
 
   // 启动后静默检查一次（延迟 3 秒，避免拖慢首屏）
@@ -356,8 +363,32 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null) // 隐藏默认菜单栏
   try {
     const port = await startBackend();
+    backendPort = port;
     createWindow(port);
     initAutoUpdater(); // 窗口建好后再启动更新检查
+
+    // macOS：关闭窗口默认不退出进程，点击程序坞图标时若无窗口则重建窗口。
+    // 注册在 whenReady 内部、首窗口创建之后，避免启动时的初始 activate 再开一个窗口。
+    // 加 darwin 守卫，确保 Windows 行为完全不受影响。
+    app.on('activate', () => {
+      if (process.platform !== 'darwin') return;
+      if (BrowserWindow.getAllWindows().length === 0) {
+        if (backendProcess && backendPort) {
+          // 后端仍在运行，直接复用端口重建窗口
+          createWindow(backendPort);
+        } else {
+          // 后端已退出，重新拉起后再建窗口
+          startBackend()
+            .then((p) => {
+              backendPort = p;
+              createWindow(p);
+            })
+            .catch((err) => {
+              showFatal('启动失败', err && err.stack ? err.stack : err.message);
+            });
+        }
+      }
+    });
   } catch (err) {
     showFatal('启动失败', err && err.stack ? err.stack : err.message);
     setTimeout(() => app.quit(), 500); // 留时间让弹窗显示
