@@ -49,12 +49,15 @@ function App() {
   const [maximizedScriptId, setMaximizedScriptId] = useState(null)
   const eventSourceRefs = useRef({})
   const outputRefs = useRef({})
+  const outputPanelRefs = useRef({})
   const maximizedOutputRef = useRef(null)
   const batchRunIdRef = useRef(null)  // 批量执行的 runId，用于中断整批
   const [showScrollTop, setShowScrollTop] = useState(false)
   const outputsScrollRef = useRef(null)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
+  // 记录执行时首个脚本 ID，滚动到顶部后对其输出面板做高亮
+  const pendingHighlightId = useRef(null)
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
 
@@ -368,6 +371,18 @@ function App() {
   useLayoutEffect(() => {
     if (scrollToTopKey > 0 && outputsScrollRef.current) {
       outputsScrollRef.current.scrollTop = 0
+      // 对首个脚本的输出面板做高亮
+      const id = pendingHighlightId.current
+      if (id) {
+        pendingHighlightId.current = null
+        // 清除旧高亮，再对目标面板做高亮
+        Object.values(outputPanelRefs.current).forEach(p => p.classList.remove('highlight'))
+        const panel = outputPanelRefs.current[id]
+        if (panel) {
+          panel.classList.add('highlight')
+          setTimeout(() => panel.classList.remove('highlight'), 2100)
+        }
+      }
     }
   }, [scrollToTopKey])
 
@@ -412,6 +427,18 @@ function App() {
       console.error('Error adding script:', error)
       setFormErrors({ submit: 'Failed to add script, please try again' })
     }
+  }
+
+  const scrollToOutput = (id) => {
+    const panel = outputPanelRefs.current[id]
+    if (!panel) return
+
+    // 清除所有面板的现有高亮，避免多个面板同时显示特效
+    Object.values(outputPanelRefs.current).forEach(p => p.classList.remove('highlight'))
+
+    panel.classList.add('highlight')
+    setTimeout(() => panel.classList.remove('highlight'), 2100)
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const handleDeleteScript = (id) => {
@@ -607,6 +634,7 @@ function App() {
     setRunIds({})
     setExecutingBatch(false)
     setBatchRunningIds({})
+    outputPanelRefs.current = {}
   }
 
   const handleExecuteScript = (id) => {
@@ -624,6 +652,7 @@ function App() {
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
+    pendingHighlightId.current = id
 
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRefs.current[id] = es
@@ -729,6 +758,7 @@ function App() {
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
+    pendingHighlightId.current = batchIds[0]
 
     // 为每个 batch 脚本初始化输出（按 batch 顺序分配递减时间戳以保持排序）
     const batchTimestamp = Date.now()
@@ -1091,6 +1121,14 @@ function App() {
                                 >
                                   Delete
                                 </button>
+                                <button
+                                  onClick={() => scrollToOutput(script.id)}
+                                  disabled={!outputs[script.id]}
+                                  className="btn btn-locate"
+                                  title="Locate output"
+                                >
+                                  Locate
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1149,7 +1187,7 @@ function App() {
                 const output = outputs[script.id]
                 const isRunning = executingIds[script.id] || batchRunningIds[script.id]
                 return (
-                  <div key={script.id} className="output-panel">
+                  <div key={script.id} className="output-panel" ref={el => { outputPanelRefs.current[script.id] = el }}>
                     <div className="output-header">
                       <div className="output-header-left">
                         <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''}`}>
@@ -1222,6 +1260,7 @@ function App() {
                               delete newOutputs[script.id]
                               return newOutputs
                             })
+                            delete outputPanelRefs.current[script.id]
                           }}
                           className="btn btn-close"
                         >

@@ -178,6 +178,17 @@ html, body, #root {
   background-color: #e8e8e8;
 }
 
+交互问题.btn-locate {
+  background-color: #13c2c2;
+  color: white;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.btn-locate:hover:not(:disabled) {
+  background-color: #36cfc9;
+}
+
 .btn-close {
   background-color: transparent;
   color: #999;
@@ -332,6 +343,7 @@ html, body, #root {
 
 .outputs-container {
   margin-top: 10px;
+  padding-top: 8px;
 }
 
 .outputs-container h2 {
@@ -346,6 +358,17 @@ html, body, #root {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   margin-bottom: 8px;
   overflow: hidden;
+  scroll-margin-top: 8px;
+}
+
+.output-panel.highlight {
+  animation: panel-flash 2s ease;
+}
+
+@keyframes panel-flash {
+  0% { outline: 3px solid rgba(19, 194, 194, 0.6); outline-offset: 2px; }
+  30% { outline: 3px solid rgba(19, 194, 194, 0.6); outline-offset: 2px; }
+  100% { outline: 3px solid rgba(19, 194, 194, 0); outline-offset: 2px; }
 }
 
 .output-header {
@@ -593,7 +616,8 @@ html, body, #root {
 
   .btn-execute,
   .btn-edit,
-  .btn-delete {
+  .btn-delete,
+  .btn-locate {
     margin-right: 0;
     padding: 2px 5px;
     font-size: 10px;
