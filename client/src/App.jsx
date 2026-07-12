@@ -34,7 +34,6 @@ function App() {
   const [editErrors, setEditErrors] = useState({})
   const [executingIds, setExecutingIds] = useState({})
   const [executingBatch, setExecutingBatch] = useState(false)
-  const [batchOrderIds, setBatchOrderIds] = useState([])
   const [batchRunningIds, setBatchRunningIds] = useState({})  // 批量执行中尚未结束的脚本 id -> true
   const [outputs, setOutputs] = useState({})
   const [runIds, setRunIds] = useState({})  // scriptId -> 执行 runId，用于「强制中断」
@@ -489,7 +488,6 @@ function App() {
     setExecutingIds({})
     setRunIds({})
     setExecutingBatch(false)
-    setBatchOrderIds([])
     setBatchRunningIds({})
   }
 
@@ -605,7 +603,6 @@ function App() {
 
     // 捕获当前选中的脚本 ID 列表，保持顺序
     const batchIds = [...selectedIds]
-    setBatchOrderIds(batchIds)
     setExecutingBatch(true)
     // 记录本次批量中正在运行的脚本，脚本结束即从该集合移除，
     // 使其「Execute」按钮即时可点击，不必等整批跑完
@@ -695,7 +692,6 @@ function App() {
         }
       } else if (data.type === 'done') {
         setExecutingBatch(false)
-        setBatchOrderIds([])
         setBatchRunningIds({})
         if (batchRunIdRef.current) {
           setRunIds(prev => {
@@ -724,7 +720,6 @@ function App() {
         return changed ? next : prev
       })
       setExecutingBatch(false)
-      setBatchOrderIds([])
       setBatchRunningIds({})
       if (batchRunIdRef.current) {
         setRunIds(prev => {
@@ -1030,16 +1025,11 @@ function App() {
               </div>
             ) : (
               scripts.filter(s => outputs[s.id]).sort((a, b) => {
-                // 批量执行期间按 batch 顺序排序
-                if (executingBatch && batchOrderIds.length > 0) {
-                  const aIdx = batchOrderIds.indexOf(a.id)
-                  const bIdx = batchOrderIds.indexOf(b.id)
-                  if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx
-                  if (aIdx !== -1) return -1
-                  if (bIdx !== -1) return 1
-                }
                 const aOut = outputs[a.id]
                 const bOut = outputs[b.id]
+                // 按时间戳倒序：最新执行的脚本输出排在最前（顶部）。
+                // 批量脚本在启动时已按批次顺序赋递减时间戳，彼此间仍保持批次顺序，
+                // 而中途单独执行的脚本会拿到更新的时间戳，自然排到顶部。
                 return (bOut.timestamp || 0) - (aOut.timestamp || 0)
               }).map(script => {
                 const output = outputs[script.id]
