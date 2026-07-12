@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <!-- 背景圆角矩形 - 深色 -->
-  <rect width="256" height="256" rx="56" fill="#1E1E2E"/>
+  <!-- 背景圆角矩形 - 缩小到约 76%，四周留充足透明边距（与其他 dock 图标对齐） -->
+  <rect x="30" y="30" width="196" height="196" rx="40" fill="#1E1E2E"/>
 
-  <!-- SH 文字 - 粗体无衬线大写 -->
-  <text x="128" y="175" font-family="-apple-system, 'SF Pro Display', 'Segoe UI', Inter, Helvetica Neue, Arial, sans-serif" font-size="130" font-weight="800" letter-spacing="-4" text-anchor="middle" fill="#FFFFFF">SH</text>
+  <!-- SH 文字 -->
+  <text x="128" y="162" font-family="-apple-system, 'SF Pro Display', 'Segoe UI', Inter, Helvetica Neue, Arial, sans-serif" font-size="100" font-weight="800" letter-spacing="-2" text-anchor="middle" fill="#FFFFFF">SH</text>
 </svg>
