@@ -1148,7 +1148,10 @@ function App() {
             </div>
             <div className="form-actions">
               {updateState === 'downloaded' ? (
-                <button className="btn btn-primary" onClick={handleStartUpdate}>Restart &amp; Update</button>
+                <>
+                  <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Later</button>
+                  <button className="btn btn-primary" onClick={handleStartUpdate}>Restart &amp; Update</button>
+                </>
               ) : updateState === 'available' ? (
                 <>
                   <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Later</button>
