@@ -367,17 +367,23 @@ const initAutoUpdater = () => {
     }
   });
 
-  // 下载完成后，由前端「重启并更新」按钮调用，退出并安装
-  // macOS: Squirrel.Mac 已经在下载阶段把更新包保存到了本地，
-  // 这里直接调用 app.relaunch() + app.quit() 即可，
-  // 应用重启后 Squirrel 会自动检测并安装已下载的更新。
+  // 下载完成后，由前端「重启并更新」按钮调用，安装并重启
+  // 关键点：必须调用 autoUpdater.quitAndInstall()，它会真正把下载好的新版本
+  // 替换到本地（macOS 上 electron-builder 用 zip 更新，内部走 Squirrel 替换流程），
+  // 替换完成后再自动重启到新版本。
+  // 注意：千万不要用 app.relaunch() + app.quit() 代替——那只重启了当前（旧）应用，
+  // 已下载的更新根本没有被应用，这就是为什么之前「更新完还是旧版本」。
   ipcMain.handle('app:start-update', () => {
     log('[UPDATE] quitAndInstall called');
     try {
-      app.relaunch();
-      app.quit();
+      // isSilent=false 显示安装提示；isForceRunAfter=true 安装完成后强制重启到新版本
+      autoUpdater.quitAndInstall(false, true);
     } catch (e) {
       log(`[UPDATE] quitAndInstall failed: ${e.message}`);
+      // 兜底：若 quitAndInstall 抛错，退化为「退出应用，由 autoInstallOnAppQuit 触发安装」
+      try {
+        app.quit();
+      } catch (e2) {}
       throw e;
     }
   });
