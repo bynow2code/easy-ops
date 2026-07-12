@@ -67,26 +67,26 @@ function App() {
   // 将滚动容器贴底：同步设置一次，再用两帧补丁兜底。
   // 原因：内容增长时，滚动条可能在本帧「刚出现」，导致内容被重新折行、scrollHeight 再变大，
   // 此时单次 scrollTop = scrollHeight 会被浏览器钳制到旧最大值，从而「差一点点没贴底」。
-  // 运行中的面板：用 pausedFollow 记录「用户已手动上滑、暂停跟随」的脚本 id；
-  // 用 programmaticScroll 记录「本次贴底是我们程序主动设置的滚动容器」，以便在其触发的
-  // scroll 事件中区分「用户手动滑动」与「自动贴底」，避免把自动贴底误判为用户上滑。
+  // 运行中的面板：用 pausedFollow 记录「用户已手动上滑、暂停跟随」的脚本 id。
+  // 判定「用户上滑」不靠标记程序滚动（易与频繁自动贴底相互干扰），而靠滚动方向：
+  // 程序贴底只会让 scrollTop 变大（向下），用户上滑会让 scrollTop 变小（向上），据此精确区分。
   const pausedFollow = useRef(new Set())
-  const programmaticScroll = useRef(new Set())
-  // 连续两帧再补，确保彻底贴底。
-  const pinToBottom = useCallback((el) => {
+  // 记录每个容器上一次的 scrollTop，用于判断滚动方向
+  const lastScrollTop = useRef(new WeakMap())
+  // 贴底：同步一次 + 两帧补丁兜底；若期间用户已暂停跟随（id 提供时），则跳过。
+  const pinToBottom = useCallback((el, id) => {
     if (!el || !el.isConnected) return
     const doPin = () => {
-      const before = el.scrollTop
-      el.scrollTop = el.scrollHeight
-      // 仅当位置确有变化时才标记「程序触发」，避免误吞同期的用户滑动
-      if (el.scrollTop !== before) programmaticScroll.current.add(el)
+      if (id != null && pausedFollow.current.has(id)) return
+      if (el.isConnected) {
+        el.scrollTop = el.scrollHeight
+        lastScrollTop.current.set(el, el.scrollTop)
+      }
     }
     doPin()
     requestAnimationFrame(() => {
       doPin()
-      requestAnimationFrame(() => {
-        programmaticScroll.current.delete(el)
-      })
+      requestAnimationFrame(doPin)
     })
   }, [])
   const outputsRef = useRef(outputs)
@@ -112,7 +112,7 @@ function App() {
           const el = (isMax && maximizedOutputRef.current) ? maximizedOutputRef.current : outputRefs.current[id]
           // 正在运行且用户未手动上滑：始终贴底（小窗/放大窗统一）
           if (out && out.live && !pausedFollow.current.has(id) && el && el.isConnected) {
-            pinToBottom(el)
+            pinToBottom(el, id)
           }
         })
       })
@@ -268,18 +268,22 @@ function App() {
   // 避免滚动条被重置到起始位置。运行中的面板由 pinToBottom 始终贴底，无需记录。
   const scrollPositions = useRef({})
 
-  // 监听用户滚动事件：
-  //  - 记录当前滚动位置，供重排/重渲染后还原（非运行中或用户暂停时生效）；
-  //  - 若此 scroll 是「程序自动贴底」触发的，直接忽略，不视为用户操作；
-  //  - 否则视为用户手动滑动：离开底部则暂停跟随（加入 pausedFollow），回到底部则恢复跟随。
+  // 监听用户滚动事件（依据滚动方向精确区分「用户上滑」与「程序自动贴底」）：
+  //  - 记录当前滚动位置，供重排/重渲染后还原；
+  //  - 回到底部：恢复跟随（清除暂停）；
+  //  - 相对上次明显向上滑动（scrollTop 变小）：暂停跟随。
+  // 程序自动贴底只会使 scrollTop 变大（向下），不会触发「上滑」判定，故无需额外标记。
   const handleOutputScroll = useCallback((id, e) => {
     const el = e.target
-    scrollPositions.current[id] = el.scrollTop
-    if (programmaticScroll.current.has(el)) return
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20
+    const curr = el.scrollTop
+    const prev = lastScrollTop.current.has(el) ? lastScrollTop.current.get(el) : curr
+    lastScrollTop.current.set(el, curr)
+    scrollPositions.current[id] = curr
+    const isAtBottom = el.scrollHeight - curr - el.clientHeight < 20
     if (isAtBottom) {
       pausedFollow.current.delete(id)
-    } else {
+    } else if (curr < prev - 2) {
+      // 明显向上滑动（留 2px 容差抵消抖动）→ 用户想查看历史输出，暂停跟随
       pausedFollow.current.add(id)
     }
   }, [])
@@ -292,10 +296,9 @@ function App() {
     const restore = (id, el) => {
       const out = outputs[id]
       if (out && out.live && !pausedFollow.current.has(id)) {
-        pinToBottom(el)
+        pinToBottom(el, id)
       } else {
-        // 非运行中，或运行中但用户已手动上滑暂停：还原之前位置（并清掉暂停标记）
-        pausedFollow.current.delete(id)
+        // 非运行中，或运行中但用户已手动上滑暂停：还原之前位置
         const saved = scrollPositions.current[id]
         if (typeof saved === 'number') el.scrollTop = saved
       }
@@ -932,7 +935,7 @@ function App() {
           <div className="toolbar-left">
             <button
               onClick={handleBatchExecute}
-              disabled={selectedIds.length === 0 || executingBatch}
+              disabled={selectedIds.length === 0 || executingBatch || selectedIds.some(id => executingIds[id] || batchRunningIds[id])}
               className="btn btn-primary btn-batch"
             >
               {executingBatch ? 'Executing...' : `Execute Selected (${selectedIds.length})`}
