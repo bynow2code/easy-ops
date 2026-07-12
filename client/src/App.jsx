@@ -55,10 +55,98 @@ function App() {
   const outputsScrollRef = useRef(null)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
-  // 跟踪用户是否手动向上滚动（不在底部）
-  const userScrolledUp = useRef({})
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
+
+  // ==================== 自动跟随：ResizeObserver ====================
+  // 规则：正在运行（live）的脚本始终贴底；其它状态（已完成等）在重排/重渲染时
+  // 还原之前的滚动位置（由 handleOutputScroll 记录到 scrollPositions）。
+  // 小窗（output-content-wrapper）与放大窗（maximized-output-wrapper）统一适用。
+  // 用单个 ResizeObserver 观察各输出内容元素，内容变高时贴底，相比「layout 阶段设置 + rAF 补一次」
+  // 只在内容真正变高时触发、且无时序竞争，更可靠。
+  // 将滚动容器贴底：同步设置一次，再用两帧补丁兜底。
+  // 原因：内容增长时，滚动条可能在本帧「刚出现」，导致内容被重新折行、scrollHeight 再变大，
+  // 此时单次 scrollTop = scrollHeight 会被浏览器钳制到旧最大值，从而「差一点点没贴底」。
+  // 运行中的面板：用 pausedFollow 记录「用户已手动上滑、暂停跟随」的脚本 id；
+  // 用 programmaticScroll 记录「本次贴底是我们程序主动设置的滚动容器」，以便在其触发的
+  // scroll 事件中区分「用户手动滑动」与「自动贴底」，避免把自动贴底误判为用户上滑。
+  const pausedFollow = useRef(new Set())
+  const programmaticScroll = useRef(new Set())
+  // 连续两帧再补，确保彻底贴底。
+  const pinToBottom = useCallback((el) => {
+    if (!el || !el.isConnected) return
+    const doPin = () => {
+      const before = el.scrollTop
+      el.scrollTop = el.scrollHeight
+      // 仅当位置确有变化时才标记「程序触发」，避免误吞同期的用户滑动
+      if (el.scrollTop !== before) programmaticScroll.current.add(el)
+    }
+    doPin()
+    requestAnimationFrame(() => {
+      doPin()
+      requestAnimationFrame(() => {
+        programmaticScroll.current.delete(el)
+      })
+    })
+  }, [])
+  const outputsRef = useRef(outputs)
+  outputsRef.current = outputs
+  const maximizedScriptIdRef = useRef(maximizedScriptId)
+  maximizedScriptIdRef.current = maximizedScriptId
+  const contentEls = useRef(new Map())        // scriptId -> 被观察的内容元素（小面板）
+  const contentToId = useRef(new WeakMap())    // 内容元素 -> scriptId
+  const followObserver = useRef(null)
+  const maximizedContentRef = useRef(null)     // 放大窗当前内容元素
+  const prevMaximizedContentRef = useRef(null)
+
+  const ensureObserver = useCallback(() => {
+    if (!followObserver.current) {
+      followObserver.current = new ResizeObserver((entries) => {
+        entries.forEach((entry) => {
+          const id = contentToId.current.get(entry.target)
+          if (id == null) return
+          const out = outputsRef.current[id]
+          // 该脚本同时可能存在于「小面板」与「放大窗」两个滚动容器，
+          // 需贴底的是当前可见的那个（放大窗打开时优先放大窗）。
+          const isMax = maximizedScriptIdRef.current === id
+          const el = (isMax && maximizedOutputRef.current) ? maximizedOutputRef.current : outputRefs.current[id]
+          // 正在运行且用户未手动上滑：始终贴底（小窗/放大窗统一）
+          if (out && out.live && !pausedFollow.current.has(id) && el && el.isConnected) {
+            pinToBottom(el)
+          }
+        })
+      })
+    }
+    return followObserver.current
+  }, [pinToBottom])
+
+  const observeContent = useCallback((id, el) => {
+    if (!id || !el) return
+    contentEls.current.set(id, el)
+    contentToId.current.set(el, id)
+    ensureObserver().observe(el)
+  }, [ensureObserver])
+
+  const unobserveContent = useCallback((id) => {
+    const el = contentEls.current.get(id)
+    if (el) followObserver.current?.unobserve(el)
+    contentEls.current.delete(id)
+  }, [])
+
+  // 每个输出面板的内容 <pre> 用「稳定」ref 回调注册/注销观察，避免每次渲染重复 observe
+  const contentRefCallbacks = useRef(new Map())
+  const getContentRef = useCallback((id) => {
+    if (!contentRefCallbacks.current.has(id)) {
+      contentRefCallbacks.current.set(id, (el) => {
+        if (el) observeContent(id, el)
+        else unobserveContent(id)
+      })
+    }
+    return contentRefCallbacks.current.get(id)
+  }, [observeContent, unobserveContent])
+
+  // 组件卸载时断开 observer
+  useEffect(() => () => followObserver.current?.disconnect(), [])
 
   // ==================== 自动更新相关状态 ====================
   const [appVersion, setAppVersion] = useState('')
@@ -176,49 +264,38 @@ function App() {
     return unsub
   }, [])
 
-  // 记录每个输出容器最近一次「真实用户交互」的时间戳（滚轮/触摸/拖动滚动条/按键）
-  const userInteractRef = useRef({})
-  // 记录每个输出容器当前的滚动位置，重排/重渲染后用于还原，避免滚动条被重置到起始位置
+  // 记录每个输出容器当前的滚动位置，重排/重渲染后用于还原（仅对「非运行」状态有意义），
+  // 避免滚动条被重置到起始位置。运行中的面板由 pinToBottom 始终贴底，无需记录。
   const scrollPositions = useRef({})
-  const markUserInteract = useCallback((id) => {
-    userInteractRef.current[id] = Date.now()
-  }, [])
 
-  // 监听用户滚动事件
+  // 监听用户滚动事件：
+  //  - 记录当前滚动位置，供重排/重渲染后还原（非运行中或用户暂停时生效）；
+  //  - 若此 scroll 是「程序自动贴底」触发的，直接忽略，不视为用户操作；
+  //  - 否则视为用户手动滑动：离开底部则暂停跟随（加入 pausedFollow），回到底部则恢复跟随。
   const handleOutputScroll = useCallback((id, e) => {
     const el = e.target
-    // 先记录最新滚动位置，供重渲染后还原
     scrollPositions.current[id] = el.scrollTop
-    // 仅当用户近期有真实交互时，才依据滚动位置更新「是否自动跟随」。
-    // 否则（如列表重排导致 scrollTop 被浏览器重置为 0、或程序自动滚动触发的 scroll 事件）
-    // 会被误判为「用户上滚」，从而永久关闭自动跟随、滚动条停在起始位置。
-    const last = userInteractRef.current[id] || 0
-    if (Date.now() - last > 400) return
+    if (programmaticScroll.current.has(el)) return
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20
-    userScrolledUp.current[id] = !isAtBottom
+    if (isAtBottom) {
+      pausedFollow.current.delete(id)
+    } else {
+      pausedFollow.current.add(id)
+    }
   }, [])
 
-  // 每当 outputs 变化后：正在运行且未手动上滚的，自动追踪最新内容；
-  // 其它（已完成 / 用户已上滚）的，还原重排前记录的滚动位置，避免滚动条归零。
+  // 每当 outputs 变化后：
+  //  - 正在运行的面板：始终 pinToBottom 贴底（含两帧补丁兜底）；
+  //  - 其它面板（已完成等）：还原重排前记录的滚动位置，避免滚动条归零。
+  // 持续的内容增长由 ResizeObserver 负责贴底。
   useLayoutEffect(() => {
-    const follow = (id, el) => {
-      // 先立即贴底（layout 阶段）
-      el.scrollTop = el.scrollHeight
-      // 长文本（尤其是 word-break:break-all 的换行）可能在绘制后才完成最终布局，
-      // 导致本次测量的 scrollHeight 偏小、滚动条偶尔差几像素不到底部。
-      // 下一帧再补一次贴底，确保严格到底。
-      requestAnimationFrame(() => {
-        const out = outputs[id]
-        if (out && out.live && !userScrolledUp.current[id] && el.isConnected) {
-          el.scrollTop = el.scrollHeight
-        }
-      })
-    }
     const restore = (id, el) => {
       const out = outputs[id]
-      if (out && out.live && !userScrolledUp.current[id]) {
-        follow(id, el)
+      if (out && out.live && !pausedFollow.current.has(id)) {
+        pinToBottom(el)
       } else {
+        // 非运行中，或运行中但用户已手动上滑暂停：还原之前位置（并清掉暂停标记）
+        pausedFollow.current.delete(id)
         const saved = scrollPositions.current[id]
         if (typeof saved === 'number') el.scrollTop = saved
       }
@@ -227,12 +304,18 @@ function App() {
       const el = outputRefs.current[id]
       if (el) restore(id, el)
     })
-    // 大窗口也自动追踪 / 还原
-    if (maximizedScriptId) {
-      const el = maximizedOutputRef.current
-      if (el) restore(maximizedScriptId, el)
+    // 放大窗：立即贴底，并让 ResizeObserver 跟踪正确的内容元素
+    if (maximizedScriptId && maximizedOutputRef.current && maximizedContentRef.current) {
+      restore(maximizedScriptId, maximizedOutputRef.current)
+      contentToId.current.set(maximizedContentRef.current, maximizedScriptId)
+      ensureObserver().observe(maximizedContentRef.current)
     }
-  }, [outputs, maximizedScriptId])
+    // 放大窗关闭 / 切换时，取消对旧内容元素的观察，避免泄漏与误触发
+    if (prevMaximizedContentRef.current && prevMaximizedContentRef.current !== maximizedContentRef.current) {
+      followObserver.current?.unobserve(prevMaximizedContentRef.current)
+    }
+    prevMaximizedContentRef.current = maximizedContentRef.current
+  }, [outputs, maximizedScriptId, ensureObserver])
 
   // 监听 ESC 键关闭最大化窗口
   useEffect(() => {
@@ -533,9 +616,8 @@ function App() {
     setExecutingIds(prev => ({ ...prev, [id]: true }))
     const timestamp = Date.now()
     setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }))
-
-    // 重置用户滚动状态，允许自动跟随
-    userScrolledUp.current[id] = false
+    // 新一次执行：清除该脚本的「暂停跟随」标记，重新从底部开始跟随
+    pausedFollow.current.delete(id)
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
@@ -639,11 +721,8 @@ function App() {
     // 记录本次批量中正在运行的脚本，脚本结束即从该集合移除，
     // 使其「Execute」按钮即时可点击，不必等整批跑完
     setBatchRunningIds(Object.fromEntries(batchIds.map(id => [id, true])))
-
-    // 重置所有 batch 脚本的滚动状态，允许自动跟随
-    batchIds.forEach(id => {
-      userScrolledUp.current[id] = false
-    })
+    // 新一次批量执行：清除这些脚本的「暂停跟随」标记，重新从底部开始跟随
+    batchIds.forEach(id => pausedFollow.current.delete(id))
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
@@ -1155,12 +1234,8 @@ function App() {
                         className="output-content-wrapper"
                         ref={el => { outputRefs.current[script.id] = el }}
                         onScroll={(e) => handleOutputScroll(script.id, e)}
-                        onWheel={() => markUserInteract(script.id)}
-                        onTouchMove={() => markUserInteract(script.id)}
-                        onMouseDown={() => markUserInteract(script.id)}
-                        onKeyDown={() => markUserInteract(script.id)}
                       >
-                        <pre className="output-content">{output.output || 'Waiting for output...'}</pre>
+                        <pre className="output-content" ref={getContentRef(script.id)}>{output.output || 'Waiting for output...'}</pre>
                       </div>
                     </div>
                     {output.error && (
@@ -1538,12 +1613,8 @@ function App() {
                   className="maximized-output-wrapper"
                   ref={maximizedOutputRef}
                   onScroll={(e) => handleOutputScroll(maximizedScriptId, e)}
-                  onWheel={() => markUserInteract(maximizedScriptId)}
-                  onTouchMove={() => markUserInteract(maximizedScriptId)}
-                  onMouseDown={() => markUserInteract(maximizedScriptId)}
-                  onKeyDown={() => markUserInteract(maximizedScriptId)}
                 >
-                  <pre className="maximized-output-content">{output.output || 'Waiting for output...'}</pre>
+                  <pre className="maximized-output-content" ref={maximizedContentRef}>{output.output || 'Waiting for output...'}</pre>
                 </div>
                 {output.error && (
                   <div className="maximized-error-section">
