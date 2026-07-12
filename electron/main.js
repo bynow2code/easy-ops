@@ -304,38 +304,65 @@ const initAutoUpdater = () => {
     }
   };
 
-  autoUpdater.on('checking-for-update', () => send({ type: 'checking' }));
-  autoUpdater.on('update-available', (info) =>
-    send({ type: 'available', version: info.version, releaseNotes: info.releaseNotes || '' })
-  );
-  autoUpdater.on('update-not-available', (info) =>
-    send({ type: 'not-available', version: info.version })
-  );
-  autoUpdater.on('download-progress', (p) =>
-    send({ type: 'downloading', percent: Math.round(p.percent || 0), transferred: p.transferred, total: p.total })
-  );
-  autoUpdater.on('update-downloaded', (info) =>
-    send({ type: 'downloaded', version: info.version })
-  );
-  autoUpdater.on('error', (err) =>
-    send({ type: 'error', message: err && err.message ? err.message : String(err) })
-  );
+  // 防重入：避免同时多次下载或下载过程中重复检查更新
+  let isDownloading = false;
+  let isChecking = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    isChecking = true;
+    send({ type: 'checking' });
+  });
+  autoUpdater.on('update-available', (info) => {
+    isChecking = false;
+    send({ type: 'available', version: info.version, releaseNotes: info.releaseNotes || '' });
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    isChecking = false;
+    send({ type: 'not-available', version: info.version });
+  });
+  autoUpdater.on('download-progress', (p) => {
+    // 下载进度：由于 GitHub Releases 可能经过 HTTP 重定向（→ S3），
+    // total 可能在中途变化导致进度"倒退"，前端会自行处理，这里只透传原始数据
+    send({ type: 'downloading', percent: Math.round(p.percent || 0), transferred: p.transferred, total: p.total });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    isDownloading = false;
+    send({ type: 'downloaded', version: info.version });
+  });
+  autoUpdater.on('error', (err) => {
+    isChecking = false;
+    isDownloading = false;
+    send({ type: 'error', message: err && err.message ? err.message : String(err) });
+  });
 
   // 手动检查更新（前端「检查更新」按钮触发）
   ipcMain.handle('app:check-updates', async () => {
+    if (isChecking) {
+      log('[UPDATE] checkForUpdates ignored - already checking');
+      return;
+    }
     try {
       await autoUpdater.checkForUpdates();
     } catch (e) {
       log(`checkForUpdates failed: ${e.message}`);
+      isChecking = false;
     }
   });
 
   // 用户在弹窗里确认更新后，由前端调用，开始下载新版本
   ipcMain.handle('app:download-update', async () => {
+    if (isDownloading) {
+      log('[UPDATE] downloadUpdate ignored - already downloading');
+      return;
+    }
+    isDownloading = true;
+    log('[UPDATE] downloadUpdate started');
     try {
       await autoUpdater.downloadUpdate();
+      log('[UPDATE] downloadUpdate completed');
     } catch (e) {
       log(`downloadUpdate failed: ${e.message}`);
+      isDownloading = false;
       send({ type: 'error', message: e && e.message ? e.message : String(e) });
     }
   });
@@ -343,21 +370,28 @@ const initAutoUpdater = () => {
   // 下载完成后，由前端「重启并更新」按钮调用，退出并安装
   ipcMain.handle('app:start-update', () => {
     log('[UPDATE] quitAndInstall called');
-    // 用 setImmediate 延迟执行，确保 IPC 响应先返回给渲染进程，
-    // 否则 quitAndInstall 内部调用 app.quit() 可能导致 IPC 响应丢失，按钮表现为无反应。
-    setImmediate(() => {
+    // 先关闭窗口，确保 IPC 响应能正常返回给渲染进程，
+    // 然后用 setTimeout 延迟执行 quitAndInstall，避免 app.quit() 阻断 IPC 通道
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.close(); } catch (e) { log(`[UPDATE] close window failed: ${e.message}`); }
+    }
+    setTimeout(() => {
       try {
         autoUpdater.quitAndInstall();
       } catch (e) {
         log(`[UPDATE] quitAndInstall failed: ${e.message}`);
       }
-    });
+    }, 200);
   });
 
-  // 启动后静默检查一次（延迟 3 秒，避免拖慢首屏）
+  // 启动后静默检查一次（延迟 5 秒，避免与用户手动操作冲突）
   setTimeout(() => {
+    if (isChecking || isDownloading) {
+      log('[UPDATE] initial check skipped - update already in progress');
+      return;
+    }
     autoUpdater.checkForUpdates().catch((e) => log(`initial check failed: ${e.message}`));
-  }, 3000);
+  }, 5000);
 };
 
 // ==================== 启动应用 ====================

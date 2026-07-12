@@ -154,12 +154,17 @@ function App() {
         case 'not-available':
           setUpdateState('not-available')
           break
-        case 'downloading':
+        case 'downloading': {
+          const pct = data.percent || 0
+          // 下载中：进度封顶 99%，等 update-downloaded 事件确认完成后再显示 100%，
+          // 避免 GitHub→S3 重定向导致 total 变化，进度从 100% "倒退" 产生"下载了两次"的错觉
           setUpdateState('downloading')
-          setUpdateProgress(data.percent || 0)
+          setUpdateProgress(Math.min(pct, 99))
           break
+        }
         case 'downloaded':
           setUpdateState('downloaded')
+          setUpdateProgress(100)
           setUpdateInfo(prev => ({ ...prev, version: data.version || prev.version }))
           break
         case 'error':
@@ -738,13 +743,20 @@ function App() {
 
   // 用户在弹窗里确认更新后，开始下载
   const handleDownloadUpdate = () => {
+    if (updateState === 'downloading') return // 防止重复点击
     setUpdateProgress(0)
     setUpdateState('downloading')
     if (window.electronAPI?.downloadUpdate) window.electronAPI.downloadUpdate()
   }
 
   const handleStartUpdate = () => {
-    if (window.electronAPI?.startUpdate) window.electronAPI.startUpdate()
+    if (window.electronAPI?.startUpdate) {
+      window.electronAPI.startUpdate().catch((err) => {
+        console.error('startUpdate failed:', err)
+        setUpdateError('Failed to restart. Please close and reopen the app manually.')
+        setUpdateState('error')
+      })
+    }
   }
 
   return (
