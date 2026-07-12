@@ -1,12 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import ShellEditor from './components/ShellEditor'
+import Markdown from './components/Markdown'
 import './App.css'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 
-// 统一格式化 release notes（来自 electron-updater / GitHub API），兼容多种输入格式：
-// 先用成熟的 marked 库把 markdown 渲染成 HTML，再用 DOMPurify 过滤危险标签。
+// 把 release notes 多种输入格式（字符串 / 数组 / 对象）归一化成一段纯 markdown 文本。
+// （electron-updater / GitHub API 的 releaseNotes 形态不固定，这里只做数据准备，
+//  真正的 markdown 渲染交给 <Markdown> 组件。）
 const normalizeReleaseNotes = (notes) => {
   if (!notes) return '';
   // 数组：多版本累计，逐项提取 notes 文本并拼接
@@ -24,15 +24,6 @@ const normalizeReleaseNotes = (notes) => {
   return String(notes);
 };
 
-const formatReleaseNotes = (notes) => {
-  const text = normalizeReleaseNotes(notes);
-  if (!text) return '';
-  const rawHtml = marked.parse(text, { gfm: true, breaks: true });
-  // DOMPurify 过滤 script/iframe 等危险标签；保留 a 的 target/rel 以便新标签打开
-  return DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] })
-    .replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
-};
-
 function App() {
   const [scripts, setScripts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
@@ -45,6 +36,7 @@ function App() {
   const [executingBatch, setExecutingBatch] = useState(false)
   const [batchOrderIds, setBatchOrderIds] = useState([])
   const [outputs, setOutputs] = useState({})
+  const [runIds, setRunIds] = useState({})  // scriptId -> 执行 runId，用于「强制中断」
   const [systemInfo, setSystemInfo] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
@@ -54,6 +46,7 @@ function App() {
   const eventSourceRefs = useRef({})
   const outputRefs = useRef({})
   const maximizedOutputRef = useRef(null)
+  const batchRunIdRef = useRef(null)  // 批量执行的 runId，用于中断整批
   const [showScrollTop, setShowScrollTop] = useState(false)
   const outputsScrollRef = useRef(null)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
@@ -476,6 +469,7 @@ function App() {
     // 清空所有输出
     setOutputs({})
     setExecutingIds({})
+    setRunIds({})
     setExecutingBatch(false)
     setBatchOrderIds([])
   }
@@ -504,6 +498,7 @@ function App() {
       const data = JSON.parse(event.data)
 
       if (data.type === 'start') {
+        if (data.runId) setRunIds(prev => ({ ...prev, [id]: data.runId }))
         setOutputs(prev => {
           const curr = prev[id]
           if (curr && !curr.live) return prev
@@ -538,6 +533,7 @@ function App() {
           delete next[id]
           return next
         })
+        setRunIds(prev => { const n = { ...prev }; delete n[id]; return n })
         es.close()
         delete eventSourceRefs.current[id]
         // 发送系统通知
@@ -560,6 +556,25 @@ function App() {
       es.close()
       delete eventSourceRefs.current[id]
     }
+  }
+
+  // 强制中断某次执行：调用后端 /api/execute/:runId/stop 整组杀死进程
+  const handleStopExecution = async (runId) => {
+    if (!runId) return
+    try {
+      await axios.post(`/api/execute/${runId}/stop`)
+    } catch (e) {
+      console.error('Stop execution failed:', e)
+    }
+  }
+
+  // 中断所有正在执行的脚本
+  const handleStopAll = () => {
+    Object.keys(outputs).forEach(id => {
+      if (outputs[id]?.live && runIds[id]) {
+        handleStopExecution(runIds[id])
+      }
+    })
   }
 
   const handleBatchExecute = () => {
@@ -604,6 +619,10 @@ function App() {
 
       if (data.type === 'start') {
         currentId = data.scriptId
+        if (data.runId) {
+          batchRunIdRef.current = data.runId
+          setRunIds(prev => ({ ...prev, [scriptId]: data.runId }))
+        }
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId]
@@ -637,6 +656,7 @@ function App() {
         }
       } else if (data.type === 'close') {
         if (scriptId) {
+          setRunIds(prev => { const n = { ...prev }; delete n[scriptId]; return n })
           setOutputs(prev => {
             const curr = prev[scriptId]
             if (curr && !curr.live) return prev
@@ -653,6 +673,14 @@ function App() {
       } else if (data.type === 'done') {
         setExecutingBatch(false)
         setBatchOrderIds([])
+        if (batchRunIdRef.current) {
+          setRunIds(prev => {
+            const n = { ...prev }
+            Object.keys(n).forEach(k => { if (n[k] === batchRunIdRef.current) delete n[k] })
+            return n
+          })
+          batchRunIdRef.current = null
+        }
         es.close()
         delete eventSourceRefs.current['__batch__']
       }
@@ -673,6 +701,14 @@ function App() {
       })
       setExecutingBatch(false)
       setBatchOrderIds([])
+      if (batchRunIdRef.current) {
+        setRunIds(prev => {
+          const n = { ...prev }
+          Object.keys(n).forEach(k => { if (n[k] === batchRunIdRef.current) delete n[k] })
+          return n
+        })
+        batchRunIdRef.current = null
+      }
       es.close()
       delete eventSourceRefs.current['__batch__']
     }
@@ -949,11 +985,18 @@ function App() {
         <div className="right-panel">
           <div className="outputs-header">
             <h2 className="outputs-title">Execution Outputs</h2>
-            {Object.keys(outputs).length > 0 && (
+          {Object.keys(outputs).length > 0 && (
+            <>
+              {Object.values(outputs).some(o => o.live) && (
+                <button className="btn-stop-all" onClick={handleStopAll} title="Force stop all running executions">
+                  Stop all
+                </button>
+              )}
               <button className="btn-close-all" onClick={handleCloseAllOutputs} title="Close all outputs">
                 Close all
               </button>
-            )}
+            </>
+          )}
           </div>
           <div
             className="outputs-container"
@@ -1015,9 +1058,21 @@ function App() {
                             <line x1="3" y1="21" x2="10" y2="14" />
                           </svg>
                         </button>
+                        {output.live && runIds[script.id] && (
+                          <button
+                            onClick={() => handleStopExecution(runIds[script.id])}
+                            className="btn btn-stop"
+                            title="Force stop execution"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                              <rect x="6" y="6" width="12" height="12" rx="2" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             // 关闭并清理该脚本的 EventSource
+                            setRunIds(prev => { const n = { ...prev }; delete n[script.id]; return n })
                             if (eventSourceRefs.current[script.id]) {
                               eventSourceRefs.current[script.id].close()
                               delete eventSourceRefs.current[script.id]
@@ -1110,9 +1165,9 @@ function App() {
                 <div>
                   <p>A new version <strong>v{updateInfo.version}</strong> is available.</p>
                   {(() => {
-                    const html = formatReleaseNotes(updateInfo.releaseNotes);
-                    return html ? (
-                      <div className="update-notes" dangerouslySetInnerHTML={{ __html: html.slice(0, 2000) }} />
+                    const text = normalizeReleaseNotes(updateInfo.releaseNotes);
+                    return text ? (
+                      <Markdown content={text} className="update-notes" maxLength={2000} />
                     ) : null;
                   })()}
                   <p className="update-hint">Do you want to download and install this update?</p>
@@ -1299,6 +1354,17 @@ function App() {
                   <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
                     {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                   </span>
+                  {output.live && runIds[maximizedScriptId] && (
+                    <button
+                      onClick={() => handleStopExecution(runIds[maximizedScriptId])}
+                      className="btn btn-stop"
+                      title="Force stop execution"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                        <rect x="6" y="6" width="12" height="12" rx="2" />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     onClick={() => setMaximizedScriptId(null)}
                     className="btn btn-close"

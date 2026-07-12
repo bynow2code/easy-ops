@@ -969,6 +969,42 @@ html, body, #root {
   color: #1890ff;
 }
 
+/* 强制中断按钮 */
+.btn-stop {
+  background-color: transparent;
+  color: #ff4d4f;
+  padding: 2px 6px;
+  border: 1px solid #ffccc7;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-stop:hover {
+  background-color: #fff1f0;
+  color: #d93026;
+  border-color: #d93026;
+}
+
+.btn-stop-all {
+  font-size: 11px;
+  padding: 3px 10px;
+  margin-right: 8px;
+  background-color: #fff1f0;
+  color: #d93026;
+  border: 1px solid #ffccc7;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.btn-stop-all:hover {
+  background-color: #ffe7e3;
+  border-color: #d93026;
+}
+
 /* Maximized output modal */
 .modal-maximized {
   width: 92%;
