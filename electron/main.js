@@ -341,14 +341,17 @@ const initAutoUpdater = () => {
   });
 
   // 下载完成后，由前端「重启并更新」按钮调用，退出并安装
-  // macOS 上必须传 (true, true) 才能确保：强制静默安装 + 安装后自动重启应用
   ipcMain.handle('app:start-update', () => {
     log('[UPDATE] quitAndInstall called');
-    try {
-      autoUpdater.quitAndInstall(true, true);
-    } catch (e) {
-      log(`[UPDATE] quitAndInstall failed: ${e.message}`);
-    }
+    // 用 setImmediate 延迟执行，确保 IPC 响应先返回给渲染进程，
+    // 否则 quitAndInstall 内部调用 app.quit() 可能导致 IPC 响应丢失，按钮表现为无反应。
+    setImmediate(() => {
+      try {
+        autoUpdater.quitAndInstall();
+      } catch (e) {
+        log(`[UPDATE] quitAndInstall failed: ${e.message}`);
+      }
+    });
   });
 
   // 启动后静默检查一次（延迟 3 秒，避免拖慢首屏）
