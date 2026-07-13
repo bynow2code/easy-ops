@@ -17,6 +17,7 @@
     "electron-build-dir": "npm run build && electron-builder --dir --win",
     "electron-build-mac-intel": "npm run build && electron-builder --mac --x64",
     "electron-build-mac-arm": "npm run build && electron-builder --mac --arm64",
+    "generate-icns": "cd client/public && mkdir -p icon.iconset && sips -z 16 16 logo-1024.png --out icon.iconset/icon_16x16.png && sips -z 32 32 logo-1024.png --out icon.iconset/icon_16x16@2x.png && sips -z 32 32 logo-1024.png --out icon.iconset/icon_32x32.png && sips -z 64 64 logo-1024.png --out icon.iconset/icon_32x32@2x.png && sips -z 128 128 logo-1024.png --out icon.iconset/icon_128x128.png && sips -z 256 256 logo-1024.png --out icon.iconset/icon_128x128@2x.png && sips -z 256 256 logo-1024.png --out icon.iconset/icon_256x256.png && sips -z 512 512 logo-1024.png --out icon.iconset/icon_256x256@2x.png && sips -z 512 512 logo-1024.png --out icon.iconset/icon_512x512.png && sips -z 1024 1024 logo-1024.png --out icon.iconset/icon_512x512@2x.png && iconutil -c icns icon.iconset && rm -rf icon.iconset",
     "start": "electron ."
   },
   "devDependencies": {
@@ -61,7 +62,7 @@
         "dmg",
         "zip"
       ],
-      "icon": "client/public/logo-1024.png",
+      "icon": "client/public/icon.icns",
       "category": "public.app-category.developer-tools",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
@@ -74,8 +75,7 @@
       "icon": "client/public/logo.ico"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }

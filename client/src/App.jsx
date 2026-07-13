@@ -1,13 +1,13 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import ShellEditor from './components/ShellEditor'
+import Markdown from './components/Markdown'
 import './App.css'
 
-// 统一格式化 electron-updater 返回的 release notes，兼容多种格式：
-// - 字符串（纯文本 / markdown / 偶发 XML）
-// - 数组（多版本累计更新，每项含 {version, notes}）
-// - 对象（含 notes / note / body 字段）
-const formatReleaseNotes = (notes) => {
+// 把 release notes 多种输入格式（字符串 / 数组 / 对象）归一化成一段纯 markdown 文本。
+// （electron-updater / GitHub API 的 releaseNotes 形态不固定，这里只做数据准备，
+//  真正的 markdown 渲染交给 <Markdown> 组件。）
+const normalizeReleaseNotes = (notes) => {
   if (!notes) return '';
   // 数组：多版本累计，逐项提取 notes 文本并拼接
   if (Array.isArray(notes)) {
@@ -20,22 +20,13 @@ const formatReleaseNotes = (notes) => {
   if (typeof notes === 'object') {
     return notes.notes || notes.note || notes.body || '';
   }
-  // 字符串：若含 HTML 标记，仅剥离危险/无关标签，保留 <a><strong><em><ul><li><br><p>
-  let text = String(notes);
-  if (/<[^>]+>/.test(text)) {
-    text = text
-      .replace(/<(script|style|iframe|object|embed|form|input)[^>]*>[\s\S]*?<\/\1>/gi, '')   // 去掉危险容器
-      .replace(/<[^>]+>/g, (tag) => {
-        const t = tag.toLowerCase();
-        // 只保留这些安全标签，其余去掉（但保留标签内的文字）
-        if (/^<\/?(a|strong|b|em|i|u|ul|ol|li|br|p|h[1-6]|code|blockquote)\b/.test(t)) return tag;
-        return '';
-      })
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-  }
-  return text;
+  // 字符串：原样返回
+  return String(notes);
 };
+
+// 路径用于界面展示时转义空格（如 ~/Library/Application\ Support/...），
+// 与终端书写一致，避免长路径在含空格处被换行割裂，也方便直接复制到 shell 使用。
+const escapePathForShell = (p) => (p || '').replace(/ /g, '\\ ');
 
 function App() {
   const [scripts, setScripts] = useState([])
@@ -47,8 +38,9 @@ function App() {
   const [editErrors, setEditErrors] = useState({})
   const [executingIds, setExecutingIds] = useState({})
   const [executingBatch, setExecutingBatch] = useState(false)
-  const [batchOrderIds, setBatchOrderIds] = useState([])
+  const [batchRunningIds, setBatchRunningIds] = useState({})  // 批量执行中尚未结束的脚本 id -> true
   const [outputs, setOutputs] = useState({})
+  const [runIds, setRunIds] = useState({})  // scriptId -> 执行 runId，用于「强制中断」
   const [systemInfo, setSystemInfo] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
@@ -57,19 +49,113 @@ function App() {
   const [maximizedScriptId, setMaximizedScriptId] = useState(null)
   const eventSourceRefs = useRef({})
   const outputRefs = useRef({})
+  const outputPanelRefs = useRef({})
   const maximizedOutputRef = useRef(null)
+  const batchRunIdRef = useRef(null)  // 批量执行的 runId，用于中断整批
   const [showScrollTop, setShowScrollTop] = useState(false)
   const outputsScrollRef = useRef(null)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
-  // 跟踪用户是否手动向上滚动（不在底部）
-  const userScrolledUp = useRef({})
+  // 记录执行时首个脚本 ID，滚动到顶部后对其输出面板做高亮
+  const pendingHighlightId = useRef(null)
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
 
+  // ==================== 自动跟随：ResizeObserver ====================
+  // 规则：正在运行（live）的脚本始终贴底；其它状态（已完成等）在重排/重渲染时
+  // 还原之前的滚动位置（由 handleOutputScroll 记录到 scrollPositions）。
+  // 小窗（output-content-wrapper）与放大窗（maximized-output-wrapper）统一适用。
+  // 用单个 ResizeObserver 观察各输出内容元素，内容变高时贴底，相比「layout 阶段设置 + rAF 补一次」
+  // 只在内容真正变高时触发、且无时序竞争，更可靠。
+  // 将滚动容器贴底：同步设置一次，再用两帧补丁兜底。
+  // 原因：内容增长时，滚动条可能在本帧「刚出现」，导致内容被重新折行、scrollHeight 再变大，
+  // 此时单次 scrollTop = scrollHeight 会被浏览器钳制到旧最大值，从而「差一点点没贴底」。
+  // 运行中的面板：用 pausedFollow 记录「用户已手动上滑、暂停跟随」的脚本 id。
+  // 判定「用户上滑」不靠标记程序滚动（易与频繁自动贴底相互干扰），而靠滚动方向：
+  // 程序贴底只会让 scrollTop 变大（向下），用户上滑会让 scrollTop 变小（向上），据此精确区分。
+  const pausedFollow = useRef(new Set())
+  // 记录每个容器上一次的 scrollTop，用于判断滚动方向
+  const lastScrollTop = useRef(new WeakMap())
+  // 贴底：同步一次 + 两帧补丁兜底；若期间用户已暂停跟随（id 提供时），则跳过。
+  const pinToBottom = useCallback((el, id) => {
+    if (!el || !el.isConnected) return
+    const doPin = () => {
+      if (id != null && pausedFollow.current.has(id)) return
+      if (el.isConnected) {
+        el.scrollTop = el.scrollHeight
+        lastScrollTop.current.set(el, el.scrollTop)
+      }
+    }
+    doPin()
+    requestAnimationFrame(() => {
+      doPin()
+      requestAnimationFrame(doPin)
+    })
+  }, [])
+  const outputsRef = useRef(outputs)
+  outputsRef.current = outputs
+  const maximizedScriptIdRef = useRef(maximizedScriptId)
+  maximizedScriptIdRef.current = maximizedScriptId
+  const contentEls = useRef(new Map())        // scriptId -> 被观察的内容元素（小面板）
+  const contentToId = useRef(new WeakMap())    // 内容元素 -> scriptId
+  const followObserver = useRef(null)
+  const maximizedContentRef = useRef(null)     // 放大窗当前内容元素
+  const prevMaximizedContentRef = useRef(null)
+
+  const ensureObserver = useCallback(() => {
+    if (!followObserver.current) {
+      followObserver.current = new ResizeObserver((entries) => {
+        entries.forEach((entry) => {
+          const id = contentToId.current.get(entry.target)
+          if (id == null) return
+          const out = outputsRef.current[id]
+          // 该脚本同时可能存在于「小面板」与「放大窗」两个滚动容器，
+          // 需贴底的是当前可见的那个（放大窗打开时优先放大窗）。
+          const isMax = maximizedScriptIdRef.current === id
+          const el = (isMax && maximizedOutputRef.current) ? maximizedOutputRef.current : outputRefs.current[id]
+          // 正在运行且用户未手动上滑：始终贴底（小窗/放大窗统一）
+          if (out && out.live && !pausedFollow.current.has(id) && el && el.isConnected) {
+            pinToBottom(el, id)
+          }
+        })
+      })
+    }
+    return followObserver.current
+  }, [pinToBottom])
+
+  const observeContent = useCallback((id, el) => {
+    if (!id || !el) return
+    contentEls.current.set(id, el)
+    contentToId.current.set(el, id)
+    ensureObserver().observe(el)
+  }, [ensureObserver])
+
+  const unobserveContent = useCallback((id) => {
+    const el = contentEls.current.get(id)
+    if (el) followObserver.current?.unobserve(el)
+    contentEls.current.delete(id)
+  }, [])
+
+  // 每个输出面板的内容 <pre> 用「稳定」ref 回调注册/注销观察，避免每次渲染重复 observe
+  const contentRefCallbacks = useRef(new Map())
+  const getContentRef = useCallback((id) => {
+    if (!contentRefCallbacks.current.has(id)) {
+      contentRefCallbacks.current.set(id, (el) => {
+        if (el) observeContent(id, el)
+        else unobserveContent(id)
+      })
+    }
+    return contentRefCallbacks.current.get(id)
+  }, [observeContent, unobserveContent])
+
+  // 组件卸载时断开 observer
+  useEffect(() => () => followObserver.current?.disconnect(), [])
+
   // ==================== 自动更新相关状态 ====================
   const [appVersion, setAppVersion] = useState('')
+  const [appInfo, setAppInfo] = useState(null)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const [showInfoModal, setShowInfoModal] = useState(false)
   // idle | checking | available | not-available | downloading | downloaded | error
   const [updateState, setUpdateState] = useState('idle')
   const [updateInfo, setUpdateInfo] = useState({ version: '', releaseNotes: '' })
@@ -137,7 +223,10 @@ function App() {
   useEffect(() => {
     if (window.electronAPI?.getAppInfo) {
       window.electronAPI.getAppInfo()
-        .then(info => setAppVersion(info.version))
+        .then(info => {
+          setAppVersion(info.version)
+          setAppInfo(info)
+        })
         .catch(() => {})
     }
     if (!window.electronAPI?.onUpdateEvent) return
@@ -154,12 +243,17 @@ function App() {
         case 'not-available':
           setUpdateState('not-available')
           break
-        case 'downloading':
+        case 'downloading': {
+          const pct = data.percent || 0
+          // 下载中：进度封顶 99%，等 update-downloaded 事件确认完成后再显示 100%，
+          // 避免 GitHub→S3 重定向导致 total 变化，进度从 100% "倒退" 产生"下载了两次"的错觉
           setUpdateState('downloading')
-          setUpdateProgress(data.percent || 0)
+          setUpdateProgress(Math.min(pct, 99))
           break
+        }
         case 'downloaded':
           setUpdateState('downloaded')
+          setUpdateProgress(100)
           setUpdateInfo(prev => ({ ...prev, version: data.version || prev.version }))
           break
         case 'error':
@@ -173,35 +267,61 @@ function App() {
     return unsub
   }, [])
 
-  // 监听用户滚动事件
+  // 记录每个输出容器当前的滚动位置，重排/重渲染后用于还原（仅对「非运行」状态有意义），
+  // 避免滚动条被重置到起始位置。运行中的面板由 pinToBottom 始终贴底，无需记录。
+  const scrollPositions = useRef({})
+
+  // 监听用户滚动事件（依据滚动方向精确区分「用户上滑」与「程序自动贴底」）：
+  //  - 记录当前滚动位置，供重排/重渲染后还原；
+  //  - 回到底部：恢复跟随（清除暂停）；
+  //  - 相对上次明显向上滑动（scrollTop 变小）：暂停跟随。
+  // 程序自动贴底只会使 scrollTop 变大（向下），不会触发「上滑」判定，故无需额外标记。
   const handleOutputScroll = useCallback((id, e) => {
     const el = e.target
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10
-    userScrolledUp.current[id] = !isAtBottom
+    const curr = el.scrollTop
+    const prev = lastScrollTop.current.has(el) ? lastScrollTop.current.get(el) : curr
+    lastScrollTop.current.set(el, curr)
+    scrollPositions.current[id] = curr
+    const isAtBottom = el.scrollHeight - curr - el.clientHeight < 20
+    if (isAtBottom) {
+      pausedFollow.current.delete(id)
+    } else if (curr < prev - 2) {
+      // 明显向上滑动（留 2px 容差抵消抖动）→ 用户想查看历史输出，暂停跟随
+      pausedFollow.current.add(id)
+    }
   }, [])
 
-  // 每当 outputs 变化后，如果用户没有手动向上滚动，自动滚动到最新内容
+  // 每当 outputs 变化后：
+  //  - 正在运行的面板：始终 pinToBottom 贴底（含两帧补丁兜底）；
+  //  - 其它面板（已完成等）：还原重排前记录的滚动位置，避免滚动条归零。
+  // 持续的内容增长由 ResizeObserver 负责贴底。
   useLayoutEffect(() => {
-    Object.keys(outputs).forEach(id => {
+    const restore = (id, el) => {
       const out = outputs[id]
-      if (out && out.live && !userScrolledUp.current[id]) {
-        const el = outputRefs.current[id]
-        if (el) {
-          el.scrollTop = el.scrollHeight
-        }
-      }
-    })
-    // 大窗口也自动追踪最新内容
-    if (maximizedScriptId) {
-      const out = outputs[maximizedScriptId]
-      if (out && out.live && !userScrolledUp.current[maximizedScriptId]) {
-        const el = maximizedOutputRef.current
-        if (el) {
-          el.scrollTop = el.scrollHeight
-        }
+      if (out && out.live && !pausedFollow.current.has(id)) {
+        pinToBottom(el, id)
+      } else {
+        // 非运行中，或运行中但用户已手动上滑暂停：还原之前位置
+        const saved = scrollPositions.current[id]
+        if (typeof saved === 'number') el.scrollTop = saved
       }
     }
-  }, [outputs, maximizedScriptId])
+    Object.keys(outputs).forEach(id => {
+      const el = outputRefs.current[id]
+      if (el) restore(id, el)
+    })
+    // 放大窗：立即贴底，并让 ResizeObserver 跟踪正确的内容元素
+    if (maximizedScriptId && maximizedOutputRef.current && maximizedContentRef.current) {
+      restore(maximizedScriptId, maximizedOutputRef.current)
+      contentToId.current.set(maximizedContentRef.current, maximizedScriptId)
+      ensureObserver().observe(maximizedContentRef.current)
+    }
+    // 放大窗关闭 / 切换时，取消对旧内容元素的观察，避免泄漏与误触发
+    if (prevMaximizedContentRef.current && prevMaximizedContentRef.current !== maximizedContentRef.current) {
+      followObserver.current?.unobserve(prevMaximizedContentRef.current)
+    }
+    prevMaximizedContentRef.current = maximizedContentRef.current
+  }, [outputs, maximizedScriptId, ensureObserver])
 
   // 监听 ESC 键关闭最大化窗口
   useEffect(() => {
@@ -234,11 +354,35 @@ function App() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [showAddForm, editingScript])
 
+  // 监听 ESC 键关闭 App Info 弹窗
+  useEffect(() => {
+    if (!showInfoModal) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowInfoModal(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [showInfoModal])
+
   // 当执行触发时，将外层 Execution Outputs 容器滚动到顶部
   // useLayoutEffect 在 DOM 提交后、浏览器绘制前执行，避免竞态条件
   useLayoutEffect(() => {
     if (scrollToTopKey > 0 && outputsScrollRef.current) {
       outputsScrollRef.current.scrollTop = 0
+      // 对首个脚本的输出面板做高亮
+      const id = pendingHighlightId.current
+      if (id) {
+        pendingHighlightId.current = null
+        // 清除旧高亮，再对目标面板做高亮
+        Object.values(outputPanelRefs.current).forEach(p => p.classList.remove('highlight'))
+        const panel = outputPanelRefs.current[id]
+        if (panel) {
+          panel.classList.add('highlight')
+          setTimeout(() => panel.classList.remove('highlight'), 3100)
+        }
+      }
     }
   }, [scrollToTopKey])
 
@@ -283,6 +427,18 @@ function App() {
       console.error('Error adding script:', error)
       setFormErrors({ submit: 'Failed to add script, please try again' })
     }
+  }
+
+  const scrollToOutput = (id) => {
+    const panel = outputPanelRefs.current[id]
+    if (!panel) return
+
+    // 清除所有面板的现有高亮，避免多个面板同时显示特效
+    Object.values(outputPanelRefs.current).forEach(p => p.classList.remove('highlight'))
+
+    panel.classList.add('highlight')
+    setTimeout(() => panel.classList.remove('highlight'), 3100)
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const handleDeleteScript = (id) => {
@@ -475,26 +631,28 @@ function App() {
     // 清空所有输出
     setOutputs({})
     setExecutingIds({})
+    setRunIds({})
     setExecutingBatch(false)
-    setBatchOrderIds([])
+    setBatchRunningIds({})
+    outputPanelRefs.current = {}
   }
 
   const handleExecuteScript = (id) => {
     const script = scripts.find(s => s.id === id)
     if (!script) return
 
-    // 仅当该脚本自身正在执行时（单独或批量中）才阻止
-    if (executingIds[id] || (executingBatch && batchOrderIds.includes(id))) return
+    // 仅当该脚本自身正在执行时（单独执行，或仍在批量运行中）才阻止
+    if (executingIds[id] || batchRunningIds[id]) return
 
     setExecutingIds(prev => ({ ...prev, [id]: true }))
     const timestamp = Date.now()
     setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }))
-
-    // 重置用户滚动状态，允许自动跟随
-    userScrolledUp.current[id] = false
+    // 新一次执行：清除该脚本的「暂停跟随」标记，重新从底部开始跟随
+    pausedFollow.current.delete(id)
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
+    pendingHighlightId.current = id
 
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRefs.current[id] = es
@@ -503,6 +661,7 @@ function App() {
       const data = JSON.parse(event.data)
 
       if (data.type === 'start') {
+        if (data.runId) setRunIds(prev => ({ ...prev, [id]: data.runId }))
         setOutputs(prev => {
           const curr = prev[id]
           if (curr && !curr.live) return prev
@@ -530,13 +689,14 @@ function App() {
         setOutputs(prev => {
           const curr = prev[id]
           if (curr && !curr.live) return prev
-          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
+          return { ...prev, [id]: { ...curr, exitCode: data.exitCode, terminated: !!data.terminated, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
         })
         setExecutingIds(prev => {
           const next = { ...prev }
           delete next[id]
           return next
         })
+        setRunIds(prev => { const n = { ...prev }; delete n[id]; return n })
         es.close()
         delete eventSourceRefs.current[id]
         // 发送系统通知
@@ -561,6 +721,25 @@ function App() {
     }
   }
 
+  // 强制中断某次执行：调用后端 /api/execute/:runId/stop 整组杀死进程
+  const handleStopExecution = async (runId) => {
+    if (!runId) return
+    try {
+      await axios.post(`/api/execute/${runId}/stop`)
+    } catch (e) {
+      console.error('Stop execution failed:', e)
+    }
+  }
+
+  // 中断所有正在执行的脚本
+  const handleStopAll = () => {
+    Object.keys(outputs).forEach(id => {
+      if (outputs[id]?.live && runIds[id]) {
+        handleStopExecution(runIds[id])
+      }
+    })
+  }
+
   const handleBatchExecute = () => {
     if (selectedIds.length === 0) {
       alert('Please select at least one script')
@@ -570,16 +749,16 @@ function App() {
 
     // 捕获当前选中的脚本 ID 列表，保持顺序
     const batchIds = [...selectedIds]
-    setBatchOrderIds(batchIds)
     setExecutingBatch(true)
-
-    // 重置所有 batch 脚本的滚动状态，允许自动跟随
-    batchIds.forEach(id => {
-      userScrolledUp.current[id] = false
-    })
+    // 记录本次批量中正在运行的脚本，脚本结束即从该集合移除，
+    // 使其「Execute」按钮即时可点击，不必等整批跑完
+    setBatchRunningIds(Object.fromEntries(batchIds.map(id => [id, true])))
+    // 新一次批量执行：清除这些脚本的「暂停跟随」标记，重新从底部开始跟随
+    batchIds.forEach(id => pausedFollow.current.delete(id))
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
+    pendingHighlightId.current = batchIds[0]
 
     // 为每个 batch 脚本初始化输出（按 batch 顺序分配递减时间戳以保持排序）
     const batchTimestamp = Date.now()
@@ -603,6 +782,10 @@ function App() {
 
       if (data.type === 'start') {
         currentId = data.scriptId
+        if (data.runId) {
+          batchRunIdRef.current = data.runId
+          setRunIds(prev => ({ ...prev, [scriptId]: data.runId }))
+        }
         if (scriptId) {
           setOutputs(prev => {
             const curr = prev[scriptId]
@@ -636,10 +819,12 @@ function App() {
         }
       } else if (data.type === 'close') {
         if (scriptId) {
+          setRunIds(prev => { const n = { ...prev }; delete n[scriptId]; return n })
+          setBatchRunningIds(prev => { const n = { ...prev }; delete n[scriptId]; return n })
           setOutputs(prev => {
             const curr = prev[scriptId]
             if (curr && !curr.live) return prev
-            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
+            return { ...prev, [scriptId]: { ...curr, exitCode: data.exitCode, terminated: !!data.terminated, live: false, timestamp: curr?.timestamp, durationMs: data.durationMs } }
           })
           // 记录完成数，并立即发送完成通知
           finishedCount++
@@ -651,7 +836,15 @@ function App() {
         }
       } else if (data.type === 'done') {
         setExecutingBatch(false)
-        setBatchOrderIds([])
+        setBatchRunningIds({})
+        if (batchRunIdRef.current) {
+          setRunIds(prev => {
+            const n = { ...prev }
+            Object.keys(n).forEach(k => { if (n[k] === batchRunIdRef.current) delete n[k] })
+            return n
+          })
+          batchRunIdRef.current = null
+        }
         es.close()
         delete eventSourceRefs.current['__batch__']
       }
@@ -671,7 +864,15 @@ function App() {
         return changed ? next : prev
       })
       setExecutingBatch(false)
-      setBatchOrderIds([])
+      setBatchRunningIds({})
+      if (batchRunIdRef.current) {
+        setRunIds(prev => {
+          const n = { ...prev }
+          Object.keys(n).forEach(k => { if (n[k] === batchRunIdRef.current) delete n[k] })
+          return n
+        })
+        batchRunIdRef.current = null
+      }
       es.close()
       delete eventSourceRefs.current['__batch__']
     }
@@ -738,13 +939,20 @@ function App() {
 
   // 用户在弹窗里确认更新后，开始下载
   const handleDownloadUpdate = () => {
+    if (updateState === 'downloading') return // 防止重复点击
     setUpdateProgress(0)
     setUpdateState('downloading')
     if (window.electronAPI?.downloadUpdate) window.electronAPI.downloadUpdate()
   }
 
   const handleStartUpdate = () => {
-    if (window.electronAPI?.startUpdate) window.electronAPI.startUpdate()
+    if (window.electronAPI?.startUpdate) {
+      window.electronAPI.startUpdate().catch((err) => {
+        console.error('startUpdate failed:', err)
+        setUpdateError('Failed to restart. Please close and reopen the app manually.')
+        setUpdateState('error')
+      })
+    }
   }
 
   return (
@@ -752,12 +960,12 @@ function App() {
       <header className="header">
         <h1>Script Manager</h1>
 
-        {/* 工具栏：按钮在左，BASH + 检查更新图标在右，全部对齐同一基线 */}
+        {/* 工具栏：按钮在左，检查更新 + App Info 图标在右 */}
         <div className="toolbar-row">
           <div className="toolbar-left">
             <button
               onClick={handleBatchExecute}
-              disabled={selectedIds.length === 0 || executingBatch}
+              disabled={selectedIds.length === 0 || executingBatch || selectedIds.some(id => executingIds[id] || batchRunningIds[id])}
               className="btn btn-primary btn-batch"
             >
               {executingBatch ? 'Executing...' : `Execute Selected (${selectedIds.length})`}
@@ -774,20 +982,6 @@ function App() {
           </div>
 
           <div className="toolbar-right">
-            {systemInfo && (
-              <div className="bash-indicator">
-                <span className="tool-icon-btn" title={`Shell: ${systemInfo.shell.type}`}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                </span>
-                <div className="bash-tooltip">
-                  <div className="bash-tooltip-title">{systemInfo.shell.type.toUpperCase()}</div>
-                  <div className="bash-tooltip-path">{systemInfo.shell.fullPath || systemInfo.shell.command}</div>
-                  {systemInfo.shell.version && (
-                    <div className="bash-tooltip-version">{systemInfo.shell.version}</div>
-                  )}
-                </div>
-              </div>
-            )}
             <button
               className="tool-icon-btn"
               onClick={handleCheckUpdates}
@@ -795,6 +989,13 @@ function App() {
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
               {updateState === 'downloaded' && <span className="update-badge">!</span>}
+            </button>
+            <button
+              className="tool-icon-btn"
+              onClick={() => setShowInfoModal(true)}
+              title="App info"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             </button>
           </div>
         </div>
@@ -837,6 +1038,7 @@ function App() {
                           <input
                             type="checkbox"
                             checked={scripts.every(s => selectedIds.includes(s.id)) && scripts.length > 0}
+                            disabled={scripts.some(s => executingIds[s.id] || batchRunningIds[s.id])}
                             onChange={() => {
                               const allIds = scripts.map(s => s.id)
                               const allSelected = allIds.every(id => selectedIds.includes(id))
@@ -858,10 +1060,11 @@ function App() {
                       {scripts.map(script => {
                         const out = outputs[script.id]
                         const isLive = out && out.live
-                        const statusLabel = isLive ? 'Running' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle')
+                        const isStopped = out && out.terminated
+                        const statusLabel = isLive ? 'Running' : (isStopped ? 'Stopped' : (out && out.exitCode !== null ? `Exit ${out.exitCode}` : 'Idle'))
                         const isDragging = draggingId === script.id
                         const isDragOver = dragOverId === script.id && draggingId && draggingId !== script.id
-                        const isRunning = executingIds[script.id] || (executingBatch && batchOrderIds.includes(script.id))
+                        const isRunning = executingIds[script.id] || batchRunningIds[script.id]
                         return (
                           <tr
                             key={script.id}
@@ -883,6 +1086,7 @@ function App() {
                               <input
                                 type="checkbox"
                                 checked={selectedIds.includes(script.id)}
+                                disabled={isRunning}
                                 onChange={() => toggleSelect(script.id)}
                               />
                             </td>
@@ -890,7 +1094,7 @@ function App() {
                               <div className="script-name">{script.name}</div>
                             </td>
                             <td>
-                              <span className={`status-badge ${isLive ? 'running' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : ''))}`}>
+                              <span className={`status-badge ${isLive ? 'running' : (isStopped ? 'stopped' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : '')))}`}>
                                 {statusLabel}
                               </span>
                             </td>
@@ -917,6 +1121,14 @@ function App() {
                                 >
                                   Delete
                                 </button>
+                                <button
+                                  onClick={() => scrollToOutput(script.id)}
+                                  disabled={!outputs[script.id]}
+                                  className="btn btn-locate"
+                                  title="Locate output"
+                                >
+                                  Locate
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -941,11 +1153,18 @@ function App() {
         <div className="right-panel">
           <div className="outputs-header">
             <h2 className="outputs-title">Execution Outputs</h2>
-            {Object.keys(outputs).length > 0 && (
+          {Object.keys(outputs).length > 0 && (
+            <>
+              {Object.values(outputs).some(o => o.live) && (
+                <button className="btn-stop-all" onClick={handleStopAll} title="Force stop all running executions">
+                  Stop all
+                </button>
+              )}
               <button className="btn-close-all" onClick={handleCloseAllOutputs} title="Close all outputs">
                 Close all
               </button>
-            )}
+            </>
+          )}
           </div>
           <div
             className="outputs-container"
@@ -958,21 +1177,17 @@ function App() {
               </div>
             ) : (
               scripts.filter(s => outputs[s.id]).sort((a, b) => {
-                // 批量执行期间按 batch 顺序排序
-                if (executingBatch && batchOrderIds.length > 0) {
-                  const aIdx = batchOrderIds.indexOf(a.id)
-                  const bIdx = batchOrderIds.indexOf(b.id)
-                  if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx
-                  if (aIdx !== -1) return -1
-                  if (bIdx !== -1) return 1
-                }
                 const aOut = outputs[a.id]
                 const bOut = outputs[b.id]
+                // 按时间戳倒序：最新执行的脚本输出排在最前（顶部）。
+                // 批量脚本在启动时已按批次顺序赋递减时间戳，彼此间仍保持批次顺序，
+                // 而中途单独执行的脚本会拿到更新的时间戳，自然排到顶部。
                 return (bOut.timestamp || 0) - (aOut.timestamp || 0)
               }).map(script => {
                 const output = outputs[script.id]
+                const isRunning = executingIds[script.id] || batchRunningIds[script.id]
                 return (
-                  <div key={script.id} className="output-panel">
+                  <div key={script.id} className="output-panel" ref={el => { outputPanelRefs.current[script.id] = el }}>
                     <div className="output-header">
                       <div className="output-header-left">
                         <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''}`}>
@@ -992,9 +1207,29 @@ function App() {
                         )}
                       </div>
                       <div className="output-header-right">
-                        <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
-                          {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                        <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
+                          {output.live ? 'Running...' : output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                         </span>
+                        <button
+                          onClick={() => output.live
+                            ? (runIds[script.id] && handleStopExecution(runIds[script.id]))
+                            : handleExecuteScript(script.id)}
+                          disabled={!output.live && isRunning}
+                          className={output.live ? 'btn btn-stop' : 'btn btn-rerun'}
+                          title={output.live ? 'Force stop execution' : 'Re-execute'}
+                        >
+                          {output.live ? (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                              <rect x="6" y="6" width="12" height="12" rx="2" />
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                              <polyline points="23 4 23 10 17 10" />
+                              <polyline points="1 20 1 14 7 14" />
+                              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                            </svg>
+                          )}
+                        </button>
                         <button
                           onClick={() => setMaximizedScriptId(script.id)}
                           className="btn btn-maximize"
@@ -1010,6 +1245,7 @@ function App() {
                         <button
                           onClick={() => {
                             // 关闭并清理该脚本的 EventSource
+                            setRunIds(prev => { const n = { ...prev }; delete n[script.id]; return n })
                             if (eventSourceRefs.current[script.id]) {
                               eventSourceRefs.current[script.id].close()
                               delete eventSourceRefs.current[script.id]
@@ -1024,6 +1260,7 @@ function App() {
                               delete newOutputs[script.id]
                               return newOutputs
                             })
+                            delete outputPanelRefs.current[script.id]
                           }}
                           className="btn btn-close"
                         >
@@ -1037,7 +1274,7 @@ function App() {
                         ref={el => { outputRefs.current[script.id] = el }}
                         onScroll={(e) => handleOutputScroll(script.id, e)}
                       >
-                        <pre className="output-content">{output.output || 'Waiting for output...'}</pre>
+                        <pre className="output-content" ref={getContentRef(script.id)}>{output.output || 'Waiting for output...'}</pre>
                       </div>
                     </div>
                     {output.error && (
@@ -1092,7 +1329,7 @@ function App() {
 
       {showUpdateModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content update-modal">
             <h2>Check for Updates</h2>
             <div className="update-body">
               {updateState === 'idle' && <p>Click below to check for the latest version.</p>}
@@ -1102,12 +1339,9 @@ function App() {
                 <div>
                   <p>A new version <strong>v{updateInfo.version}</strong> is available.</p>
                   {(() => {
-                    const notes = formatReleaseNotes(updateInfo.releaseNotes);
-                    return notes ? (
-                      <div
-                        className="update-notes"
-                        dangerouslySetInnerHTML={{ __html: notes.slice(0, 2000) }}
-                      />
+                    const text = normalizeReleaseNotes(updateInfo.releaseNotes);
+                    return text ? (
+                      <Markdown content={text} className="update-notes" maxLength={2000} />
                     ) : null;
                   })()}
                   <p className="update-hint">Do you want to download and install this update?</p>
@@ -1136,7 +1370,10 @@ function App() {
             </div>
             <div className="form-actions">
               {updateState === 'downloaded' ? (
-                <button className="btn btn-primary" onClick={handleStartUpdate}>Restart &amp; Update</button>
+                <>
+                  <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Later</button>
+                  <button className="btn btn-primary" onClick={handleStartUpdate}>Restart &amp; Update</button>
+                </>
               ) : updateState === 'available' ? (
                 <>
                   <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Later</button>
@@ -1145,6 +1382,90 @@ function App() {
               ) : (
                 <button className="btn btn-cancel" onClick={() => setShowUpdateModal(false)}>Close</button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInfoModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2>App Info</h2>
+            <div className="info-body">
+              <div className="info-row">
+                <label>Version</label>
+                <div className="info-value">v{appVersion}</div>
+              </div>
+              {systemInfo && (
+                <>
+                  <div className="info-row">
+                    <label>Server Port</label>
+                    <div className="info-value">
+                      {systemInfo.port}
+                      <button
+                        className="btn btn-copy"
+                        onClick={() => navigator.clipboard.writeText(String(systemInfo.port))}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  <div className="info-row">
+                    <label>Shell</label>
+                    <div className="info-value">
+                      {systemInfo.shell?.type?.toUpperCase() || 'Unknown'}
+                      {systemInfo.shell?.version && (
+                        <span className="info-sub">{systemInfo.shell.version}</span>
+                      )}
+                    </div>
+                    {(systemInfo.shell?.fullPath || systemInfo.shell?.command) && (
+                      <div className="info-path">
+                        <span className="info-path-text">{systemInfo.shell.fullPath || systemInfo.shell.command}</span>
+                        <button
+                          className="btn btn-copy"
+                          onClick={() => navigator.clipboard.writeText(systemInfo.shell.fullPath || systemInfo.shell.command)}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {appInfo && (
+                <>
+                  <div className="info-row">
+                    <label>Scripts Config</label>
+                    <div className="info-path">
+                      <span className="info-path-text">{escapePathForShell(appInfo.scriptsConfigPath)}</span>
+                      <button
+                        className="btn btn-copy"
+                        onClick={() => navigator.clipboard.writeText(appInfo.scriptsConfigPath)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  <div className="info-row">
+                    <label>Log File</label>
+                    <div className="info-path">
+                      <span className="info-path-text">{escapePathForShell(appInfo.logFilePath)}</span>
+                      <button
+                        className="btn btn-copy"
+                        onClick={() => navigator.clipboard.writeText(appInfo.logFilePath)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+              {!window.electronAPI && (
+                <p className="info-hint">Config &amp; log paths are only available in the Electron app.</p>
+              )}
+            </div>
+            <div className="form-actions">
+              <button className="btn btn-cancel" onClick={() => setShowInfoModal(false)}>Close</button>
             </div>
           </div>
         </div>
@@ -1288,9 +1609,29 @@ function App() {
                   )}
                 </div>
                 <div className="maximized-header-right">
-                  <span className={`exit-code ${output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : '')}`}>
-                    {output.live ? 'Running...' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                  <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
+                    {output.live ? 'Running...' : output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                   </span>
+                  <button
+                    onClick={() => output.live
+                      ? (runIds[maximizedScriptId] && handleStopExecution(runIds[maximizedScriptId]))
+                      : handleExecuteScript(maximizedScriptId)}
+                    disabled={!output.live && (executingIds[maximizedScriptId] || batchRunningIds[maximizedScriptId])}
+                    className={output.live ? 'btn btn-stop' : 'btn btn-rerun'}
+                    title={output.live ? 'Force stop execution' : 'Re-execute'}
+                  >
+                    {output.live ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                        <rect x="6" y="6" width="12" height="12" rx="2" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                        <polyline points="23 4 23 10 17 10" />
+                        <polyline points="1 20 1 14 7 14" />
+                        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                      </svg>
+                    )}
+                  </button>
                   <button
                     onClick={() => setMaximizedScriptId(null)}
                     className="btn btn-close"
@@ -1309,7 +1650,7 @@ function App() {
                   ref={maximizedOutputRef}
                   onScroll={(e) => handleOutputScroll(maximizedScriptId, e)}
                 >
-                  <pre className="maximized-output-content">{output.output || 'Waiting for output...'}</pre>
+                  <pre className="maximized-output-content" ref={maximizedContentRef}>{output.output || 'Waiting for output...'}</pre>
                 </div>
                 {output.error && (
                   <div className="maximized-error-section">

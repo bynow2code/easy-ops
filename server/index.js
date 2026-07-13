@@ -13,6 +13,9 @@ const PORT_RANGE_END = 3100;
 // 改为写到系统临时目录，跨平台可写
 const PORT_FILE = path.join(require('os').tmpdir(), 'easyops-port.txt');
 
+// 实际监听的端口，供 /api/system-info 暴露给前端（启动后填充）
+let serverPort = DEFAULT_PORT;
+
 // 决定脚本数据文件存储位置：Electron 打包后使用用户数据目录，避免写入只读安装目录
 const resolveDataFile = () => {
   const dataDir = process.env.SCRIPT_DATA_DIR;
@@ -193,6 +196,84 @@ const detectShell = () => {
 
 const shell = detectShell();
 
+// ==================== 子进程 locale 注入 ====================
+// GUI（Electron）启动的服务进程往往没有继承终端的 LANG/LC_* 设置，
+// 当脚本内部调用 man/manpath 等依赖 locale 的命令时会报
+// "can't set the locale; make sure $LC_* and $LANG are correct"。
+// 这里检测系统可用的 UTF-8 locale，并在子进程环境缺失/无效时注入。
+const AVAILABLE_LOCALES = (() => {
+  try {
+    return execSync('locale -a 2>/dev/null', { timeout: 1000 })
+      .toString().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  } catch (e) {
+    return [];
+  }
+})();
+
+const normalizeLocale = (l) => (l || '').trim().toLowerCase();
+const isLocaleAvailable = (l) => {
+  if (!l) return false;
+  const n = normalizeLocale(l);
+  const base = n.split('.')[0];
+  return AVAILABLE_LOCALES.some(a => {
+    const na = normalizeLocale(a);
+    return na === n || na.startsWith(base + '.');
+  });
+};
+
+const CHILD_LOCALE = (() => {
+  const utf8 = AVAILABLE_LOCALES.filter(l => /utf-?8/i.test(l));
+  const pref = (process.env.LANG || process.env.LC_ALL || '').split('.')[0];
+  const pick = (cands) => {
+    for (const c of cands) {
+      const hit = utf8.find(l => {
+        const nl = normalizeLocale(l);
+        return nl.startsWith(normalizeLocale(c) + '.') || nl === normalizeLocale(c);
+      });
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return pick(pref ? [pref, 'en_US', 'en'] : ['en_US', 'en']) || utf8[0] || 'C.UTF-8';
+})();
+
+// 构造子进程环境：仅当没有有效 locale 时才覆盖，尽量保留用户原有设置
+const buildChildEnv = () => {
+  const env = { ...process.env };
+  const current = env.LANG || env.LC_ALL;
+  if (!isLocaleAvailable(current)) {
+    env.LANG = CHILD_LOCALE;
+    env.LC_ALL = CHILD_LOCALE;
+  }
+  return env;
+};
+
+// 正在执行中的子进程登记表：runId -> { children: [childProcess], isBatch: bool }
+// 用于「强制中断」功能：前端拿到 runId 后调用 /api/execute/:runId/stop 整组杀死对应进程
+const runningProcesses = new Map();
+
+// 强制杀死一个子进程（含其派生的子命令）：
+//  - POSIX：子进程以 detached 方式 spawn 成为进程组 leader，用 -pid 杀整组；SIGTERM 后由调用方兜底 SIGKILL
+//  - Windows：taskkill /T /F 杀进程树
+const killChild = (child) => {
+  if (!child || child.killed) return false;
+  try {
+    if (process.platform === 'win32') {
+      try {
+        execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });
+      } catch (e) {
+        child.kill('SIGKILL');
+      }
+    } else {
+      process.kill(-child.pid, 'SIGTERM');
+    }
+    return true;
+  } catch (e) {
+    try { child.kill('SIGKILL'); } catch (_) {}
+    return true;
+  }
+};
+
 console.log('========================================');
 console.log('[EasyOps] Script Manager - Backend starting...');
 console.log('========================================');
@@ -201,6 +282,7 @@ console.log(`[Shell]   Type: ${shell.type.toUpperCase()}`);
 console.log(`[Shell]   Command: ${shell.command}`);
 if (shell.name) console.log(`[Shell]   Name: ${shell.name}`);
 if (shell.version) console.log(`[Shell]   Version: ${shell.version}`);
+console.log(`[Locale]  Child env locale: ${CHILD_LOCALE}`);
 console.log('========================================');
 
 // API to expose shell info to frontend
@@ -208,6 +290,7 @@ app.get('/api/system-info', (req, res) => {
   res.json({
     platform: process.platform,
     arch: process.arch,
+    port: serverPort,
     shell: {
       type: shell.type,
       command: shell.command,
@@ -371,7 +454,10 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   req.socket.setTimeout(0);
   req.setTimeout(0);
 
-  res.write(`data: ${JSON.stringify({ type: 'start', scriptId: script.id, scriptName: script.name })}\n\n`);
+  // 生成本次执行的 runId，供前端「强制中断」使用（必须在使用前定义，避免 TDZ 报错）
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  res.write(`data: ${JSON.stringify({ type: 'start', runId, scriptId: script.id, scriptName: script.name })}\n\n`);
 
   const execStartTime = Date.now();
 
@@ -380,8 +466,10 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
     res.write(': heartbeat\n\n');
   }, 15000);
 
-  // 通过 stdin 原样传入脚本，不做任何转义处理
-  const child = spawn(shell.command, []);
+  // 通过 stdin 原样传入脚本，不做任何转义处理；
+  // detached: true 使子进程成为进程组 leader，便于 killChild 用 -pid 整组杀死（含脚本内部派生的命令）
+  const child = spawn(shell.command, [], { detached: true, env: buildChildEnv() });
+  runningProcesses.set(runId, { children: [child], isBatch: false });
   child.stdin.write(script.content);
   child.stdin.end();
 
@@ -395,12 +483,15 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
 
   const cleanup = () => {
     clearInterval(heartbeat);
+    runningProcesses.delete(runId);
   };
 
-  child.on('close', (code) => {
+  child.on('close', (code, signal) => {
     cleanup();
     const durationMs = Date.now() - execStartTime;
-    res.write(`data: ${JSON.stringify({ type: 'close', exitCode: code, durationMs })}\n\n`);
+    // code 为 null 且 signal 存在，说明进程是被信号终止的（强制中断的 SIGTERM/SIGKILL）
+    const terminated = code === null && !!signal;
+    res.write(`data: ${JSON.stringify({ type: 'close', exitCode: code, signal: signal || null, terminated, durationMs })}\n\n`);
     res.end();
   });
 
@@ -413,7 +504,7 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
 
   req.on('close', () => {
     cleanup();
-    child.kill('SIGTERM');
+    killChild(child);
   });
 });
 
@@ -444,13 +535,15 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
 
   const scripts = getScripts();
 
-  // 并发执行所有脚本
+  // 并发执行所有脚本（同一批次共享一个 runId，便于「中断」时整批停止）
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const children = [];    // 跟踪所有子进程
   let completedCount = 0;
   const totalCount = ids.length;
 
   const cleanup = () => {
     clearInterval(heartbeat);
+    runningProcesses.delete(runId);
   };
 
   const tryFinish = () => {
@@ -465,7 +558,7 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     const script = scripts.find(s => s.id === scriptId);
 
     if (!script) {
-      res.write(`data: ${JSON.stringify({ type: 'start', scriptId, scriptName: 'Unknown' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'start', runId, scriptId, scriptName: 'Unknown' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'Script not found' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
       completedCount++;
@@ -474,11 +567,11 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     }
 
     const currentId = script.id;
-    res.write(`data: ${JSON.stringify({ type: 'start', scriptId: currentId, scriptName: script.name })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'start', runId, scriptId: currentId, scriptName: script.name })}\n\n`);
 
     const execStartTime = Date.now();
 
-    const child = spawn(shell.command, []);
+    const child = spawn(shell.command, [], { detached: true, env: buildChildEnv() });
     children.push(child);
     child.stdin.write(script.content);
     child.stdin.end();
@@ -491,9 +584,10 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
       res.write(`data: ${JSON.stringify({ type: 'stderr', scriptId: currentId, content: data.toString() })}\n\n`);
     });
 
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       const durationMs = Date.now() - execStartTime;
-      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: code, durationMs })}\n\n`);
+      const terminated = code === null && !!signal;
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: code, signal: signal || null, terminated, durationMs })}\n\n`);
       completedCount++;
       tryFinish();
     });
@@ -507,10 +601,35 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     });
   });
 
+  // 所有子进程已创建，登记本次批量运行的 runId
+  runningProcesses.set(runId, { children, isBatch: true });
+
   req.on('close', () => {
     cleanup();
-    children.forEach(child => child.kill('SIGTERM'));
+    children.forEach(child => killChild(child));
   });
+});
+
+// ==================== 强制中断执行 ====================
+// 前端拿到执行时的 runId 后，调用此接口杀死对应进程（组）
+app.post('/api/execute/:runId/stop', (req, res) => {
+  const { runId } = req.params;
+  const entry = runningProcesses.get(runId);
+  if (!entry) {
+    return res.status(404).json({ error: 'No running process for this run', runId });
+  }
+  let killed = 0;
+  entry.children.forEach(child => {
+    if (killChild(child)) killed++;
+  });
+  // 兜底：3 秒后仍有未退出的，强制 SIGKILL
+  setTimeout(() => {
+    entry.children.forEach(child => {
+      try { if (!child.killed) child.kill('SIGKILL'); } catch (e) {}
+    });
+  }, 3000);
+  runningProcesses.delete(runId);
+  res.json({ success: true, killed, runId });
 });
 
 // ==================== 启动服务 ====================
@@ -535,6 +654,8 @@ const startServer = async () => {
     console.error('Error: No available port found in range', PORT_RANGE_START, '-', PORT_RANGE_END);
     process.exit(1);
   }
+
+  serverPort = port;
 
   if (port !== DEFAULT_PORT) {
     console.log(`Warning: Port ${DEFAULT_PORT} is in use, using port ${port} instead`);
