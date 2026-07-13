@@ -1190,7 +1190,7 @@ function App() {
                   <div key={script.id} className="output-panel" ref={el => { outputPanelRefs.current[script.id] = el }}>
                     <div className="output-header">
                       <div className="output-header-left">
-                        <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''}`}>
+                        <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${output.live ? 'running' : ''}`}>
                           {script.group === 'frontend' ? 'FE' : 'BE'}
                         </span>
                         <span className="output-name">{script.name}</span>
@@ -1592,7 +1592,7 @@ function App() {
             <div className="modal-content modal-maximized" onClick={e => e.stopPropagation()}>
               <div className="maximized-header">
                 <div className="maximized-header-left">
-                  <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''}`}>
+                  <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${output.live ? 'running' : ''}`}>
                     {script.group === 'frontend' ? 'FE' : 'BE'}
                   </span>
                   <span className="maximized-name">{script.name}</span>
