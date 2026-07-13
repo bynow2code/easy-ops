@@ -72,7 +72,7 @@
         "zip"
       ],
       "artifactName": "${productName}-Setup-${version}.${ext}",
-      "icon": "client/public/logo.ico"
+      "icon": "client/public/logo-win.ico"
     },
     "nsis": {
       "oneClick": true,
