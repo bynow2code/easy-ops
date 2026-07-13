@@ -126,7 +126,7 @@ const findAvailablePort = async (startPort, endPort) => {
 
 const detectShell = () => {
   const isWindows = process.platform === 'win32';
-  const result = { command: '', fullPath: '', type: '', name: '', version: '' };
+  const result = { command: '', fullPath: '', type: '', name: '', version: '', args: [] };
 
   const resolveFullPath = (cmd) => {
     try {
@@ -146,6 +146,9 @@ const detectShell = () => {
     result.command = 'bash';
     result.fullPath = resolveFullPath('bash');
     result.type = 'bash';
+    // -s：让 bash 从 stdin 读取并执行脚本，不启动交互式 shell，
+    // 在 Windows 上可避免 WSL/Git Bash 弹出终端窗口。
+    result.args = ['-s'];
     result.name = result.fullPath;
     try {
       result.version = execSync('bash --version', { timeout: 1000 }).toString().split('\n')[0].trim();
@@ -167,15 +170,34 @@ const detectShell = () => {
     if (!bashPath) continue;
     try {
       execSync(`"${bashPath}" -c "echo test"`, { stdio: 'ignore', timeout: 1000 });
-      result.command = bashPath;
-      // 如果是简单的 'bash' 命令，解析其完整路径
+      // 解析完整路径，用于判断是否为 WSL 启动器
+      let fullPath;
       if (bashPath === 'bash' || !bashPath.includes('\\')) {
-        result.fullPath = resolveFullPath(bashPath);
+        fullPath = resolveFullPath(bashPath);
       } else {
-        result.fullPath = bashPath;
+        fullPath = bashPath;
       }
       result.type = 'bash';
-      result.name = name;
+      // 判断是否为 WSL 启动器（System32\bash.exe 或 wsl.exe）。
+      // 在 Windows 11 上，WSL 的交互式 shell 默认通过 Windows Terminal 启动，
+      // 即使 bash.exe 带 -s 也可能弹出终端；改用 wsl.exe 显式执行 "bash -s"
+      // 可确保命令在后台直接运行，不触发 Windows Terminal。
+      const isWslLauncher =
+        /[\\/](System32|SysWOW64)[\\/]bash\.exe$/i.test(fullPath) ||
+        /[\\/]wsl\.exe$/i.test(fullPath);
+      if (isWslLauncher) {
+        result.command = 'wsl.exe';
+        result.fullPath = 'wsl.exe';
+        // 通过 wsl.exe 启动 bash，并从 stdin 读取脚本，非交互式、不弹窗
+        result.args = ['bash', '-s'];
+        result.name = name + ' (via wsl.exe)';
+      } else {
+        result.command = fullPath;
+        result.fullPath = fullPath;
+        // 其他 bash（如 Git Bash）也用 -s 非交互式从 stdin 读取，避免弹出 MinTTY
+        result.args = ['-s'];
+        result.name = name;
+      }
       try {
         result.version = execSync(`"${bashPath}" --version`, { timeout: 1000 }).toString().split('\n')[0].trim();
       } catch (e) {}
@@ -186,6 +208,8 @@ const detectShell = () => {
   result.command = 'cmd.exe';
   result.fullPath = resolveFullPath('cmd.exe');
   result.type = 'cmd';
+  // cmd.exe 不支持从 stdin 读取脚本，此处保持无参数，仅作兜底。
+  result.args = [];
   result.name = 'Windows cmd.exe';
   try {
     result.version = execSync('cmd /c "echo cmd.exe"', { timeout: 1000 }).toString().trim();
@@ -467,8 +491,12 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   }, 15000);
 
   // 通过 stdin 原样传入脚本，不做任何转义处理；
-  // detached: true 使子进程成为进程组 leader，便于 killChild 用 -pid 整组杀死（含脚本内部派生的命令）
-  const child = spawn(shell.command, [], { detached: true, env: buildChildEnv() });
+  // detached：仅在非 Windows 平台开启，使子进程成为进程组 leader，便于 killChild 用 -pid 整组杀死。
+  //   ⚠️ Windows 上 detached: true 的语义是「给子进程分配全新控制台窗口」，会导致弹出终端（含 WSL 的 Windows Terminal），
+  //   且 windowsHide 无法覆盖 wsl.exe 拉起的独立终端；Windows 的 killChild 用 taskkill /T /F，本就不依赖 detached，故此处关闭。
+  // windowsHide: true 隐藏子进程控制台窗口（非 Windows 平台自动忽略）；
+  // shell.args 对 bash 传 '-s'，使其非交互式地从 stdin 读取脚本，避免 WSL/Git Bash 弹出终端。
+  const child = spawn(shell.command, shell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
   runningProcesses.set(runId, { children: [child], isBatch: false });
   child.stdin.write(script.content);
   child.stdin.end();
@@ -571,7 +599,8 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
 
     const execStartTime = Date.now();
 
-    const child = spawn(shell.command, [], { detached: true, env: buildChildEnv() });
+    // detached 仅在非 Windows 平台开启，避免 Windows 上弹出新控制台窗口（见单条执行处注释）
+    const child = spawn(shell.command, shell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
     children.push(child);
     child.stdin.write(script.content);
     child.stdin.end();
