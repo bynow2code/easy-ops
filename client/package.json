@@ -17,9 +17,12 @@
     "@codemirror/view": "^6.43.1",
     "@uiw/react-codemirror": "^4.25.10",
     "axios": "^1.17.0",
+    "github-markdown-css": "^5.9.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

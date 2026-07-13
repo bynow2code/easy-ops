@@ -1223,29 +1223,48 @@ html, body, #root {
   margin: 8px 0 4px;
 }
 
+/* 让 github-markdown-css 在更新弹窗小容器里保持紧凑 */
+.update-notes .markdown-body {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #333;
+  background-color: transparent;
+  padding: 0;
+}
+
+.update-notes .markdown-body p,
+.update-notes .markdown-body li {
+  margin: 4px 0;
+}
+
 /* 更新日志内 markdown 元素的基础样式 */
 .update-notes h1, .update-notes h2, .update-notes h3,
-.update-notes h4, .update-notes h5, .update-notes h6 {
+.update-notes h4, .update-notes h5, .update-notes h6,
+.update-notes .markdown-body h1, .update-notes .markdown-body h2, .update-notes .markdown-body h3,
+.update-notes .markdown-body h4, .update-notes .markdown-body h5, .update-notes .markdown-body h6 {
   margin: 8px 0 4px;
   font-size: 13px;
   line-height: 1.4;
 }
-.update-notes p { margin: 4px 0; }
-.update-notes ul, .update-notes ol { margin: 4px 0; padding-left: 18px; }
-.update-notes code {
+.update-notes p, .update-notes .markdown-body p { margin: 4px 0; }
+.update-notes ul, .update-notes ol,
+.update-notes .markdown-body ul, .update-notes .markdown-body ol { margin: 4px 0; padding-left: 18px; }
+.update-notes code, .update-notes .markdown-body code {
   background: #ececec;
   border-radius: 3px;
   padding: 1px 4px;
   font-family: monospace;
+  font-size: 11px;
 }
-.update-notes pre {
+.update-notes pre, .update-notes .markdown-body pre {
   background: #ececec;
   border-radius: 4px;
   padding: 8px;
   overflow: auto;
+  font-size: 11px;
 }
-.update-notes pre code { background: transparent; padding: 0; }
-.update-notes blockquote {
+.update-notes pre code, .update-notes .markdown-body pre code { background: transparent; padding: 0; }
+.update-notes blockquote, .update-notes .markdown-body blockquote {
   margin: 4px 0;
   padding-left: 8px;
   border-left: 3px solid #d9d9d9;
@@ -1253,23 +1272,23 @@ html, body, #root {
 }
 
 /* 更新日志中的链接：可点击、蓝色、悬停下划线 */
-.update-notes a {
+.update-notes a, .update-notes .markdown-body a {
   color: #1890ff;
   text-decoration: none;
 }
 
-.update-notes a:hover {
+.update-notes a:hover, .update-notes .markdown-body a:hover {
   text-decoration: underline;
   color: #40a9ff;
 }
 
-.update-notes ul,
-.update-notes ol {
+.update-notes ul, .update-notes ol,
+.update-notes .markdown-body ul, .update-notes .markdown-body ol {
   margin: 4px 0;
   padding-left: 20px;
 }
 
-.update-notes li {
+.update-notes li, .update-notes .markdown-body li {
   margin: 2px 0;
 }
 
