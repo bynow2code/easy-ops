@@ -277,8 +277,11 @@ const buildChildEnv = () => {
 const runningProcesses = new Map();
 
 // 强制杀死一个子进程（含其派生的子命令）：
-//  - POSIX：子进程以 detached 方式 spawn 成为进程组 leader，用 -pid 杀整组；SIGTERM 后由调用方兜底 SIGKILL
-//  - Windows：taskkill /T /F 杀进程树
+//  - Windows：taskkill /T /F 按 PID 杀整棵进程树（不可忽略，必定生效）
+//  - POSIX：detached 模式下子进程是进程组 leader，用 -pid 向整组发 SIGTERM；
+//           SIGTERM 可能被进程忽略，故 500ms 后升级为不可忽略的 SIGKILL，确保彻底中断。
+//    该 SIGTERM→SIGKILL 升级内置在此函数内，因此所有调用方（手动「停止」按钮、
+//    浏览器中途关闭导致的 req.on('close')）都能得到真正强制的中断，无需各自兜底。
 const killChild = (child) => {
   if (!child || child.killed) return false;
   try {
@@ -286,10 +289,13 @@ const killChild = (child) => {
       try {
         execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });
       } catch (e) {
-        child.kill('SIGKILL');
+        try { child.kill('SIGKILL'); } catch (_) {}
       }
     } else {
-      process.kill(-child.pid, 'SIGTERM');
+      try { process.kill(-child.pid, 'SIGTERM'); } catch (e) {}
+      setTimeout(() => {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch (e) {}
+      }, 500);
     }
     return true;
   } catch (e) {
@@ -425,35 +431,6 @@ app.post('/api/scripts/reorder', (req, res) => {
   }
 });
 
-// 兼容旧 PUT 请求
-app.put('/api/scripts/reorder', (req, res) => {
-  try {
-    const { order } = req.body;
-    console.log('[reorder PUT] order:', JSON.stringify(order));
-    if (!Array.isArray(order)) {
-      return res.status(400).json({ error: 'order must be an array of script ids' });
-    }
-    const scripts = getScripts();
-    const idToScript = new Map(scripts.map(s => [s.id, s]));
-    order.forEach((id, idx) => {
-      const s = idToScript.get(id);
-      if (s) s.orderNum = idx;
-    });
-    let nextOrder = order.length;
-    scripts.forEach(s => {
-      if (!order.includes(s.id)) {
-        s.orderNum = nextOrder;
-        nextOrder += 1;
-      }
-    });
-    saveScripts(scripts);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[reorder PUT] ERROR:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ==================== 实时流式执行 (SSE) ====================
 
 app.get('/api/scripts/:id/execute-stream', (req, res) => {
@@ -539,7 +516,7 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
 app.get('/api/scripts/batch-execute-stream', (req, res) => {
   const ids = req.query.ids ? req.query.ids.split(',') : [];
 
-  if (!Array.isArray(ids) || ids.length === 0) {
+  if (ids.length === 0) {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -651,12 +628,6 @@ app.post('/api/execute/:runId/stop', (req, res) => {
   entry.children.forEach(child => {
     if (killChild(child)) killed++;
   });
-  // 兜底：3 秒后仍有未退出的，强制 SIGKILL
-  setTimeout(() => {
-    entry.children.forEach(child => {
-      try { if (!child.killed) child.kill('SIGKILL'); } catch (e) {}
-    });
-  }, 3000);
   runningProcesses.delete(runId);
   res.json({ success: true, killed, runId });
 });
@@ -666,8 +637,8 @@ app.post('/api/execute/:runId/stop', (req, res) => {
 const startServer = async () => {
   // 优先使用环境变量 PORT（由 Electron 主进程设置）
   let port = parseInt(process.env.PORT);
-  
-  if (!port || isNaN(port)) {
+
+  if (!port) {
     // 如果没有设置 PORT，则动态查找可用端口
     port = await findAvailablePort(PORT_RANGE_START, PORT_RANGE_END);
   } else {
