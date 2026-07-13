@@ -4,6 +4,7 @@
     "name": "测试",
     "content": "",
     "createdAt": "2026-06-09T03:24:04.026Z",
-    "orderNum": 0
+    "orderNum": 0,
+    "group": "backend"
   }
 ]

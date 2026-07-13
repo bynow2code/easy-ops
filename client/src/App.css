@@ -1322,9 +1322,10 @@ html, body, #root {
 }
 
 .info-sub {
-  font-size: 11px;
+  font-size: 14px;
   color: #888;
-  font-family: monospace;
+  font-family: inherit;
+  margin-left: 2px;
 }
 
 .info-path {

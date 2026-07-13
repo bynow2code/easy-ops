@@ -187,7 +187,10 @@ const detectShell = () => {
         /[\\/]wsl\.exe$/i.test(fullPath);
       if (isWslLauncher) {
         result.command = 'wsl.exe';
-        result.fullPath = 'wsl.exe';
+        // 注意：执行命令用 wsl.exe（避免弹出 Windows Terminal），
+        // 但【显示用】的 fullPath 保留真实检测到的 bash 启动器路径
+        // （如 C:\Windows\System32\bash.exe），不要写成 'wsl.exe'，否则弹窗里只剩一个无意义的 wsl.exe。
+        result.fullPath = fullPath;
         // 通过 wsl.exe 启动 bash，并从 stdin 读取脚本，非交互式、不弹窗
         result.args = ['bash', '-s'];
         result.name = name + ' (via wsl.exe)';
