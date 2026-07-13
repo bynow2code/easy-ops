@@ -28,6 +28,14 @@ const normalizeReleaseNotes = (notes) => {
 // 与终端书写一致，避免长路径在含空格处被换行割裂，也方便直接复制到 shell 使用。
 const escapePathForShell = (p) => (p || '').replace(/ /g, '\\ ');
 
+// 运行中：旋转的绿色图标（替代原本的 "Running..." 文字），0.9s 匀速旋转
+const RunningSpinner = () => (
+  <svg className="running-spinner-icon" viewBox="0 0 24 24" width="14" height="14" aria-label="Running" role="img">
+    <circle cx="12" cy="12" r="9" fill="none" stroke="#52c41a" strokeWidth="3"
+      strokeLinecap="round" strokeDasharray="42 14" />
+  </svg>
+);
+
 function App() {
   const [scripts, setScripts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
@@ -56,8 +64,8 @@ function App() {
   const outputsScrollRef = useRef(null)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
-  // 记录执行时首个脚本 ID，滚动到顶部后对其输出面板做高亮
-  const pendingHighlightId = useRef(null)
+  // 当前被「定位」的脚本 id：点击 Locate 时让对应输出面板的 BE/FE 徽标绿色闪烁，作为显眼提示
+  const [locatingId, setLocatingId] = useState(null)
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
 
@@ -371,18 +379,6 @@ function App() {
   useLayoutEffect(() => {
     if (scrollToTopKey > 0 && outputsScrollRef.current) {
       outputsScrollRef.current.scrollTop = 0
-      // 对首个脚本的输出面板做高亮
-      const id = pendingHighlightId.current
-      if (id) {
-        pendingHighlightId.current = null
-        // 清除旧高亮，再对目标面板做高亮
-        Object.values(outputPanelRefs.current).forEach(p => p.classList.remove('highlight'))
-        const panel = outputPanelRefs.current[id]
-        if (panel) {
-          panel.classList.add('highlight')
-          setTimeout(() => panel.classList.remove('highlight'), 3100)
-        }
-      }
     }
   }, [scrollToTopKey])
 
@@ -433,12 +429,12 @@ function App() {
     const panel = outputPanelRefs.current[id]
     if (!panel) return
 
-    // 清除所有面板的现有高亮，避免多个面板同时显示特效
-    Object.values(outputPanelRefs.current).forEach(p => p.classList.remove('highlight'))
-
-    panel.classList.add('highlight')
-    setTimeout(() => panel.classList.remove('highlight'), 3100)
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // 定位时让对应输出面板的 BE/FE 徽标绿色闪烁（与运行时一致），约 3s 后自动停止
+    setLocatingId(id)
+    setTimeout(() => {
+      setLocatingId(prev => (prev === id ? null : prev))
+    }, 3000)
   }
 
   const handleDeleteScript = (id) => {
@@ -652,7 +648,6 @@ function App() {
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
-    pendingHighlightId.current = id
 
     const es = new EventSource(`/api/scripts/${id}/execute-stream`)
     eventSourceRefs.current[id] = es
@@ -758,7 +753,6 @@ function App() {
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
-    pendingHighlightId.current = batchIds[0]
 
     // 为每个 batch 脚本初始化输出（按 batch 顺序分配递减时间戳以保持排序）
     const batchTimestamp = Date.now()
@@ -1190,7 +1184,7 @@ function App() {
                   <div key={script.id} className="output-panel" ref={el => { outputPanelRefs.current[script.id] = el }}>
                     <div className="output-header">
                       <div className="output-header-left">
-                        <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${output.live ? 'running' : ''}`}>
+                        <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${locatingId === script.id ? 'running' : ''}`}>
                           {script.group === 'frontend' ? 'FE' : 'BE'}
                         </span>
                         <span className="output-name">{script.name}</span>
@@ -1207,9 +1201,15 @@ function App() {
                         )}
                       </div>
                       <div className="output-header-right">
-                        <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
-                          {output.live ? 'Running...' : output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
-                        </span>
+                        {output.live ? (
+                          <span className="running-spinner" title="Running...">
+                            <RunningSpinner />
+                          </span>
+                        ) : (
+                          <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
+                            {output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                          </span>
+                        )}
                         <button
                           onClick={() => output.live
                             ? (runIds[script.id] && handleStopExecution(runIds[script.id]))
@@ -1592,7 +1592,7 @@ function App() {
             <div className="modal-content modal-maximized" onClick={e => e.stopPropagation()}>
               <div className="maximized-header">
                 <div className="maximized-header-left">
-                  <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${output.live ? 'running' : ''}`}>
+                  <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${locatingId === script.id ? 'running' : ''}`}>
                     {script.group === 'frontend' ? 'FE' : 'BE'}
                   </span>
                   <span className="maximized-name">{script.name}</span>
@@ -1609,9 +1609,15 @@ function App() {
                   )}
                 </div>
                 <div className="maximized-header-right">
-                  <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
-                    {output.live ? 'Running...' : output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
-                  </span>
+                  {output.live ? (
+                    <span className="running-spinner" title="Running...">
+                      <RunningSpinner />
+                    </span>
+                  ) : (
+                    <span className={`exit-code ${output.terminated ? 'stopped' : (output.exitCode === 0 ? 'success' : (output.exitCode !== null ? 'error' : ''))}`}>
+                      {output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
+                    </span>
+                  )}
                   <button
                     onClick={() => output.live
                       ? (runIds[maximizedScriptId] && handleStopExecution(runIds[maximizedScriptId]))
