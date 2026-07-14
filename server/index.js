@@ -480,6 +480,10 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
+  // 吞掉底层 socket 已断开（用户提前关掉 SSE）时的 EPIPE 写入错误，
+  // 避免未捕获异常导致后端进程崩溃——后端一旦崩溃就无法清理子进程，会留下孤立进程。
+  res.on('error', () => {});
+
   // 无可用 Shell（如 Windows 上未安装 WSL / Git Bash）：无法执行，直接返回错误，避免 spawn('') 异常
   if (!shell.command) {
     res.write(`data: ${JSON.stringify({ type: 'error', message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
@@ -565,6 +569,10 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
+  // 吞掉底层 socket 已断开（用户提前关掉 SSE）时的 EPIPE 写入错误，
+  // 避免未捕获异常导致后端进程崩溃——后端一旦崩溃就无法清理子进程，会留下孤立进程。
+  res.on('error', () => {});
+
   // 无可用 Shell（如 Windows 上未安装 WSL / Git Bash）：无法执行，逐脚本返回错误后结束
   if (!shell.command) {
     ids.forEach((scriptId) => {
@@ -583,20 +591,18 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
 
   // 心跳保活
   const heartbeat = setInterval(() => {
-    res.write(': heartbeat\n\n');
+    if (!res.writableEnded) res.write(': heartbeat\n\n');
   }, 15000);
 
   const scripts = getScripts();
 
-  // 并发执行所有脚本（同一批次共享一个 runId，便于「中断」时整批停止）
-  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const children = [];    // 跟踪所有子进程
   let completedCount = 0;
   const totalCount = ids.length;
+  const children = [];      // 本批次所有子进程：用于「用户提前关闭共享 SSE」时整批强杀
+  const batchRunIds = [];   // 本批次每个脚本各自的 runId：用于上面的整批清理时注销 runningProcesses 登记
 
   const cleanup = () => {
     clearInterval(heartbeat);
-    runningProcesses.delete(runId);
   };
 
   const tryFinish = () => {
@@ -611,7 +617,8 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     const script = scripts.find(s => s.id === scriptId);
 
     if (!script) {
-      res.write(`data: ${JSON.stringify({ type: 'start', runId, scriptId, scriptName: 'Unknown' })}\n\n`);
+      // 找不到脚本：仍发送三段事件让前端对齐计数，但该脚本无 runId（不会被登记，可被单独跳过）
+      res.write(`data: ${JSON.stringify({ type: 'start', runId: '', scriptId, scriptName: 'Unknown' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'Script not found' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
       completedCount++;
@@ -619,48 +626,63 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
       return;
     }
 
-    const currentId = script.id;
-    res.write(`data: ${JSON.stringify({ type: 'start', runId, scriptId: currentId, scriptName: script.name })}\n\n`);
+    // 关键改动：批量里每个脚本使用【独立的 runId】，而非整批共享一个。
+    // 这样「单独 Stop 某一个」或「关掉某一个脚本的输出面板」就能只杀它自己的进程树，
+    // 不会误伤同批其它仍在跑的脚本（修复「批量进行中关单面板 → 该脚本仍在后台隐藏运行」的泄漏）。
+    const scriptRunId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    batchRunIds.push(scriptRunId);
+
+    res.write(`data: ${JSON.stringify({ type: 'start', runId: scriptRunId, scriptId, scriptName: script.name })}\n\n`);
 
     const execStartTime = Date.now();
 
     // detached 仅在非 Windows 平台开启，避免 Windows 上弹出新控制台窗口（见单条执行处注释）
     const child = spawn(shell.command, shell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
     children.push(child);
+    // 以「独立 runId」登记该脚本的子进程：/api/execute/:runId/stop 即可精确命中、只杀这一棵
+    runningProcesses.set(scriptRunId, { children: [child], isBatch: true });
     child.stdin.write(script.content);
     child.stdin.end();
 
     child.stdout.on('data', (data) => {
-      res.write(`data: ${JSON.stringify({ type: 'stdout', scriptId: currentId, content: data.toString() })}\n\n`);
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ type: 'stdout', scriptId, content: data.toString() })}\n\n`);
     });
 
     child.stderr.on('data', (data) => {
-      res.write(`data: ${JSON.stringify({ type: 'stderr', scriptId: currentId, content: data.toString() })}\n\n`);
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ type: 'stderr', scriptId, content: data.toString() })}\n\n`);
     });
 
     child.on('close', (code, signal) => {
-      const durationMs = Date.now() - execStartTime;
-      const terminated = code === null && !!signal;
-      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: code, signal: signal || null, terminated, durationMs })}\n\n`);
+      // 该脚本自身结束：立刻注销它独立的 runId 登记（自然结束 / 被单独 stop 都会走到这里）
+      runningProcesses.delete(scriptRunId);
+      if (!res.writableEnded) {
+        const durationMs = Date.now() - execStartTime;
+        // code 为 null 且 signal 存在，说明是被信号终止的（单独 stop 的 SIGTERM/SIGKILL）
+        const terminated = code === null && !!signal;
+        res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: code, signal: signal || null, terminated, durationMs })}\n\n`);
+      }
       completedCount++;
       tryFinish();
     });
 
     child.on('error', (err) => {
-      const durationMs = Date.now() - execStartTime;
-      res.write(`data: ${JSON.stringify({ type: 'error', scriptId: currentId, message: err.message, durationMs })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'close', scriptId: currentId, exitCode: -1, durationMs })}\n\n`);
+      runningProcesses.delete(scriptRunId);
+      if (!res.writableEnded) {
+        const durationMs = Date.now() - execStartTime;
+        res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: err.message, durationMs })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1, durationMs })}\n\n`);
+      }
       completedCount++;
       tryFinish();
     });
   });
 
-  // 所有子进程已创建，登记本次批量运行的 runId
-  runningProcesses.set(runId, { children, isBatch: true });
-
+  // 用户提前关闭整个共享 SSE（关全部 / 关浏览器 / 软件退出）时：
+  // 整批强杀所有子进程，并注销本批次全部独立 runId 的登记。
   req.on('close', () => {
     cleanup();
     children.forEach(child => killChild(child));
+    batchRunIds.forEach(rid => runningProcesses.delete(rid));
   });
 });
 

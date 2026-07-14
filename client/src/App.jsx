@@ -72,7 +72,6 @@ function App() {
   const outputRefs = useRef({})
   const outputPanelRefs = useRef({})
   const maximizedOutputRef = useRef(null)
-  const batchRunIdRef = useRef(null)  // 批量执行的 runId，用于中断整批
   const [showScrollTop, setShowScrollTop] = useState(false)
   const outputsScrollRef = useRef(null)
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
@@ -808,7 +807,7 @@ function App() {
       if (data.type === 'start') {
         currentId = data.scriptId
         if (data.runId) {
-          batchRunIdRef.current = data.runId
+          // 每个脚本现在都有各自独立的 runId，直接登记即可（用于单独 Stop / 单独关面板）
           setRunIds(prev => ({ ...prev, [scriptId]: data.runId }))
         }
         if (scriptId) {
@@ -862,14 +861,12 @@ function App() {
       } else if (data.type === 'done') {
         setExecutingBatch(false)
         setBatchRunningIds({})
-        if (batchRunIdRef.current) {
-          setRunIds(prev => {
-            const n = { ...prev }
-            Object.keys(n).forEach(k => { if (n[k] === batchRunIdRef.current) delete n[k] })
-            return n
-          })
-          batchRunIdRef.current = null
-        }
+        // 批量结束：清掉本批次所有脚本登记的 runId（每个脚本独立 runId，故按 batchIds 逐个删除）
+        setRunIds(prev => {
+          const n = { ...prev }
+          batchIds.forEach(id => { delete n[id] })
+          return n
+        })
         es.close()
         delete eventSourceRefs.current['__batch__']
       }
@@ -890,14 +887,12 @@ function App() {
       })
       setExecutingBatch(false)
       setBatchRunningIds({})
-      if (batchRunIdRef.current) {
-        setRunIds(prev => {
-          const n = { ...prev }
-          Object.keys(n).forEach(k => { if (n[k] === batchRunIdRef.current) delete n[k] })
-          return n
-        })
-        batchRunIdRef.current = null
-      }
+      // 批量出错中断：同样按 batchIds 清掉本批次所有 runId
+      setRunIds(prev => {
+        const n = { ...prev }
+        batchIds.forEach(id => { delete n[id] })
+        return n
+      })
       es.close()
       delete eventSourceRefs.current['__batch__']
     }
@@ -1291,9 +1286,16 @@ function App() {
                         </button>
                         <button
                           onClick={() => {
-                            // 关闭并清理该脚本的 EventSource
+                            // 关闭该脚本的输出面板。
+                            // 若正处于批量执行中（共享 EventSource `__batch__` 不能关，否则会误杀同批其它脚本），
+                            // 则改为调用 stop 接口只杀「这一个脚本」的进程树；
+                            // 否则（单次执行）直接关闭它独立的 ES，后端 req.on('close') 会负责杀整组进程。
+                            const rid = runIds[script.id]
+                            const isBatchRunning = !!eventSourceRefs.current['__batch__'] && batchRunningIds[script.id]
                             setRunIds(prev => { const n = { ...prev }; delete n[script.id]; return n })
-                            if (eventSourceRefs.current[script.id]) {
+                            if (isBatchRunning && rid) {
+                              handleStopExecution(rid)
+                            } else if (eventSourceRefs.current[script.id]) {
                               eventSourceRefs.current[script.id].close()
                               delete eventSourceRefs.current[script.id]
                             }
