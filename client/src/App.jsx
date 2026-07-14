@@ -36,6 +36,19 @@ const RunningSpinner = () => (
   </svg>
 );
 
+// 自动贴底开关图标：向下箭头指向底部；开启时蓝色高亮，关闭时灰色
+const AutoFollowIcon = ({ on }) => (
+  <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+    <path d="M12 4 V18 M6 12 L12 18 L18 12"
+      fill="none"
+      stroke={on ? '#1890ff' : '#bbb'}
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 function App() {
   const [scripts, setScripts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
@@ -68,6 +81,12 @@ function App() {
   const [locatingId, setLocatingId] = useState(null)
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
+  // 每个输出面板「自动贴底」开关状态：{ [scriptId]: boolean }，缺省（undefined）视为 true（默认自动贴底）
+  const [autoFollowMap, setAutoFollowMap] = useState({})
+  const autoFollowRef = useRef(autoFollowMap)
+  autoFollowRef.current = autoFollowMap
+  // 缺省（未设置）视为开启自动贴底
+  const isAutoFollow = (id) => autoFollowRef.current[id] !== false
 
   // ==================== 自动跟随：ResizeObserver ====================
   // 规则：正在运行（live）的脚本始终贴底；其它状态（已完成等）在重排/重渲染时
@@ -78,17 +97,18 @@ function App() {
   // 将滚动容器贴底：同步设置一次，再用两帧补丁兜底。
   // 原因：内容增长时，滚动条可能在本帧「刚出现」，导致内容被重新折行、scrollHeight 再变大，
   // 此时单次 scrollTop = scrollHeight 会被浏览器钳制到旧最大值，从而「差一点点没贴底」。
-  // 运行中的面板：用 pausedFollow 记录「用户已手动上滑、暂停跟随」的脚本 id。
+  // 运行中的面板：通过 autoFollowMap（每个输出面板一个小开关）控制是否自动贴底；
+  // 缺省（未设置）视为开启——即输出窗口默认自动贴底。用户手动上滑时关闭，
+  // 回到底部或点击开关再开启；脚本重新执行时重置为开启（关闭后重新打开仍默认贴底）。
   // 判定「用户上滑」不靠标记程序滚动（易与频繁自动贴底相互干扰），而靠滚动方向：
   // 程序贴底只会让 scrollTop 变大（向下），用户上滑会让 scrollTop 变小（向上），据此精确区分。
-  const pausedFollow = useRef(new Set())
   // 记录每个容器上一次的 scrollTop，用于判断滚动方向
   const lastScrollTop = useRef(new WeakMap())
-  // 贴底：同步一次 + 两帧补丁兜底；若期间用户已暂停跟随（id 提供时），则跳过。
+  // 贴底：同步一次 + 两帧补丁兜底；若该面板已关闭自动贴底（id 提供时），则跳过。
   const pinToBottom = useCallback((el, id) => {
     if (!el || !el.isConnected) return
     const doPin = () => {
-      if (id != null && pausedFollow.current.has(id)) return
+      if (id != null && autoFollowRef.current[id] === false) return
       if (el.isConnected) {
         el.scrollTop = el.scrollHeight
         lastScrollTop.current.set(el, el.scrollTop)
@@ -121,8 +141,8 @@ function App() {
           // 需贴底的是当前可见的那个（放大窗打开时优先放大窗）。
           const isMax = maximizedScriptIdRef.current === id
           const el = (isMax && maximizedOutputRef.current) ? maximizedOutputRef.current : outputRefs.current[id]
-          // 正在运行且用户未手动上滑：始终贴底（小窗/放大窗统一）
-          if (out && out.live && !pausedFollow.current.has(id) && el && el.isConnected) {
+          // 正在运行且自动贴底开启：始终贴底（小窗/放大窗统一）
+          if (out && out.live && autoFollowRef.current[id] !== false && el && el.isConnected) {
             pinToBottom(el, id)
           }
         })
@@ -281,8 +301,8 @@ function App() {
 
   // 监听用户滚动事件（依据滚动方向精确区分「用户上滑」与「程序自动贴底」）：
   //  - 记录当前滚动位置，供重排/重渲染后还原；
-  //  - 回到底部：恢复跟随（清除暂停）；
-  //  - 相对上次明显向上滑动（scrollTop 变小）：暂停跟随。
+  //  - 回到底部：恢复自动贴底（开启该面板开关）；
+  //  - 相对上次明显向上滑动（scrollTop 变小）：关闭自动贴底（用户想查看历史输出）。
   // 程序自动贴底只会使 scrollTop 变大（向下），不会触发「上滑」判定，故无需额外标记。
   const handleOutputScroll = useCallback((id, e) => {
     const el = e.target
@@ -292,10 +312,11 @@ function App() {
     scrollPositions.current[id] = curr
     const isAtBottom = el.scrollHeight - curr - el.clientHeight < 20
     if (isAtBottom) {
-      pausedFollow.current.delete(id)
+      // 回到底部：恢复自动贴底
+      if (autoFollowRef.current[id] === false) setAutoFollowMap(prev => ({ ...prev, [id]: true }))
     } else if (curr < prev - 2) {
-      // 明显向上滑动（留 2px 容差抵消抖动）→ 用户想查看历史输出，暂停跟随
-      pausedFollow.current.add(id)
+      // 明显向上滑动（留 2px 容差抵消抖动）→ 用户想查看历史输出，关闭自动贴底
+      if (autoFollowRef.current[id] !== false) setAutoFollowMap(prev => ({ ...prev, [id]: false }))
     }
   }, [])
 
@@ -306,10 +327,10 @@ function App() {
   useLayoutEffect(() => {
     const restore = (id, el) => {
       const out = outputs[id]
-      if (out && out.live && !pausedFollow.current.has(id)) {
+      if (out && out.live && autoFollowRef.current[id] !== false) {
         pinToBottom(el, id)
       } else {
-        // 非运行中，或运行中但用户已手动上滑暂停：还原之前位置
+        // 非运行中，或运行中但已关闭自动贴底：还原之前位置
         const saved = scrollPositions.current[id]
         if (typeof saved === 'number') el.scrollTop = saved
       }
@@ -642,9 +663,14 @@ function App() {
 
     setExecutingIds(prev => ({ ...prev, [id]: true }))
     const timestamp = Date.now()
+    // 记录该输出窗口是否「已经存在」（关闭重开后会从 outputs 中移除，视为首次出现）
+    const hadOutput = !!outputs[id]
     setOutputs(prev => ({ ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }))
-    // 新一次执行：清除该脚本的「暂停跟随」标记，重新从底部开始跟随
-    pausedFollow.current.delete(id)
+    // 仅当输出窗口是「首次出现」时才把自动贴底重置为开启；
+    // 若窗口已存在（用户可能手动关过自动贴底），则保留用户当前设置，不在每次执行时强制重新开启
+    if (!hadOutput) {
+      setAutoFollowMap(prev => ({ ...prev, [id]: true }))
+    }
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
@@ -748,8 +774,13 @@ function App() {
     // 记录本次批量中正在运行的脚本，脚本结束即从该集合移除，
     // 使其「Execute」按钮即时可点击，不必等整批跑完
     setBatchRunningIds(Object.fromEntries(batchIds.map(id => [id, true])))
-    // 新一次批量执行：清除这些脚本的「暂停跟随」标记，重新从底部开始跟随
-    batchIds.forEach(id => pausedFollow.current.delete(id))
+    // 仅当某输出窗口是「首次出现」时才把它重置为自动贴底开启；
+    // 已存在的窗口（用户可能手动关过自动贴底）保留当前设置，不在每次批量执行时强制重新开启
+    setAutoFollowMap(prev => {
+      const next = { ...prev }
+      batchIds.forEach(id => { if (!outputs[id]) next[id] = true })
+      return next
+    })
 
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
@@ -1211,6 +1242,22 @@ function App() {
                           </span>
                         )}
                         <button
+                          className={`btn-autofollow ${isAutoFollow(script.id) ? 'on' : 'off'}`}
+                          title={isAutoFollow(script.id) ? 'Auto-scroll: On (click to disable)' : 'Auto-scroll: Off (click to enable)'}
+                          onClick={() => {
+                            const next = !isAutoFollow(script.id)
+                            setAutoFollowMap(prev => ({ ...prev, [script.id]: next }))
+                            if (next) {
+                              // 同步更新 ref，避免 pinToBottom 的 autoFollow 检查读到旧值而跳过贴底
+                              autoFollowRef.current = { ...autoFollowRef.current, [script.id]: true }
+                              const el = outputRefs.current[script.id]
+                              if (el) pinToBottom(el, script.id)
+                            }
+                          }}
+                        >
+                          <AutoFollowIcon on={isAutoFollow(script.id)} />
+                        </button>
+                        <button
                           onClick={() => output.live
                             ? (runIds[script.id] && handleStopExecution(runIds[script.id]))
                             : handleExecuteScript(script.id)}
@@ -1618,6 +1665,22 @@ function App() {
                       {output.terminated ? 'Stopped' : (output.exitCode !== null ? `Exit: ${output.exitCode}` : 'Pending')}
                     </span>
                   )}
+                  <button
+                    className={`btn-autofollow ${isAutoFollow(maximizedScriptId) ? 'on' : 'off'}`}
+                    title={isAutoFollow(maximizedScriptId) ? 'Auto-scroll: On (click to disable)' : 'Auto-scroll: Off (click to enable)'}
+                    onClick={() => {
+                      const next = !isAutoFollow(maximizedScriptId)
+                      setAutoFollowMap(prev => ({ ...prev, [maximizedScriptId]: next }))
+                      if (next) {
+                        // 同步更新 ref，避免 pinToBottom 的 autoFollow 检查读到旧值而跳过贴底
+                        autoFollowRef.current = { ...autoFollowRef.current, [maximizedScriptId]: true }
+                        const el = maximizedOutputRef.current
+                        if (el) pinToBottom(el, maximizedScriptId)
+                      }
+                    }}
+                  >
+                    <AutoFollowIcon on={isAutoFollow(maximizedScriptId)} />
+                  </button>
                   <button
                     onClick={() => output.live
                       ? (runIds[maximizedScriptId] && handleStopExecution(runIds[maximizedScriptId]))
