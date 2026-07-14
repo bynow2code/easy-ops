@@ -480,6 +480,13 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
+  // 无可用 Shell（如 Windows 上未安装 WSL / Git Bash）：无法执行，直接返回错误，避免 spawn('') 异常
+  if (!shell.command) {
+    res.write(`data: ${JSON.stringify({ type: 'error', message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
+    res.end();
+    return;
+  }
+
   // 禁用超时，防止长命令执行时断连
   req.socket.setTimeout(0);
   req.setTimeout(0);
@@ -557,6 +564,18 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+
+  // 无可用 Shell（如 Windows 上未安装 WSL / Git Bash）：无法执行，逐脚本返回错误后结束
+  if (!shell.command) {
+    ids.forEach((scriptId) => {
+      res.write(`data: ${JSON.stringify({ type: 'start', runId: '', scriptId, scriptName: 'Unknown' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
+    });
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    res.end();
+    return;
+  }
 
   // 禁用超时，防止长命令执行时断连
   req.socket.setTimeout(0);
