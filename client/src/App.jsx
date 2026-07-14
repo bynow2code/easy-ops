@@ -74,6 +74,8 @@ function App() {
   const maximizedOutputRef = useRef(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
   const outputsScrollRef = useRef(null)
+  // 记录批量执行中已被用户关闭的脚本 id：对应后端事件将被忽略，避免「关闭后又重新出现」
+  const closedBatchIds = useRef(new Set())
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
   // 当前被「定位」的脚本 id：点击 Locate 时让对应输出面板的 BE/FE 徽标绿色闪烁，作为显眼提示
@@ -769,6 +771,8 @@ function App() {
 
     // 捕获当前选中的脚本 ID 列表，保持顺序
     const batchIds = [...selectedIds]
+    // 清空上一批次可能遗留的「已关闭脚本」记录，避免误忽略本批次事件
+    closedBatchIds.current.clear()
     setExecutingBatch(true)
     // 记录本次批量中正在运行的脚本，脚本结束即从该集合移除，
     // 使其「Execute」按钮即时可点击，不必等整批跑完
@@ -802,6 +806,8 @@ function App() {
 
     es.onmessage = (event) => {
       const data = JSON.parse(event.data)
+      // 批量执行中已被用户关闭的脚本：忽略其后端推送事件，避免关闭后面板重新出现
+      if (data.scriptId && closedBatchIds.current.has(data.scriptId)) return
       const scriptId = data.scriptId || currentId
 
       if (data.type === 'start') {
@@ -867,6 +873,8 @@ function App() {
           batchIds.forEach(id => { delete n[id] })
           return n
         })
+        // 清空「已关闭批量脚本」记录，为下一批次腾出干净状态
+        closedBatchIds.current.clear()
         es.close()
         delete eventSourceRefs.current['__batch__']
       }
@@ -1294,6 +1302,8 @@ function App() {
                             const isBatchRunning = !!eventSourceRefs.current['__batch__'] && batchRunningIds[script.id]
                             setRunIds(prev => { const n = { ...prev }; delete n[script.id]; return n })
                             if (isBatchRunning && rid) {
+                              // 标记该脚本已关闭，忽略其后端回推事件（否则关闭后面板会重新出现）
+                              closedBatchIds.current.add(script.id)
                               handleStopExecution(rid)
                             } else if (eventSourceRefs.current[script.id]) {
                               eventSourceRefs.current[script.id].close()
