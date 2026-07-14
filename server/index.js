@@ -156,14 +156,16 @@ const detectShell = () => {
     return result;
   }
 
+  // ---- Windows：仅检测 WSL / Git Bash（bash 语法脚本） ----
+  // 不再支持 cmd.exe 与 PowerShell。脚本使用 bash 语法，须由 WSL 或 Git Bash 执行。
   const possibleBashPaths = [
+    // WSL：通过 wsl.exe 非交互式执行 bash，避免弹出 Windows Terminal
+    { path: 'C:\\Windows\\System32\\bash.exe', name: 'WSL bash' },
     { path: 'bash', name: 'bash (PATH)' },
     { path: 'C:\\Program Files\\Git\\bin\\bash.exe', name: 'Git Bash (C:\\Program Files\\Git)' },
     { path: 'C:\\Program Files (x86)\\Git\\bin\\bash.exe', name: 'Git Bash (C:\\Program Files (x86)\\Git)' },
     { path: process.env.ProgramW6432 ? `${process.env.ProgramW6432}\\Git\\bin\\bash.exe` : '', name: 'Git Bash' },
     { path: process.env.ProgramFiles ? `${process.env.ProgramFiles}\\Git\\bin\\bash.exe` : '', name: 'Git Bash' },
-    { path: 'C:\\Windows\\System32\\bash.exe', name: 'WSL bash' },
-    { path: 'git\\bash', name: 'Git bash (relative)' }
   ];
 
   for (const { path: bashPath, name } of possibleBashPaths) {
@@ -208,16 +210,9 @@ const detectShell = () => {
     } catch (e) {}
   }
 
-  result.command = 'cmd.exe';
-  result.fullPath = resolveFullPath('cmd.exe');
-  result.type = 'cmd';
-  // cmd.exe 不支持从 stdin 读取脚本，此处保持无参数，仅作兜底。
-  result.args = [];
-  result.name = 'Windows cmd.exe';
-  try {
-    result.version = execSync('cmd /c "echo cmd.exe"', { timeout: 1000 }).toString().trim();
-  } catch (e) {}
-  console.log('⚠️  Warning: bash not found, falling back to cmd.exe (bash scripts may not work correctly)');
+  // 未找到任何 bash 环境（WSL / Git Bash 均不存在）。
+  // 此时无可用 Shell，脚本将无法正常执行；前端 App Info 会显示「未检测到 Shell」。
+  console.log('⚠️  Warning: 未在当前 Windows 环境检测到 WSL / Git Bash，脚本将无法执行（仅支持 bash 语法，须 WSL 或 Git Bash）。');
   return result;
 };
 
