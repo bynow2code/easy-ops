@@ -222,9 +222,23 @@ app.on('window-all-closed', () => {
 });
 
 app.on('quit', () => {
-  // 停止后端进程
+  // 停止后端进程（含其正在运行的脚本子进程）
   if (backendProcess) {
-    try { backendProcess.kill(); } catch (e) {}
+    try {
+      if (process.platform === 'win32') {
+        // Windows 上 Node 的 child.kill() 底层是 TerminateProcess，只杀后端自身、
+        // 不杀进程树，脚本会残留为孤立进程继续后台运行。
+        // 故用 taskkill /T /F 连根拔起：后端 + 它 spawn 的 shell 脚本 + 脚本的子命令，
+        // 全部一并结束（/T 只向下遍历子进程，不会误伤 Electron 主进程）。
+        const { execSync } = require('child_process');
+        try { execSync(`taskkill /pid ${backendProcess.pid} /T /F`, { stdio: 'ignore' }); }
+        catch (e) { try { backendProcess.kill(); } catch (_) {} }
+      } else {
+        // POSIX：发 SIGTERM，交由后端的 SIGTERM 处理器去杀死其 detached 的脚本进程组后自行退出。
+        // 不直接 kill(-pid)，否则会误杀整个 Electron 进程树。
+        backendProcess.kill('SIGTERM');
+      }
+    } catch (e) {}
   }
 });
 

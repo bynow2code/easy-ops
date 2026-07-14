@@ -307,6 +307,37 @@ const killChild = (child) => {
   }
 };
 
+// ==================== 退出清理（防孤立进程） ====================
+// 软件退出、被中断或崩溃时，必须把仍在运行的脚本子进程一并杀掉，
+// 否则 POSIX 上 detached 的脚本进程会成为「孤立进程」继续在后台运行
+// （用户担心的「僵尸进程」现象）。
+// 注意：exit 事件不允许异步操作，故这里用 SIGKILL 立即终止，
+// 不再走 killChild 里「SIGTERM→500ms→SIGKILL」的延迟升级。
+const killAllRunning = () => {
+  for (const entry of runningProcesses.values()) {
+    for (const child of entry.children) {
+      if (!child || child.killed) continue;
+      try {
+        if (process.platform === 'win32') {
+          try { execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' }); }
+          catch (e) { try { child.kill('SIGKILL'); } catch (_) {} }
+        } else {
+          // 脚本以 detached 启动，是独立的进程组 leader，向整组发 SIGKILL 一锅端
+          try { process.kill(-child.pid, 'SIGKILL'); } catch (e) {}
+        }
+      } catch (e) {}
+    }
+  }
+  runningProcesses.clear();
+};
+
+// 信号/退出钩子：Electron 主进程退出时会向本后端发 SIGTERM（fork 的 child.kill('SIGTERM')），
+// 这里拦截后先杀干净脚本子进程再退出；process.on('exit') 兜底覆盖其它退出路径
+// （如端口冲突导致的 process.exit(1)）。
+process.on('SIGTERM', () => { killAllRunning(); process.exit(0); });
+process.on('SIGINT', () => { killAllRunning(); process.exit(0); });
+process.on('exit', killAllRunning);
+
 console.log('========================================');
 console.log('[EasyOps] Script Manager - Backend starting...');
 console.log('========================================');
