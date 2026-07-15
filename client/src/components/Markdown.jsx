@@ -26,7 +26,7 @@ export default function Markdown({ content, className, maxLength }) {
       className={`markdown-body ${className || ''}`}
       components={{
         // 链接在新标签页打开，且保留 GitHub release 里原始链接的行为
-        a: ({ node, ...props }) => (
+        a: ({ ...props }) => (
           <a {...props} target="_blank" rel="noopener noreferrer" />
         ),
       }}

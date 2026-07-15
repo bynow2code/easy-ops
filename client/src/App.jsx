@@ -547,7 +547,7 @@ function App() {
       groups[draggedId] = targetGroup
     }
 
-    const updated = allScripts.map((s, idx) => {
+    const updated = allScripts.map((s) => {
       if (s.id === draggedId) return { ...s, group: targetGroup }
       return s
     })
@@ -559,7 +559,7 @@ function App() {
 
     try {
       await axios.post('/api/scripts/reorder', { order: newOrder, groups: Object.keys(groups).length ? groups : undefined })
-    } catch (error) {
+    } catch {
       alert('Failed to save order')
       fetchScripts()
     }
@@ -603,7 +603,7 @@ function App() {
 
     try {
       await axios.post('/api/scripts/reorder', { order: newOrder, groups: Object.keys(groups).length ? groups : undefined })
-    } catch (error) {
+    } catch {
       alert('Failed to save order')
       fetchScripts()
     }
@@ -932,11 +932,6 @@ function App() {
     setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(sid => sid !== id) : [...prev, id]
     )
-  }
-
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr)
-    return date.toLocaleString()
   }
 
   const formatTimeAgo = (timestamp) => {
