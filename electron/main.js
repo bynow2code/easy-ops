@@ -23,10 +23,15 @@ const showFatal = (title, detail) => {
 
 // 捕获主进程未处理的异常 / Promise 拒绝，转成可见弹窗（否则进程直接退出 = 闪退）
 // 注意：更新相关的网络/下载错误（404、ECONNREFUSED 等）已在 update modal 中展示，
-//       此处过滤掉，避免重复弹窗干扰用户
+//       此处过滤掉，避免重复弹窗干扰用户。
+// 关键约束：正则只能匹配「更新器特有的、具体」的错误特征，绝不能匹配 update / release
+// 这类泛词——否则 "failed to update cache"、"release the port" 等普通崩溃也会被误吞，
+// 真实闪退被静默掩盖，用户只看到程序莫名退出，反而更难排查。
 const isUpdateRelatedError = (reason) => {
   const msg = (reason && reason.message) || String(reason);
-  return /Cannot download|update|release|status\s*\d{3}|net::|ECONNREFUSED|ETIMEDOUT/i.test(msg);
+  // 仅保留更新器专属签名：electron-updater 的 ERR_UPDATER 前缀、net:: 网络错误、
+  // "Cannot download" / "Update check failed" 这类更新器固定措辞、以及网络层错误码。
+  return /Cannot download|net::|ERR_UPDATER|Update check failed|electron-updater|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ECONNRESET|status\s*\d{3}/i.test(msg);
 };
 process.on('uncaughtException', (err) => {
   showFatal('未捕获异常', err && err.stack ? err.stack : String(err));
@@ -52,9 +57,6 @@ const resPath = (relativePath) => {
   return path.join(process.resourcesPath, relativePath);
 };
 
-// 检查是否为「已构建前端 + Electron 开发」模式（electron-dev）
-const isBuiltMode = isDev && fs.existsSync(resPath('client/dist/index.html'));
-
 // 日志函数 - 同时输出到控制台和文件
 // 使用 function 声明（而非 const 箭头函数）以获得提升（hoisting），
 // 确保 uncaughtException 回调在任何阶段触发时都能安全调用 log，
@@ -69,90 +71,93 @@ function log(message) {
   } catch (e) {}
 }
 
-// 找到未占用的端口并启动后端服务
+// 启动后端服务，并拿回它实际监听的端口。
+// 关键修复（解决「同时开两个 Electron 应用 → 界面串台」）：
+//   不再从固定区间 3001-3100 探测端口。两个应用同时起时，会各自探测到同一个「空闲」端口、
+//   又各自 fork 后端去抢，失败方回退到错误端口 → 渲染进程加载到另一个应用的界面。
+//   改法：让操作系统分配一个【唯一】的空闲端口（PORT='0'），后端 listen 后把真实端口回传，
+//   主进程严格使用该端口，从根本上杜绝与任何其它应用争抢端口。
 const startBackend = () => {
   return new Promise((resolve, reject) => {
     let backendResolved = false;
-    const net = require('net');
-    const findPort = (start, end) => {
-      return new Promise((resolvePort) => {
-        const tryPort = (port) => {
-          if (port > end) {
-            resolvePort(null);
-            return;
-          }
-          const server = net.createServer();
-          server.once('error', () => tryPort(port + 1));
-          server.once('listening', () => {
-            server.close(() => resolvePort(port));
-          });
-          server.listen(port);
-        };
-        tryPort(start);
-      });
+    const serverDir = resPath('server');
+    const env = {
+      ...process.env,
+      PORT: '0',                       // 0 = 由操作系统分配空闲端口，保证全局唯一、绝不与其它应用冲突
+      ELECTRON_MODE: '1',
+      FRONTEND_DIST_DIR: resPath('client/dist'),
+      SCRIPT_DATA_DIR: app.getPath('userData')
     };
 
-    findPort(3001, 3100).then(port => {
-      if (!port) {
-        reject(new Error('No available port found in range 3001-3100'));
-        return;
+    // 后端入口：优先用 esbuild 打包后的单文件 server/dist/index.cjs（已把 express/cors 全部内联，
+    // 运行时零 node_modules 依赖）。这样打包后 resources/server 下不再有 node_modules，
+    // 彻底规避 electron-builder 把后端依赖误裁掉导致「Cannot find module 'express'」崩溃。
+    // 开发环境下若未先跑 build:server，则回退到源码 server/index.js（开发时根 node_modules 可用）。
+    const serverEntry = fs.existsSync(path.join(serverDir, 'index.cjs'))
+      ? path.join(serverDir, 'index.cjs')
+      : path.join(serverDir, 'index.js');
+    backendProcess = fork(serverEntry, [], {
+      cwd: serverDir,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc']
+    });
+
+    // 累积后端输出，便于后端崩溃时把真实错误暴露给用户（打包后 stderr 不可见）
+    let backendStderr = '';
+    let backendStdout = '';
+
+    backendProcess.stdout.on('data', (data) => {
+      process.stdout.write(data);
+      backendStdout += data.toString();
+      log(`[Backend] ${data.toString().trim()}`);
+    });
+
+    backendProcess.stderr.on('data', (data) => {
+      process.stderr.write(data);
+      backendStderr += data.toString();
+      log(`[Backend-ERR] ${data.toString().trim()}`);
+    });
+
+    backendProcess.on('exit', (code) => {
+      log(`Backend process exited with code ${code}`);
+      // 后端非正常退出：把累积的错误输出抛给上层，直接弹窗显示，而不是加载一个死链接
+      if (code !== 0 && !backendResolved) {
+        const detail = (backendStderr || backendStdout || '(后端无任何输出，退出码 ' + code + ')').trim();
+        reject(new Error(`后端进程退出码 ${code}。后端报错：\n${detail}`));
       }
+      backendProcess = null;
+    });
 
-      const serverDir = resPath('server');
-      const env = {
-        ...process.env,
-        PORT: port.toString(),
-        ELECTRON_MODE: '1',
-        FRONTEND_DIST_DIR: resPath('client/dist'),
-        SCRIPT_DATA_DIR: app.getPath('userData')
-      };
-
-      backendProcess = fork(path.join(serverDir, 'index.js'), [], {
-        cwd: serverDir,
-        env,
-        stdio: ['pipe', 'pipe', 'pipe', 'ipc']
-      });
-
-      // 累积后端输出，便于后端崩溃时把真实错误暴露给用户（打包后 stderr 不可见）
-      let backendStderr = '';
-      let backendStdout = '';
-
-      backendProcess.stdout.on('data', (data) => {
-        process.stdout.write(data);
-        backendStdout += data.toString();
-        log(`[Backend] ${data.toString().trim()}`);
-      });
-
-      backendProcess.stderr.on('data', (data) => {
-        process.stderr.write(data);
-        backendStderr += data.toString();
-        log(`[Backend-ERR] ${data.toString().trim()}`);
-      });
-
-      backendProcess.on('exit', (code) => {
-        log(`Backend process exited with code ${code}`);
-        // 后端非正常退出：把累积的错误输出抛给上层，直接弹窗显示，而不是加载一个死链接
-        if (code !== 0 && !backendResolved) {
-          const detail = (backendStderr || backendStdout || '(后端无任何输出，退出码 ' + code + ')').trim();
-          reject(new Error(`后端进程退出码 ${code}。后端报错：\n${detail}`));
-        }
-        backendProcess = null;
-      });
-
-      // 等待后端启动完成信号
-      backendProcess.on('message', (msg) => {
-        if (msg === 'ready') {
-          backendResolved = true;
-          resolve(port);
-        }
-      });
-
-      // 超时回退：如果 5 秒内没收到 ready 消息，直接使用端口
-      setTimeout(() => {
+    // 等待后端启动完成信号（后端 listen 成功后回传 { type:'ready', port }）
+    // 这里的 port 是操作系统实际分配的端口，严格用作渲染进程加载地址，绝不猜测。
+    backendProcess.on('message', (msg) => {
+      if (msg && msg.type === 'ready') {
         backendResolved = true;
-        resolve(port);
-      }, 5000);
-    }).catch(reject);
+        resolve(msg.port);
+      }
+    });
+
+    // 超时回退（兜底）：仅当后端彻底没回 ready 时才触发。
+    // 注意：以前这里会「回退到探测端口」——而那个端口可能已被另一个应用占用，
+    // 加载它就会串台显示别的 App 界面。现改为读取【本应用自己的端口文件】
+    // （后端 bind 成功后写入，内容为【本后端】真实端口，且启动时已清空旧值），
+    // 拿不到就视为启动失败弹窗，绝不拿一个可能属于别人的端口去加载。
+    setTimeout(() => {
+      if (backendResolved) return;
+      try {
+        const pf = path.join(require('os').tmpdir(), 'easyops-port.txt');
+        if (fs.existsSync(pf)) {
+          const p = parseInt(fs.readFileSync(pf, 'utf8').toString().trim(), 10);
+          if (p) {
+            backendResolved = true;
+            resolve(p);
+            return;
+          }
+        }
+      } catch (e) {}
+      backendResolved = true;
+      reject(new Error('后端启动超时（20s 内未收到就绪信号）。请查看 main.log 与后端日志。'));
+    }, 20000);
   });
 };
 
@@ -274,7 +279,7 @@ const processNotifQueue = () => {
     icon: fs.existsSync(notifIconPath) ? notifIconPath : undefined
   });
   n.show();
-  // 单脚本显示 4 秒，批量每条显示 1.5 秒
+  // 单脚本显示 4 秒，批量每条显示 2 秒
   const duration = single ? 4000 : 2000;
   setTimeout(() => {
     try { n.close(); } catch (e) {}
@@ -578,8 +583,8 @@ const initMacUpdater = () => {
     isDownloading = true;
     log('[UPDATE][mac] download started');
     try {
-      // 若尚未拿到 asset（例如直接点下载），重新拉取一次
-      let asset, version = pendingVersion;
+      // 若尚未拿到 asset（例如直接点下载），重新拉取一次；version 以本次拉取结果为准
+      let asset, version;
       const latest = await fetchLatestRelease();
       asset = latest.asset;
       version = latest.version;

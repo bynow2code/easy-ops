@@ -12,18 +12,21 @@
     "server": "node server/index.js",
     "client": "cd client && npm run dev",
     "build": "cd client && npm run build",
-    "electron-dev": "npm run build && electron .",
-    "electron-build": "npm run build && electron-builder --win --x64",
-    "electron-build-dir": "npm run build && electron-builder --dir --win",
-    "electron-build-mac-intel": "npm run build && electron-builder --mac --x64",
-    "electron-build-mac-arm": "npm run build && electron-builder --mac --arm64",
+    "build:server": "esbuild server/index.js --bundle --platform=node --target=node20 --format=cjs --outfile=server/dist/index.cjs && node -e \"require('fs').mkdirSync('server/dist',{recursive:true});require('fs').copyFileSync('server/scripts.json','server/dist/scripts.json')\"",
+    "electron-dev": "npm run build && npm run build:server && electron .",
+    "electron-build": "npm run build && npm run build:server && electron-builder --win --x64",
+    "electron-build-dir": "npm run build && npm run build:server && electron-builder --dir --win",
+    "electron-build-mac-intel": "npm run build && npm run build:server && electron-builder --mac --x64",
+    "electron-build-mac-arm": "npm run build && npm run build:server && electron-builder --mac --arm64",
+    "electron-build-mac": "npm run build && npm run build:server && electron-builder --mac --x64 --arm64",
     "generate-icns": "cd client/public && mkdir -p icon.iconset && sips -z 16 16 logo-1024.png --out icon.iconset/icon_16x16.png && sips -z 32 32 logo-1024.png --out icon.iconset/icon_16x16@2x.png && sips -z 32 32 logo-1024.png --out icon.iconset/icon_32x32.png && sips -z 64 64 logo-1024.png --out icon.iconset/icon_32x32@2x.png && sips -z 128 128 logo-1024.png --out icon.iconset/icon_128x128.png && sips -z 256 256 logo-1024.png --out icon.iconset/icon_128x128@2x.png && sips -z 256 256 logo-1024.png --out icon.iconset/icon_256x256.png && sips -z 512 512 logo-1024.png --out icon.iconset/icon_256x256@2x.png && sips -z 512 512 logo-1024.png --out icon.iconset/icon_512x512.png && sips -z 1024 1024 logo-1024.png --out icon.iconset/icon_512x512@2x.png && iconutil -c icns icon.iconset && rm -rf icon.iconset",
     "start": "electron ."
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "electron": "^43.0.0",
-    "electron-builder": "^26.0.0"
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.28.1"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
@@ -40,14 +43,8 @@
     ],
     "extraResources": [
       {
-        "from": "server",
-        "to": "server",
-        "filter": [
-          "**/*",
-          "node_modules/**/*",
-          "!package-lock.json",
-          "!package.json"
-        ]
+        "from": "server/dist",
+        "to": "server"
       },
       {
         "from": "client/dist",

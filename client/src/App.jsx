@@ -659,6 +659,15 @@ function App() {
     const script = scripts.find(s => s.id === id)
     if (!script) return
 
+    // 无可用 Shell：不发起 SSE，直接给出友好提示（避免后端报错观感与无谓请求）
+    if (systemInfo && !systemInfo.shell?.command) {
+      setOutputs(prev => ({
+        ...prev,
+        [id]: { output: '', error: '未检测到可用 Shell（需 WSL 或 Git Bash）。脚本无法执行。\n', exitCode: -1, live: false, timestamp: Date.now() }
+      }))
+      return
+    }
+
     // 仅当该脚本自身正在执行时（单独执行，或仍在批量运行中）才阻止
     if (executingIds[id] || batchRunningIds[id]) return
 
@@ -768,6 +777,19 @@ function App() {
       return
     }
     if (executingBatch) return
+
+    // 无可用 Shell：批量执行同样直接提示，不发起 SSE
+    if (systemInfo && !systemInfo.shell?.command) {
+      const now = Date.now()
+      setOutputs(prev => {
+        const next = { ...prev }
+        selectedIds.forEach(id => {
+          next[id] = { output: '', error: '未检测到可用 Shell（需 WSL 或 Git Bash）。脚本无法执行。\n', exitCode: -1, live: false, timestamp: now }
+        })
+        return next
+      })
+      return
+    }
 
     // 捕获当前选中的脚本 ID 列表，保持顺序
     const batchIds = [...selectedIds]
@@ -985,6 +1007,22 @@ function App() {
 
   return (
     <div className="app-container">
+      {/* 无可用 Shell：醒目横幅提示，而非让用户在点运行后才看到 cryptic 报错 */}
+      {systemInfo != null && !(systemInfo.shell && systemInfo.shell.command) && (
+        <div
+          style={{
+            background: '#fff3cd',
+            color: '#7a5b00',
+            borderBottom: '1px solid #ffe69c',
+            padding: '10px 18px',
+            fontSize: '13px',
+            lineHeight: 1.5
+          }}
+        >
+          ⚠️ 未检测到 <b>WSL</b> 或 <b>Git Bash</b>：脚本执行功能不可用。请在 Windows 上安装
+          WSL（<code>wsl --install</code>）或 Git Bash 后重启应用。
+        </div>
+      )}
       <header className="header">
         <h1>Script Manager</h1>
 

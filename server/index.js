@@ -3,14 +3,12 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
-const net = require('net');
 
 const app = express();
 const DEFAULT_PORT = 3001;
-const PORT_RANGE_START = 3001;
-const PORT_RANGE_END = 3100;
 // ⚠️ 不能写 __dirname（打包后在 Program Files\...\resources\server 下，普通用户无写权限会直接崩）
-// 改为写到系统临时目录，跨平台可写
+// 改为写到系统临时目录，跨平台可写。
+// 该文件仅本应用读取，内容为【本后端】实际监听端口；启动时先清空，避免读到上一次运行的旧端口。
 const PORT_FILE = path.join(require('os').tmpdir(), 'easyops-port.txt');
 
 // 实际监听的端口，供 /api/system-info 暴露给前端（启动后填充）
@@ -99,31 +97,6 @@ const saveScripts = (scripts) => {
   fs.writeFileSync(SCRIPTS_FILE, JSON.stringify(scripts, null, 2));
 };
 
-const isPortAvailable = (port) => {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', (err) => {
-      resolve(false);
-    });
-    server.once('listening', () => {
-      server.close(() => {
-        resolve(true);
-      });
-    });
-    server.listen(port);
-  });
-};
-
-const findAvailablePort = async (startPort, endPort) => {
-  for (let port = startPort; port <= endPort; port++) {
-    const available = await isPortAvailable(port);
-    if (available) {
-      return port;
-    }
-  }
-  return null;
-};
-
 const detectShell = () => {
   const isWindows = process.platform === 'win32';
   const result = { command: '', fullPath: '', type: '', name: '', version: '', args: [] };
@@ -156,67 +129,66 @@ const detectShell = () => {
     return result;
   }
 
-  // ---- Windows：仅检测 WSL / Git Bash（bash 语法脚本） ----
-  // 不再支持 cmd.exe 与 PowerShell。脚本使用 bash 语法，须由 WSL 或 Git Bash 执行。
-  const possibleBashPaths = [
-    // WSL：通过 wsl.exe 非交互式执行 bash，避免弹出 Windows Terminal
-    { path: 'C:\\Windows\\System32\\bash.exe', name: 'WSL bash' },
-    { path: 'bash', name: 'bash (PATH)' },
-    { path: 'C:\\Program Files\\Git\\bin\\bash.exe', name: 'Git Bash (C:\\Program Files\\Git)' },
-    { path: 'C:\\Program Files (x86)\\Git\\bin\\bash.exe', name: 'Git Bash (C:\\Program Files (x86)\\Git)' },
-    { path: process.env.ProgramW6432 ? `${process.env.ProgramW6432}\\Git\\bin\\bash.exe` : '', name: 'Git Bash' },
-    { path: process.env.ProgramFiles ? `${process.env.ProgramFiles}\\Git\\bin\\bash.exe` : '', name: 'Git Bash' },
-  ];
+  // ---- Windows：检测 WSL / Git Bash（不实际执行 bash，避免 WSL 冷启动超时） ----
+  // 原实现用 execSync 跑 `bash.exe -c "echo test"` 并以 1s 超时判断，但 WSL 冷启动常 >1s，
+  // 导致「明明装了 WSL 却偶尔被判为无 Shell」，且同步阻塞拖慢后端启动。
+  // 改为：WSL 用 `where wsl.exe`（毫秒级，不启动虚拟机），Git Bash 用文件存在性判断（fs.existsSync）。
+  // 真正的 bash 冷启动只发生在用户首次执行脚本时，一次性开销，可接受。
 
-  for (const { path: bashPath, name } of possibleBashPaths) {
-    if (!bashPath) continue;
+  // 1) WSL：where wsl.exe 命中即说明已安装（不拉起 WSL 虚拟机，几乎瞬时）
+  let wslPath = '';
+  try {
+    wslPath = execSync('where wsl.exe', { stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 })
+      .toString().trim().split(/\r?\n/)[0] || '';
+  } catch (e) {}
+  if (wslPath) {
+    result.command = 'wsl.exe';
+    result.fullPath = wslPath;     // 显示用：真实 wsl.exe 路径
+    result.type = 'bash';
+    result.args = ['bash', '-s'];  // 经 wsl.exe 非交互式执行，避免弹出 Windows Terminal
+    result.name = 'WSL bash (via wsl.exe)';
     try {
-      execSync(`"${bashPath}" -c "echo test"`, { stdio: 'ignore', timeout: 1000 });
-      // 解析完整路径，用于判断是否为 WSL 启动器
-      let fullPath;
-      if (bashPath === 'bash' || !bashPath.includes('\\')) {
-        fullPath = resolveFullPath(bashPath);
-      } else {
-        fullPath = bashPath;
-      }
+      result.version = execSync(`"${wslPath}" --version`, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).toString().split('\n')[0].trim();
+    } catch (e) {}
+    return result;
+  }
+
+  // 2) Git Bash：用文件存在性判断（fs.existsSync，毫秒级，不执行任何命令）
+  const gitBashCandidates = [
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+    process.env.ProgramW6432 ? `${process.env.ProgramW6432}\\Git\\bin\\bash.exe` : '',
+    process.env.ProgramFiles ? `${process.env.ProgramFiles}\\Git\\bin\\bash.exe` : '',
+  ];
+  for (const p of gitBashCandidates) {
+    if (p && fs.existsSync(p)) {
+      result.command = p;
+      result.fullPath = p;
       result.type = 'bash';
-      // 判断是否为 WSL 启动器（System32\bash.exe 或 wsl.exe）。
-      // 在 Windows 11 上，WSL 的交互式 shell 默认通过 Windows Terminal 启动，
-      // 即使 bash.exe 带 -s 也可能弹出终端；改用 wsl.exe 显式执行 "bash -s"
-      // 可确保命令在后台直接运行，不触发 Windows Terminal。
-      const isWslLauncher =
-        /[\\/](System32|SysWOW64)[\\/]bash\.exe$/i.test(fullPath) ||
-        /[\\/]wsl\.exe$/i.test(fullPath);
-      if (isWslLauncher) {
-        result.command = 'wsl.exe';
-        // 注意：执行命令用 wsl.exe（避免弹出 Windows Terminal），
-        // 但【显示用】的 fullPath 保留真实检测到的 bash 启动器路径
-        // （如 C:\Windows\System32\bash.exe），不要写成 'wsl.exe'，否则弹窗里只剩一个无意义的 wsl.exe。
-        result.fullPath = fullPath;
-        // 通过 wsl.exe 启动 bash，并从 stdin 读取脚本，非交互式、不弹窗
-        result.args = ['bash', '-s'];
-        result.name = name + ' (via wsl.exe)';
-      } else {
-        result.command = fullPath;
-        result.fullPath = fullPath;
-        // 其他 bash（如 Git Bash）也用 -s 非交互式从 stdin 读取，避免弹出 MinTTY
-        result.args = ['-s'];
-        result.name = name;
-      }
+      result.args = ['-s'];        // Git Bash 用 -s 非交互式，避免弹出 MinTTY
+      result.name = 'Git Bash';
       try {
-        result.version = execSync(`"${bashPath}" --version`, { timeout: 1000 }).toString().split('\n')[0].trim();
+        result.version = execSync(`"${p}" --version`, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).toString().split('\n')[0].trim();
       } catch (e) {}
       return result;
-    } catch (e) {}
+    }
   }
 
   // 未找到任何 bash 环境（WSL / Git Bash 均不存在）。
-  // 此时无可用 Shell，脚本将无法正常执行；前端 App Info 会显示「未检测到 Shell」。
+  // 此时无可用 Shell，脚本将无法正常执行；返回空 command，前端会提示用户安装，
+  // 应用继续正常运行（仅脚本执行不可用），绝不崩溃。
   console.log('⚠️  Warning: 未在当前 Windows 环境检测到 WSL / Git Bash，脚本将无法执行（仅支持 bash 语法，须 WSL 或 Git Bash）。');
   return result;
 };
 
-const shell = detectShell();
+// 探测可用 Shell。任何异常都不应拖垮整个后端：检测失败时降级为「无 Shell」模式，
+// 由前端提示用户安装 WSL / Git Bash，应用继续正常运行（仅脚本执行不可用），而非启动即崩溃。
+let shell = { command: '', fullPath: '', type: '', name: '', version: '', args: [] };
+try {
+  shell = detectShell();
+} catch (e) {
+  console.error('[Shell] detection failed, falling back to no-shell mode:', e.message);
+}
 
 // ==================== 子进程 locale 注入 ====================
 // GUI（Electron）启动的服务进程往往没有继承终端的 LANG/LC_* 设置，
@@ -705,44 +677,43 @@ app.post('/api/execute/:runId/stop', (req, res) => {
 // ==================== 启动服务 ====================
 
 const startServer = async () => {
-  // 优先使用环境变量 PORT（由 Electron 主进程设置）
-  let port = parseInt(process.env.PORT);
+  // 端口策略（解决「同时开两个 Electron 应用 → 界面串台」）：
+  //   - 主进程传来的 PORT 为 '0'（或 PORT 未设置）→ app.listen(0) 由【操作系统】分配一个
+  //     【唯一】的空闲端口，彻底避免与「另一个 Electron 应用」或本机其它服务争抢固定端口
+  //     （争抢会导致某一方回退到错误端口 → 渲染进程串台显示别的 App 界面）。
+  //   - 不再在固定区间 3001-3100 探测：探测+释放存在 TOCTOU 竞态，且固定区间极易与别的 App 撞车。
+  let requestedPort = parseInt(process.env.PORT);
+  if (!Number.isInteger(requestedPort) || requestedPort < 0) requestedPort = 0;
 
-  if (!port) {
-    // 如果没有设置 PORT，则动态查找可用端口
-    port = await findAvailablePort(PORT_RANGE_START, PORT_RANGE_END);
-  } else {
-    // 验证指定的端口是否可用
-    const isAvailable = await isPortAvailable(port);
-    if (!isAvailable) {
-      console.log(`Port ${port} is in use, finding alternative...`);
-      port = await findAvailablePort(PORT_RANGE_START, PORT_RANGE_END);
+  serverPort = requestedPort; // 占位；真正端口以 listen 回调里 server.address().port 为准
+
+  // 清空端口文件里的旧值：避免主进程在超时兜底时读到上一次运行的旧端口（旧端口可能属于已退出的实例）
+  try { fs.unlinkSync(PORT_FILE); } catch (e) {}
+
+  const server = app.listen(requestedPort, () => {
+    // ⚠️ 关键：requestedPort 为 0 时真实端口由 OS 分配，必须读 server.address().port，不能用 requestedPort
+    const actualPort = server.address().port;
+    serverPort = actualPort;
+    console.log(`Server running on port ${actualPort}` + (requestedPort === 0 ? ' (OS 分配，避免与其它应用争抢)' : ''));
+
+    // 把真实端口写入本应用的端口文件（仅本应用读取，内容为【本后端】真实端口，不会串到别的 App）
+    try {
+      fs.writeFileSync(PORT_FILE, actualPort.toString());
+    } catch (e) {
+      console.error('[Server] Warning: could not write port file:', e.message);
     }
-  }
-  
-  if (!port) {
-    console.error('Error: No available port found in range', PORT_RANGE_START, '-', PORT_RANGE_END);
-    process.exit(1);
-  }
 
-  serverPort = port;
-
-  if (port !== DEFAULT_PORT) {
-    console.log(`Warning: Port ${DEFAULT_PORT} is in use, using port ${port} instead`);
-  }
-
-  try {
-    fs.writeFileSync(PORT_FILE, port.toString());
-  } catch (e) {
-    console.error('[Server] Warning: could not write port file:', e.message);
-  }
-
-  const server = app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    // 通知 Electron 主进程「后端已就绪」并回传【实际】端口，主进程据此加载窗口；
+    // 主进程严格使用该端口，避免加载到别的 App 的端口导致界面串台。
+    // 仅在作为子进程（fork + ipc）运行时才发送；独立 `npm run server` 时 process.send 不存在，需判空。
+    if (typeof process.send === 'function') {
+      process.send({ type: 'ready', port: actualPort });
+    }
   });
+
   // 捕获监听失败（端口被占 / 无权限等），把真实错误打到 stderr（会被主进程记入 main.log）
   server.on('error', (err) => {
-    console.error(`[Server] 监听端口 ${port} 失败:`, err.message);
+    console.error(`[Server] 监听端口 ${requestedPort} 失败:`, err.message);
     process.exit(1);
   });
 };

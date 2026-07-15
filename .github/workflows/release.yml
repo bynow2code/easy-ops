@@ -118,9 +118,12 @@ jobs:
         run: npm ci
 
       - name: 构建并打包 macOS 安装包
-        run: npm run build && npx electron-builder --mac --x64 --arm64
+        run: npm run electron-build-mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 显式关闭 macOS 签名身份自动发现：本项目为个人发布、不签名（与 Windows 一致），
+          # 避免 CI 无证书时 electron-builder 尝试签名而行为漂移；未签名 dmg 对本项目使用场景可接受。
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: 上传 macOS 产物到 Release
         uses: softprops/action-gh-release@v3
