@@ -59,6 +59,7 @@
         "dmg",
         "zip"
       ],
+      "icon": "client/public/logo-mac.png",
       "category": "public.app-category.developer-tools",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
@@ -67,6 +68,7 @@
         "nsis",
         "zip"
       ],
+      "icon": "client/public/logo-win.png",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
