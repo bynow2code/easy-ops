@@ -59,7 +59,6 @@ client/.vite/
 server/dist/
 
 # 运行期生成的临时文件（PORT_FILE 现已写入系统临时目录 os.tmpdir()，此文件为历史残留）
-server/port.txt
 
 # Electron 构建输出
 dist-electron/
