@@ -56,7 +56,10 @@ const resPath = (relativePath) => {
 const isBuiltMode = isDev && fs.existsSync(resPath('client/dist/index.html'));
 
 // 日志函数 - 同时输出到控制台和文件
-const log = (message) => {
+// 使用 function 声明（而非 const 箭头函数）以获得提升（hoisting），
+// 确保 uncaughtException 回调在任何阶段触发时都能安全调用 log，
+// 避免 TDZ（Temporal Dead Zone）导致「Cannot access 'log' before initialization」崩溃
+function log(message) {
   console.log(`[Main] ${message}`);
   try {
     const logDir = path.join(app.getPath('userData'), 'logs');
@@ -64,7 +67,7 @@ const log = (message) => {
     const logFile = path.join(logDir, 'main.log');
     fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
   } catch (e) {}
-};
+}
 
 // 找到未占用的端口并启动后端服务
 const startBackend = () => {
