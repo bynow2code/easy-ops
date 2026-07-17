@@ -795,7 +795,14 @@ html, body, #root {
   border-radius: 8px;
   border: 1px solid #e8e8e8;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-  flex-shrink: 0;
+  /* 每个输出窗口作为弹性项参与「平分容器空间」：
+     flex:1 1 auto —— 空间足够时各窗口等长平分（单窗口则填满容器）；
+     默认 min-height:auto 使窗口不能收缩到「当前固定高度」以下，
+     因此当平分后高度 < 当前高度时自动停止平分、保持固定高度，由列表滚动。 */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .right-panel .output-header {
@@ -806,6 +813,7 @@ html, body, #root {
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
   border-radius: 8px 8px 0 0;
+  flex-shrink: 0;  /* 表头固定，增长的空间全交给内容区 */
 }
 
 .output-header-left {
@@ -875,7 +883,13 @@ html, body, #root {
 }
 
 .right-panel .output-section {
-  padding: 10px 12px 4px 12px;
+  /* 上下内边距保持一致，避免内容框到标题栏/窗口底边的间距不对称 */
+  padding: 10px 12px;
+  /* 让输出区随窗口高度伸展，把多余空间交给内容区 */
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .output-section-label {
@@ -885,10 +899,12 @@ html, body, #root {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0;  /* 标签固定，增长的空间交给内容区 */
 }
 
 .right-panel .output-section.error {
-  padding-top: 0;
+  /* 错误区域也保持与普通区域一致的上下内边距，避免不对称 */
+  padding-top: 10px;
 }
 
 .right-panel .output-section.error .output-section-label {
@@ -897,17 +913,24 @@ html, body, #root {
 
 .output-content-wrapper {
   width: 100%;
-  height: 100px;
+  /* 内容区下限保持当前 100px：窗口拉长时内容区跟着伸展、露出更多输出；
+     低于此值则不再收缩（与「窗口保持固定高度」的兜底一致） */
+  flex: 1 1 100px;
+  min-height: 100px;
   overflow-y: auto;
   overflow-x: hidden;
+  /* 边框/底色移到滚动容器：无论内容是否滚动，四边（含底部横线）始终贴合窗口边缘，
+     避免长内容滚动时底部横线随 <pre> 一起滚出视野 */
+  background: #fff;
+  border: 1px solid #e8e8e8;
   border-radius: 4px;
 }
 
 .right-panel .output-content {
   background: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 4px;
-  padding: 8px 8px 12px 8px;
+  /* 自身不再画边框/圆角，由外层 wrapper 负责方框；min-height:100% 让短内容也撑满整框 */
+  min-height: 100%;
+  padding: 8px 8px 8px 8px;
   font-family: 'Consolas', 'Monaco', 'Menlo', monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -916,9 +939,12 @@ html, body, #root {
   margin: 0;
 }
 
+.right-panel .output-section.error .output-content-wrapper {
+  border-color: #ffccc7;
+}
+
 .right-panel .output-section.error .output-content-wrapper .output-content {
   background: #fff5f5;
-  border-color: #ffccc7;
   color: #d93026;
 }
 
