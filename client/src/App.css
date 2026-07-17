@@ -1424,6 +1424,87 @@ html, body, #root {
   margin-top: 8px;
 }
 
+/* ===== appInfo 中「可用 Shell」列表 ===== */
+.shell-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.shell-item {
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shell-item.active {
+  border-color: #1890ff;
+  background: #e6f4ff;
+}
+
+.shell-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shell-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.shell-item-type {
+  font-size: 11px;
+  color: #888;
+  background: #eee;
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
+.shell-item-badge {
+  font-size: 11px;
+  color: #1890ff;
+  border: 1px solid #1890ff;
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-left: auto;
+}
+
+.shell-item-path {
+  font-family: monospace;
+  font-size: 12px;
+  color: #555;
+  word-break: break-all;
+}
+
+.shell-item-version {
+  font-size: 12px;
+  color: #888;
+}
+
+.btn-select {
+  align-self: flex-end;
+  font-size: 12px;
+  padding: 4px 14px;
+  background: #1890ff;
+  border: 1px solid #1890ff;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+.btn-select:hover {
+  background: #40a9ff;
+  border-color: #40a9ff;
+}
+
 .update-error-text {
   color: #ff4d4f;
   font-weight: 600;

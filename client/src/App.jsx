@@ -422,6 +422,17 @@ function App() {
     }
   }
 
+  // 在 appInfo 中选择要使用的 shell：调用后端接口后重新拉取 systemInfo，
+  // 使 shell / selectedShellId 同步——下次执行即生效（无需重启）。
+  const selectShell = async (id) => {
+    try {
+      await axios.post('/api/shell/select', { id })
+      await fetchSystemInfo()
+    } catch (error) {
+      console.error('选择 Shell 失败:', error)
+    }
+  }
+
   const handleAddScript = async (e) => {
     e.preventDefault()
     const errors = {}
@@ -1503,7 +1514,7 @@ function App() {
                     </div>
                   </div>
                   <div className="info-row">
-                    <label>Shell</label>
+                    <label>Shell（当前执行使用）</label>
                     <div className="info-value">
                       {systemInfo.shell?.type?.toUpperCase() || 'Unknown'}
                       {systemInfo.shell?.version && (
@@ -1522,6 +1533,34 @@ function App() {
                       </div>
                     )}
                   </div>
+                  {systemInfo.shells && systemInfo.shells.length > 0 && (
+                    <div className="info-row">
+                      <label>可用 Shell（点击「选用」，下次执行生效）</label>
+                      <div className="shell-list">
+                        {systemInfo.shells.map((sh) => (
+                          <div
+                            key={sh.id}
+                            className={`shell-item ${sh.id === systemInfo.selectedShellId ? 'active' : ''}`}
+                          >
+                            <div className="shell-item-head">
+                              <span className="shell-item-name">{sh.name}</span>
+                              <span className="shell-item-type">{sh.type.toUpperCase()}</span>
+                              {sh.id === systemInfo.selectedShellId && (
+                                <span className="shell-item-badge">当前使用</span>
+                              )}
+                            </div>
+                            <div className="shell-item-path">{sh.fullPath || sh.command}</div>
+                            {sh.version && <div className="shell-item-version">{sh.version}</div>}
+                            {sh.id !== systemInfo.selectedShellId && (
+                              <button className="btn btn-select" onClick={() => selectShell(sh.id)}>
+                                选用
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {appInfo && (
