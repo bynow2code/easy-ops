@@ -377,6 +377,10 @@ html, body, #root {
 
 .exit-code {
   font-size: 11px;
+  /* line-height:1 压低徽标高度(约 15px)，确保低于右侧按钮(~19px)，
+     使表头高度始终由按钮决定——避免「Exit 徽标(默认行高)↔ 旋转图标」
+     切换时表头高度相差约 0.5px 而上下微抖 */
+  line-height: 1;
   padding: 2px 6px;
   border-radius: 3px;
 }
