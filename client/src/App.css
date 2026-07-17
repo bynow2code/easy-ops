@@ -818,6 +818,9 @@ html, body, #root {
   border-bottom: 1px solid #f0f0f0;
   border-radius: 8px 8px 0 0;
   flex-shrink: 0;  /* 表头固定，增长的空间全交给内容区 */
+  /* 固定最小高度，避免点击执行时「Exit 徽标 ↔ 旋转图标」切换导致
+     表头内容高度微变而上下抖动（按钮约 19px + 上下 padding 16px ≈ 35px） */
+  min-height: 36px;
 }
 
 .output-header-left {
