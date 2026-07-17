@@ -797,12 +797,16 @@ html, body, #root {
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   /* 每个输出窗口作为弹性项参与「平分容器空间」：
      flex:1 1 auto —— 空间足够时各窗口等长平分（单窗口则填满容器）；
-     默认 min-height:auto 使窗口不能收缩到「当前固定高度」以下，
-     因此当平分后高度 < 当前高度时自动停止平分、保持固定高度，由列表滚动。 */
+     默认 min-height:auto 本应使窗口不能收缩到「当前固定高度」以下，
+     但 flex 项一旦设置 overflow:hidden，min-height:auto 会被视为 0，
+     因此必须显式声明 min-height:min-content，让窗口最小高度跟随内容
+     （表头+标签+内容区下限 100px），当平分后高度低于此时自动停止平分、
+     保持固定高度，由 outputs-container 滚动。 */
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   overflow: hidden;
+  min-height: min-content;
 }
 
 .right-panel .output-header {
