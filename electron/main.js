@@ -12,12 +12,12 @@ const showFatal = (title, detail) => {
   log(`[FATAL] ${title}: ${detail}`);
   let logPathHint = '';
   try {
-    logPathHint = `\n\n日志已保存，可在以下路径查看详情：\n${path.join(app.getPath('userData'), 'logs', 'main.log')}`;
+    logPathHint = `\n\nThe log has been saved. You can view details at:\n${path.join(app.getPath('userData'), 'logs', 'main.log')}`;
   } catch (e) {
-    logPathHint = '\n\n（无法定位日志目录，请检查应用数据目录下的 logs/main.log）';
+    logPathHint = '\n\n(Could not locate the log directory. Please check logs/main.log under the app data directory.)';
   }
   try {
-    dialog.showErrorBox(`EasyOps 启动失败 - ${title}`, `${detail}${logPathHint}`);
+    dialog.showErrorBox(`EasyOps failed to start - ${title}`, `${detail}${logPathHint}`);
   } catch (e) {}
 };
 
@@ -34,14 +34,14 @@ const isUpdateRelatedError = (reason) => {
   return /Cannot download|net::|ERR_UPDATER|Update check failed|electron-updater|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ECONNRESET|status\s*\d{3}/i.test(msg);
 };
 process.on('uncaughtException', (err) => {
-  showFatal('未捕获异常', err && err.stack ? err.stack : String(err));
+  showFatal('Uncaught Exception', err && err.stack ? err.stack : String(err));
 });
 process.on('unhandledRejection', (reason) => {
   if (isUpdateRelatedError(reason)) {
     log(`[UPDATE-REJECTION] ${String(reason)}`);
     return;
   }
-  showFatal('未处理的 Promise 拒绝', reason && reason.stack ? reason.stack : String(reason));
+  showFatal('Unhandled Promise Rejection', reason && reason.stack ? reason.stack : String(reason));
 });
 
 // 设置应用名称，确保系统通知显示 "EasyOps" 而非 "electron.app"
@@ -122,8 +122,8 @@ const startBackend = () => {
       log(`Backend process exited with code ${code}`);
       // 后端非正常退出：把累积的错误输出抛给上层，直接弹窗显示，而不是加载一个死链接
       if (code !== 0 && !backendResolved) {
-        const detail = (backendStderr || backendStdout || '(后端无任何输出，退出码 ' + code + ')').trim();
-        reject(new Error(`后端进程退出码 ${code}。后端报错：\n${detail}`));
+        const detail = (backendStderr || backendStdout || '(backend produced no output, exit code ' + code + ')').trim();
+        reject(new Error(`Backend process exited with code ${code}. Backend error:\n${detail}`));
       }
       backendProcess = null;
     });
@@ -156,7 +156,7 @@ const startBackend = () => {
         }
       } catch (e) {}
       backendResolved = true;
-      reject(new Error('后端启动超时（20s 内未收到就绪信号）。请查看 main.log 与后端日志。'));
+      reject(new Error('Backend startup timed out (no ready signal received within 20s). Please check main.log and the backend log.'));
     }, 20000);
   });
 };
@@ -186,13 +186,13 @@ const createWindow = (port) => {
   // 加载失败（如后端没起来、端口不通）时记录，便于排查白屏/闪退
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     log(`[did-fail-load] code=${errorCode} desc=${errorDescription} url=${url}`);
-    showFatal('页面加载失败', `无法加载 ${url}\n错误码: ${errorCode}\n${errorDescription}\n\n请确认后端服务是否正常启动（查看 main.log）。`);
+    showFatal('Page Load Failed', `Could not load ${url}\nError code: ${errorCode}\n${errorDescription}\n\nPlease confirm the backend service started normally (check main.log).`);
   });
 
   // 渲染进程意外崩溃 / 假死时给出提示，而不是默默消失
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     log(`[render-process-gone] reason=${details.reason}`);
-    showFatal('渲染进程崩溃', `原因: ${details.reason}`);
+    showFatal('Renderer Process Crashed', `Reason: ${details.reason}`);
   });
 
   if (isDev) {
@@ -211,7 +211,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   // 不是静默退出，而是提示用户已有实例在运行，避免「双击一下就没了」
   try {
-    dialog.showErrorBox('EasyOps 已在运行', '检测到另一个 EasyOps 实例正在运行，请先关闭后再启动。');
+    dialog.showErrorBox('EasyOps Already Running', 'Another EasyOps instance is already running. Please close it before starting a new one.');
   } catch (e) {}
   app.quit();
 } else {
@@ -260,6 +260,7 @@ ipcMain.handle('get-app-info', () => {
     userData,
     isDev,
     scriptsConfigPath: path.join(userData, 'scripts.json'),
+    shellConfigPath: path.join(userData, 'shell-config.json'),
     logFilePath: path.join(userData, 'logs', 'main.log')
   };
 });
@@ -586,7 +587,7 @@ const initMacUpdater = () => {
       isChecking = false;
       if (version && cmpVersion(version, current) > 0) {
         if (!asset) {
-          send({ type: 'error', message: `未找到适配 ${process.arch} 架构的更新包（${version}）。` });
+          send({ type: 'error', message: `No update package found for ${process.arch} architecture (${version}).` });
           return;
         }
         pendingVersion = version;
@@ -616,7 +617,7 @@ const initMacUpdater = () => {
       const latest = await fetchLatestRelease();
       asset = latest.asset;
       version = latest.version;
-      if (!asset) throw new Error(`未找到适配 ${process.arch} 架构的更新包。`);
+      if (!asset) throw new Error(`No update package found for ${process.arch} architecture.`);
 
       const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'easyops-update-'));
       const zipPath = path.join(workDir, asset.name);
@@ -637,7 +638,7 @@ const initMacUpdater = () => {
 
       // 找到解压出的 .app
       const appName = fs.readdirSync(extractDir).find(n => n.endsWith('.app'));
-      if (!appName) throw new Error('更新包中未找到 .app');
+      if (!appName) throw new Error('No .app found in the update package');
       pendingAppPath = path.join(extractDir, appName);
       pendingVersion = version;
 
@@ -655,7 +656,7 @@ const initMacUpdater = () => {
   ipcMain.handle('app:start-update', () => {
     log('[UPDATE][mac] start-update called');
     if (!pendingAppPath || !fs.existsSync(pendingAppPath)) {
-      const msg = '未找到已下载的更新包，请重新下载。';
+      const msg = 'No downloaded update package found. Please download again.';
       log(`[UPDATE][mac] ${msg}`);
       send({ type: 'error', message: msg });
       throw new Error(msg);
@@ -744,13 +745,13 @@ app.whenReady().then(async () => {
               createWindow(p);
             })
             .catch((err) => {
-              showFatal('启动失败', err && err.stack ? err.stack : err.message);
+              showFatal('Startup Failed', err && err.stack ? err.stack : err.message);
             });
         }
       }
     });
   } catch (err) {
-    showFatal('启动失败', err && err.stack ? err.stack : err.message);
+    showFatal('Startup Failed', err && err.stack ? err.stack : err.message);
     setTimeout(() => app.quit(), 500); // 留时间让弹窗显示
   }
 });

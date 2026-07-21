@@ -1651,6 +1651,47 @@ html, body, #root {
   margin-top: 2px;
 }
 
+/* 🧪 无 Shell 模式开关（测试用） */
+.shell-no-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: #fffbe6;
+  border: 1px dashed #ffe58f;
+  border-radius: 6px;
+}
+.shell-no-shell-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #614700;
+  cursor: pointer;
+}
+.shell-no-shell-label input {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.shell-no-shell-hint {
+  font-size: 11px;
+  color: #ad8b00;
+  padding-left: 21px;
+}
+/* 无 Shell 模式开启时的提示条 */
+.shell-mode-note {
+  display: block;
+  font-size: 12px;
+  color: #d4380d;
+  background: #fff2e8;
+  border: 1px solid #ffbb96;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
 .update-error-text {
   color: #ff4d4f;
   font-weight: 600;

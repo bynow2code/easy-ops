@@ -71,6 +71,7 @@ function App() {
   const [addingShell, setAddingShell] = useState(false)  // 添加中（禁用按钮）
   const [addShellError, setAddShellError] = useState('') // 添加失败提示（如「不是 bash，不能添加」）
   const [removingShellId, setRemovingShellId] = useState(null)
+  const [noShellMode, setNoShellMode] = useState(false) // 🧪 无 Shell 模式（测试用，持久化）
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
@@ -436,6 +437,7 @@ function App() {
       const response = await axios.get('/api/shells')
       setShellList(response.data.shells || [])
       setCurrentShellId(response.data.selectedId || (response.data.current && response.data.current.id) || null)
+      setNoShellMode(!!response.data.noShellMode)
     } catch (error) {
       console.error('Error fetching shells:', error)
     }
@@ -512,6 +514,21 @@ function App() {
       fetchShells()
     } finally {
       setRemovingShellId(null)
+    }
+  }
+
+  // 🧪 无 Shell 模式开关（测试用，持久化）：开启后模拟本机无 bash 解释器，
+  // 用于验证无 Shell 时程序的启动与执行行为。
+  const handleToggleNoShellMode = async (enabled) => {
+    try {
+      const response = await axios.post('/api/shells/no-shell-mode', { enabled })
+      setShellList(response.data.shells || [])
+      setCurrentShellId(response.data.selectedId || (response.data.current && response.data.current.id) || null)
+      setSystemInfo(prev => prev ? { ...prev, shell: response.data.current } : prev)
+      setNoShellMode(!!response.data.noShellMode)
+    } catch (error) {
+      console.error('切换无 Shell 模式失败:', error)
+      fetchShells()
     }
   }
 
@@ -756,7 +773,7 @@ function App() {
     if (systemInfo && !systemInfo.shell?.command) {
       setOutputs(prev => ({
         ...prev,
-        [id]: { output: '', error: '未检测到可用 Shell（需 WSL 或 Git Bash）。脚本无法执行。\n', exitCode: -1, live: false, timestamp: Date.now() }
+        [id]: { output: '', error: 'No available shell detected (WSL or Git Bash required). The script cannot be executed.\n', exitCode: -1, live: false, timestamp: Date.now() }
       }))
       return
     }
@@ -877,7 +894,7 @@ function App() {
       setOutputs(prev => {
         const next = { ...prev }
         selectedIds.forEach(id => {
-          next[id] = { output: '', error: '未检测到可用 Shell（需 WSL 或 Git Bash）。脚本无法执行。\n', exitCode: -1, live: false, timestamp: now }
+          next[id] = { output: '', error: 'No available shell detected (WSL or Git Bash required). The script cannot be executed.\n', exitCode: -1, live: false, timestamp: now }
         })
         return next
       })
@@ -1107,8 +1124,8 @@ function App() {
             lineHeight: 1.5
           }}
         >
-          ⚠️ 未检测到 <b>WSL</b> 或 <b>Git Bash</b>：脚本执行功能不可用。请在 Windows 上安装
-          WSL（<code>wsl --install</code>）或 Git Bash 后重启应用。
+          ⚠️ No <b>WSL</b> or <b>Git Bash</b> detected: script execution is unavailable.
+          Please install WSL (<code>wsl --install</code>) or Git Bash on Windows, then restart the app.
         </div>
       )}
       <header className="header">
@@ -1617,10 +1634,26 @@ function App() {
                   </div>
                   <div className="info-row">
                     <label>Shells</label>
-                    <div className="shell-list">
-                      {shellList.length === 0 && (
-                        <span className="info-sub">Detecting available shells…</span>
-                      )}
+                  <div className="shell-list">
+                    {/* 🧪 无 Shell 模式开关（测试用）：模拟本机无 bash 解释器 */}
+                    <div className="shell-no-shell">
+                      <label className="shell-no-shell-label">
+                        <input
+                          type="checkbox"
+                          checked={noShellMode}
+                          onChange={(e) => handleToggleNoShellMode(e.target.checked)}
+                        />
+                        <span>No Shell Mode (simulate no bash installed)</span>
+                      </label>
+                      <span className="shell-no-shell-hint">For testing startup &amp; execution behavior when no shell is available.</span>
+                    </div>
+                    {noShellMode ? (
+                      <span className="info-sub shell-mode-note">No Shell Mode is ON — simulating no bash interpreter. Scripts will fail to run.</span>
+                    ) : (
+                      <>
+                        {shellList.length === 0 && (
+                          <span className="info-sub">Detecting available shells…</span>
+                        )}
                       {shellList.map(s => {
                         const isCurrent = s.id === currentShellId
                         return (
@@ -1686,6 +1719,8 @@ function App() {
                       {addShellError && (
                         <div className="shell-add-error">{addShellError}</div>
                       )}
+                      </>
+                    )}
                     </div>
                   </div>
                 </>
@@ -1699,6 +1734,18 @@ function App() {
                       <button
                         className="btn btn-copy"
                         onClick={() => navigator.clipboard.writeText(appInfo.scriptsConfigPath)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  <div className="info-row">
+                    <label>Shell Config</label>
+                    <div className="info-path">
+                      <span className="info-path-text">{escapePathForShell(appInfo.shellConfigPath)}</span>
+                      <button
+                        className="btn btn-copy"
+                        onClick={() => navigator.clipboard.writeText(appInfo.shellConfigPath)}
                       >
                         Copy
                       </button>

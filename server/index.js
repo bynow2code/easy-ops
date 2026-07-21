@@ -334,7 +334,7 @@ const saveShellConfig = (cfg) => {
   try {
     fs.writeFileSync(SHELL_CONFIG_PATH, JSON.stringify(cfg, null, 2));
   } catch (e) {
-    console.error('[Shell] 保存 Shell 配置失败:', e.message);
+    console.error('[Shell] Failed to save shell config:', e.message);
   }
 };
 
@@ -353,11 +353,15 @@ let shellConfig = loadShellConfig();
 // 自定义路径每次调用都重新校验（buildCustomShell 内部跑 --version），
 // 失效或已不是 bash 的自动丢弃，避免列表里出现不可用项。
 const buildDetectedShells = () => {
+  // 🧪 无 Shell 模式（测试用，持久化在 shell-config.json.noShellMode）：
+  // 直接返回空，模拟「本机探测不到任何 bash 解释器」，用于验证无 Shell 时的启动与执行行为。
+  if (shellConfig.noShellMode) return [];
+
   let auto = [];
   try {
     auto = detectAllShells();
   } catch (e) {
-    console.error('[Shell] 探测失败，降级为无 Shell 模式:', e.message);
+    console.error('[Shell] Detection failed, falling back to no-shell mode:', e.message);
   }
   const seen = new Set(auto.map(s => (s.fullPath || s.command).toLowerCase()));
   const custom = [];
@@ -533,18 +537,7 @@ app.get('/api/system-info', (req, res) => {
 // 列出本机所有受支持 Shell + 当前生效 Shell（含持久化的选中项）
 // 前端 App Info 弹窗据此展示可切换列表并标记当前项。
 app.get('/api/shells', (req, res) => {
-  res.json({
-    shells: detectedShells,
-    current: {
-      id: shell.id,
-      type: shell.type,
-      name: shell.name,
-      command: shell.command,
-      fullPath: shell.fullPath,
-      version: shell.version,
-    },
-    selectedId: shellConfig.selectedId || null,
-  });
+  res.json(shellsResponse());
 });
 
 // 切换生效 Shell（一键切换 + 持久化）；后续脚本执行均在该 Shell 上进行。
@@ -562,7 +555,7 @@ app.post('/api/shells/select', (req, res) => {
   saveShellConfig(shellConfig);
   // 立即生效：后续 spawn 直接读全局 shell
   shell = target;
-  console.log(`[Shell] 已切换到: ${target.name} (${target.fullPath || target.command})`);
+  console.log(`[Shell] Switched to: ${target.name} (${target.fullPath || target.command})`);
   res.json({
     shells: detectedShells,
     current: {
@@ -589,6 +582,8 @@ const shellsResponse = () => ({
     version: shell.version,
   },
   selectedId: shellConfig.selectedId || null,
+  // 🧪 无 Shell 模式（测试用，持久化在 shell-config.json.noShellMode）
+  noShellMode: !!shellConfig.noShellMode,
 });
 
 // 添加用户自定义 bash 路径：先校验是否为可用 bash，是则持久化并加入列表，否则返回原因。
@@ -615,7 +610,7 @@ app.post('/api/shells/add', (req, res) => {
   // 重建列表（会重新校验全部自定义路径）
   detectedShells = buildDetectedShells();
   const added = detectedShells.find(s => (s.fullPath || s.command).toLowerCase() === key);
-  console.log(`[Shell] 已添加自定义 bash: ${p} (${v.version})`);
+  console.log(`[Shell] Added custom bash: ${p} (${v.version})`);
   res.json({ ...shellsResponse(), added: added ? added.id : null });
 });
 
@@ -639,8 +634,20 @@ app.post('/api/shells/remove', (req, res) => {
   // 若移除了当前生效 Shell，需要重新解析有效 Shell
   if (wasSelected || shell.id === id) {
     shell = resolveEffectiveShell();
-    console.log(`[Shell] 已移除自定义 bash，当前回落到: ${shell.name || '(无可用 Shell)'}`);
+    console.log(`[Shell] Removed custom bash, now falling back to: ${shell.name || '(no available shell)'}`);
   }
+  res.json(shellsResponse());
+});
+
+// 🧪 无 Shell 模式开关（测试用，持久化）：开启后模拟「本机没有任何 bash 解释器」，
+// 用于验证无 Shell 时程序的启动与执行行为；关闭则恢复真实探测。
+app.post('/api/shells/no-shell-mode', (req, res) => {
+  const enabled = !!(req.body && req.body.enabled);
+  shellConfig = { ...shellConfig, noShellMode: enabled };
+  saveShellConfig(shellConfig);
+  detectedShells = buildDetectedShells(); // 开启时短路返回 []；关闭时重新探测
+  shell = resolveEffectiveShell();          // 同步全局生效 Shell（开启后变空，关闭后恢复）
+  console.log(`[Shell] No-Shell mode: ${enabled ? 'ON' : 'OFF'}`);
   res.json(shellsResponse());
 });
 
@@ -1024,7 +1031,7 @@ const startServer = async () => {
 
   // 捕获监听失败（端口被占 / 无权限等），把真实错误打到 stderr（会被主进程记入 main.log）
   server.on('error', (err) => {
-    console.error(`[Server] 监听端口 ${requestedPort} 失败:`, err.message);
+    console.error(`[Server] Failed to listen on port ${requestedPort}:`, err.message);
     process.exit(1);
   });
 };
