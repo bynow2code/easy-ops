@@ -1473,8 +1473,8 @@ html, body, #root {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-areas:
-    "main   btn"
-    "path   btn";
+    "main   actions"
+    "path   actions";
   align-items: center;
   gap: 2px 10px;
   background: #fafafa;
@@ -1518,9 +1518,15 @@ html, body, #root {
   overflow-x: auto;
 }
 
-.btn-shell-switch {
-  grid-area: btn;
+.shell-item-actions {
+  grid-area: actions;
   align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-shell-switch {
   font-size: 11px;
   padding: 4px 12px;
   background: #fff;
@@ -1540,9 +1546,109 @@ html, body, #root {
 .btn-shell-switch.on,
 .btn-shell-switch:disabled {
   background: #f6ffed;
-  border-color: #b7eb8;
+  border-color: #b7eb8b;
   color: #52c41a;
   cursor: default;
+}
+
+/* 移除自定义路径按钮（红色系） */
+.btn-shell-remove {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: #fff;
+  border: 1px solid #ffccc7;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #ff4d4f;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-shell-remove:hover:not(:disabled) {
+  background: #fff1f0;
+  border-color: #ff4d4f;
+}
+
+.btn-shell-remove:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* 手动添加 bash 路径输入行：输入框 + 浏览 + 添加 横向排列 */
+.shell-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.shell-add-input {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Consolas', 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  color: #333;
+  background: #fff;
+}
+
+.shell-add-input:focus {
+  outline: none;
+  border-color: #1890ff;
+}
+
+/* 浏览按钮（唤起原生文件选择对话框） */
+.btn-shell-browse {
+  font-size: 12px;
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #555;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-shell-browse:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bfbfbf;
+}
+
+.btn-shell-add {
+  font-size: 12px;
+  padding: 6px 16px;
+  background: #1890ff;
+  border: 1px solid #1890ff;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-shell-add:hover:not(:disabled) {
+  background: #40a9ff;
+  border-color: #40a9ff;
+}
+
+.btn-shell-add:disabled {
+  background: #f5f5f5;
+  border-color: #d9d9d9;
+  color: #bbb;
+  cursor: default;
+}
+
+/* 添加失败提示（如「不是 bash，不能添加」） */
+.shell-add-error {
+  font-size: 12px;
+  color: #ff4d4f;
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-top: 2px;
 }
 
 .update-error-text {

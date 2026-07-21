@@ -67,6 +67,10 @@ function App() {
   const [shellList, setShellList] = useState([])
   const [currentShellId, setCurrentShellId] = useState(null)
   const [switchingShellId, setSwitchingShellId] = useState(null)
+  const [newShellPath, setNewShellPath] = useState('')   // 用户手填的自定义 bash 路径
+  const [addingShell, setAddingShell] = useState(false)  // 添加中（禁用按钮）
+  const [addShellError, setAddShellError] = useState('') // 添加失败提示（如「不是 bash，不能添加」）
+  const [removingShellId, setRemovingShellId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
@@ -453,6 +457,61 @@ function App() {
       fetchShells()
     } finally {
       setSwitchingShellId(null)
+    }
+  }
+
+  // 添加用户自定义 bash 路径：后端校验是否为可用 bash；不是则回显原因（不添加）。
+  const handleAddShell = async () => {
+    const p = newShellPath.trim()
+    if (!p) {
+      setAddShellError('Please enter the path to a bash executable')
+      return
+    }
+    setAddingShell(true)
+    setAddShellError('')
+    try {
+      const response = await axios.post('/api/shells/add', { path: p })
+      setShellList(response.data.shells || [])
+      setCurrentShellId(response.data.selectedId || (response.data.current && response.data.current.id) || null)
+      setNewShellPath('') // 成功后清空输入
+    } catch (error) {
+      // 后端返回的原因（如「该路径不是 bash…」「文件不存在」）
+      const msg = (error.response && error.response.data && error.response.data.error) || 'Failed to add. Please check the path.'
+      setAddShellError(msg)
+    } finally {
+      setAddingShell(false)
+    }
+  }
+
+  // 通过原生文件对话框选择 bash 可执行文件（仅 Electron 环境可用）
+  const canBrowseShell = typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openExecutableDialog
+  const handleBrowseShell = async () => {
+    if (!canBrowseShell) return
+    try {
+      const res = await window.electronAPI.openExecutableDialog()
+      // res: { canceled:true } | { canceled:false, path } | undefined
+      if (res && !res.canceled && res.path) {
+        setNewShellPath(res.path)
+        if (addShellError) setAddShellError('')
+      }
+    } catch (e) {
+      console.error('打开文件选择对话框失败:', e)
+    }
+  }
+
+  // 移除用户自定义添加的 bash 路径
+  const handleRemoveShell = async (id) => {
+    setRemovingShellId(id)
+    try {
+      const response = await axios.post('/api/shells/remove', { id })
+      setShellList(response.data.shells || [])
+      setCurrentShellId(response.data.selectedId || (response.data.current && response.data.current.id) || null)
+      setSystemInfo(prev => prev ? { ...prev, shell: response.data.current } : prev)
+    } catch (error) {
+      console.error('Error removing shell:', error)
+      fetchShells()
+    } finally {
+      setRemovingShellId(null)
     }
   }
 
@@ -1571,17 +1630,62 @@ function App() {
                               {s.version && <span className="shell-item-meta">{s.version}</span>}
                             </div>
                             <span className="shell-item-path">{s.fullPath || s.command}</span>
-                            <button
-                              className={`btn-shell-switch ${isCurrent ? 'on' : ''}`}
-                              disabled={isCurrent || switchingShellId === s.id}
-                              onClick={() => handleSwitchShell(s.id)}
-                              title={isCurrent ? 'Currently active' : `Run scripts with ${s.name}`}
-                            >
-                              {isCurrent ? 'Active' : (switchingShellId === s.id ? 'Switching…' : 'Use')}
-                            </button>
+                            <div className="shell-item-actions">
+                              <button
+                                className={`btn-shell-switch ${isCurrent ? 'on' : ''}`}
+                                disabled={isCurrent || switchingShellId === s.id}
+                                onClick={() => handleSwitchShell(s.id)}
+                                title={isCurrent ? 'Currently active' : `Run scripts with ${s.name}`}
+                              >
+                                {isCurrent ? 'Active' : (switchingShellId === s.id ? 'Switching…' : 'Use')}
+                              </button>
+                              {s.custom && (
+                                <button
+                                  className="btn-shell-remove"
+                                  disabled={removingShellId === s.id}
+                                  onClick={() => handleRemoveShell(s.id)}
+                                  title="Remove this custom path"
+                                >
+                                  {removingShellId === s.id ? '…' : 'Remove'}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )
                       })}
+                      {/* 手动添加自定义 bash 路径：有些 bash 装在非标准路径，自动探测扫不到 */}
+                      <div className="shell-add">
+                        <input
+                          type="text"
+                          className="shell-add-input"
+                          placeholder="Add a bash path, e.g. C:\\tools\\git\\bin\\bash.exe or /opt/homebrew/bin/bash"
+                          value={newShellPath}
+                          onChange={(e) => { setNewShellPath(e.target.value); if (addShellError) setAddShellError('') }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && !addingShell) handleAddShell() }}
+                          disabled={addingShell}
+                        />
+                        {canBrowseShell && (
+                          <button
+                            type="button"
+                            className="btn-shell-browse"
+                            onClick={handleBrowseShell}
+                            disabled={addingShell}
+                          title="Select a bash executable from the system"
+                        >
+                          Browse…
+                          </button>
+                        )}
+                        <button
+                          className="btn-shell-add"
+                          disabled={addingShell || !newShellPath.trim()}
+                          onClick={handleAddShell}
+                        >
+                          {addingShell ? 'Checking…' : 'Add'}
+                        </button>
+                      </div>
+                      {addShellError && (
+                        <div className="shell-add-error">{addShellError}</div>
+                      )}
                     </div>
                   </div>
                 </>

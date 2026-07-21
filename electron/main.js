@@ -264,6 +264,34 @@ ipcMain.handle('get-app-info', () => {
   };
 });
 
+// ==================== 原生文件选择对话框（选 bash 可执行文件） ====================
+// 仅当窗口存在时才弹窗；用户取消返回 { canceled:true }。
+// 过滤器：Windows 上默认只看 .exe（bash 在 Win 上都是 *.exe）；
+//          macOS / Linux 上 bash 通常无扩展名（/bin/bash、/opt/homebrew/bin/bash），
+//          故只给「所有文件」，避免把 bash 过滤掉导致选不中。
+ipcMain.handle('dialog:open-executable', async () => {
+  if (!mainWindow) return { canceled: true };
+  const filters = process.platform === 'win32'
+    ? [
+        { name: '可执行文件 (bash.exe)', extensions: ['exe'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    : [{ name: '所有文件', extensions: ['*'] }];
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select bash executable',
+      properties: ['openFile'],
+      filters
+    });
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    return { canceled: false, path: result.filePaths[0] };
+  } catch (e) {
+    return { canceled: true, error: e.message };
+  }
+});
+
 // ==================== 原生系统通知（队列） ====================
 const notifIconPath = resPath('client/dist/logo.png');
 const notifQueue = [];

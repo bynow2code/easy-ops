@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, execFileSync } = require('child_process');
 
 const app = express();
 const DEFAULT_PORT = 3001;
@@ -202,10 +202,121 @@ const detectAllShells = () => {
   return found;
 };
 
-// ==================== Shell 配置（持久化选中） ====================
+// ==================== 自定义 bash 路径（用户手动添加） ====================
+// 有些 bash 装在非标准路径，自动探测扫不到。允许用户手动填路径，
+// 我们识别：只有真正是 bash 的才允许添加/使用，否则返回原因，前端提示「不支持，不能添加」。
+//
+// ⚠️ 安全底线：绝对不能「为了校验就去执行」用户选中的任意文件。
+//   图形界面(GUI)子系统程序（如安装包 exe、启动器）在收到 --version 时往往会直接弹出界面，
+//   而不是安静退出。因此先静态解析 PE 头读取 Subsystem 字段：
+//   若为 GUI(=2) 直接拒绝，绝不执行——从根本上杜绝「点了添加却把安装程序打开了」这类事故。
+
+// 解析 PE 可执行文件的 Subsystem 字段，全程只读文件头、绝不执行。
+// 返回：2=GUI(图形界面) / 3=Console(控制台) / 其它子系统编号 / null(非 PE 或不支持读取)。
+const getPeSubsystem = (filePath) => {
+  let buf;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    buf = Buffer.alloc(4096);
+    fs.readSync(fd, buf, 0, 4096, 0);
+    fs.closeSync(fd);
+  } catch (e) {
+    return null; // 读不了就跳过这层检查，交由后续 --version 兜底
+  }
+  try {
+    if (buf.toString('ascii', 0, 2) !== 'MZ') return null;            // 不是 DOS/PE 头
+    const peOffset = buf.readUInt32LE(0x3c);                          // PE 头偏移
+    if (buf.toString('ascii', peOffset, peOffset + 4) !== 'PE\x00\x00') return null;
+    // Subsystem 位于 PE 可选头的 0x44 偏移处（2 字节，小端）
+    return buf.readUInt16LE(peOffset + 24 + 0x44);
+  } catch (e) {
+    return null;
+  }
+};
+
+// 校验一个可执行文件路径是否为可用的 bash。
+// 返回 { ok:true, version, name } 或 { ok:false, reason }。
+const validateBashPath = (rawPath) => {
+  const p = (rawPath || '').trim().replace(/^["']|["']$/g, ''); // 去掉首尾引号
+  if (!p) return { ok: false, reason: 'Path is empty' };
+
+  const isWin = process.platform === 'win32';
+
+  // Windows 上对「文件路径」先做存在性检查（命令名跳过，靠 --version 兜底）。
+  const looksLikePath = p.includes('/') || p.includes('\\') || (isWin && /^[a-zA-Z]:/.test(p));
+  if (looksLikePath && !fs.existsSync(p)) {
+    return { ok: false, reason: 'File not found: ' + p };
+  }
+
+  // 🔒 安全守卫：GUI 子系统程序直接拒绝，绝不执行（避免弹出安装界面）。
+  if (isWin) {
+    const subsystem = getPeSubsystem(p);
+    if (subsystem === 2) {
+      return {
+        ok: false,
+        reason: 'This looks like a GUI installer or launcher, not a bash shell. ' +
+                'Please select a bash executable (e.g. bash.exe, wsl.exe or Git Bash).',
+      };
+    }
+  }
+
+  // 用 execFileSync（不经 shell，无命令注入风险）运行 --version，并设超时强杀，
+  // 确保即便误判，也绝不会留下常驻进程 / 弹窗。
+  let out = '';
+  try {
+    out = execFileSync(p, ['--version'], {
+      windowsHide: true,
+      timeout: 4000,
+      killSignal: 'SIGKILL',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).toString();
+  } catch (e) {
+    // 有的 shell 不认 --version 会非零退出；尝试读取其输出再判定
+    out = (e && (e.stdout || e.stderr)) ? (e.stdout || e.stderr).toString() : '';
+    if (!out) {
+      return { ok: false, reason: 'Failed to execute the file or it returned no version info (it may not be a usable shell)' };
+    }
+  }
+
+  const firstLine = out.split(/\r?\n/)[0].trim();
+  // bash --version 首行形如 "GNU bash, version 5.2.15(1)-release ..."
+  if (/\bbash\b/i.test(out)) {
+    return { ok: true, version: firstLine, name: firstLine };
+  }
+
+  // 识别出是别的 shell（zsh/fish/pwsh/cmd 等）——明确告诉用户不支持
+  let kind = 'unknown type';
+  if (/\bzsh\b/i.test(out)) kind = 'zsh';
+  else if (/\bfish\b/i.test(out)) kind = 'fish';
+  else if (/powershell|pwsh/i.test(out)) kind = 'PowerShell';
+  else if (firstLine) kind = firstLine;
+  return { ok: false, reason: `This path is not bash (detected as ${kind}). EasyOps only runs bash scripts, so it cannot be added` };
+};
+
+// 依据一个已校验通过的 bash 路径，构造自定义 Shell 描述符。
+// 每次启动/添加时重新校验：路径失效或已不是 bash 则返回 null（自动剔除）。
+const buildCustomShell = (rawPath) => {
+  const p = (rawPath || '').trim().replace(/^["']|["']$/g, '');
+  if (!p) return null;
+  const v = validateBashPath(p);
+  if (!v.ok) return null;
+  return {
+    id: `custom:${p}`,
+    type: 'bash',
+    name: 'Custom Bash',
+    command: p,
+    fullPath: p,
+    args: ['-s'],           // 与其它 bash 一致：非交互式从 stdin 读脚本
+    version: v.version || '',
+    custom: true,           // 标记为用户自定义，前端可显示「移除」
+  };
+};
+
+// ==================== Shell 配置（持久化选中 + 自定义路径） ====================
 // 持久化文件位于用户数据目录（SCRIPT_DATA_DIR，Electron 下即 userData），
-// 仅保存 { selectedId } —— 选中 Shell 的真实路径在每次启动时重新探测，
-// 避免「Shell 被卸载后配置里还残留无效绝对路径」。
+// 保存 { selectedId, customPaths: [] } —— selectedId 只存 id，Shell 真实路径每次启动重探测，
+// 避免「Shell 被卸载后配置里还残留无效绝对路径」；customPaths 存用户手动添加的 bash 绝对路径，
+// 每次启动重新校验（仍存在且仍是 bash 才保留）。
 const SHELL_CONFIG_PATH = process.env.SCRIPT_DATA_DIR
   ? path.join(process.env.SCRIPT_DATA_DIR, 'shell-config.json')
   : path.join(__dirname, 'shell-config.json');
@@ -236,15 +347,33 @@ const pickDefaultShell = (all) => {
   return { command: '', fullPath: '', type: '', name: '', version: '', args: [] };
 };
 
-// 探测全部 Shell（启动时一次）
-let detectedShells = [];
-try {
-  detectedShells = detectAllShells();
-} catch (e) {
-  console.error('[Shell] 探测失败，降级为无 Shell 模式:', e.message);
-}
-
 let shellConfig = loadShellConfig();
+
+// 汇总可用 Shell = 自动探测 + 用户自定义路径（去重、剔除失效项）。
+// 自定义路径每次调用都重新校验（buildCustomShell 内部跑 --version），
+// 失效或已不是 bash 的自动丢弃，避免列表里出现不可用项。
+const buildDetectedShells = () => {
+  let auto = [];
+  try {
+    auto = detectAllShells();
+  } catch (e) {
+    console.error('[Shell] 探测失败，降级为无 Shell 模式:', e.message);
+  }
+  const seen = new Set(auto.map(s => (s.fullPath || s.command).toLowerCase()));
+  const custom = [];
+  for (const p of (shellConfig.customPaths || [])) {
+    const desc = buildCustomShell(p);
+    if (!desc) continue;                         // 失效/非 bash：丢弃
+    const key = (desc.fullPath || desc.command).toLowerCase();
+    if (seen.has(key)) continue;                 // 与自动探测项重复：跳过
+    seen.add(key);
+    custom.push(desc);
+  }
+  return [...auto, ...custom];
+};
+
+// 汇总全部 Shell（启动时一次；add/remove 后会重建）
+let detectedShells = buildDetectedShells();
 
 // 有效 Shell = 持久化选中（若存在且仍可用）优先，否则默认；
 // 这是「后续脚本执行」实际使用的 Shell，spawn 处直接读全局 shell。
@@ -428,8 +557,8 @@ app.post('/api/shells/select', (req, res) => {
   if (!target) {
     return res.status(400).json({ error: `Shell not found: ${id}` });
   }
-  // 持久化选中（只存 id，路径每次启动重新探测）
-  shellConfig = { selectedId: id };
+  // 持久化选中（只存 id，路径每次启动重新探测）；保留 customPaths 不被覆盖
+  shellConfig = { ...shellConfig, selectedId: id };
   saveShellConfig(shellConfig);
   // 立即生效：后续 spawn 直接读全局 shell
   shell = target;
@@ -446,6 +575,73 @@ app.post('/api/shells/select', (req, res) => {
     },
     selectedId: id,
   });
+});
+
+// 统一构造 /api/shells 风格的响应体
+const shellsResponse = () => ({
+  shells: detectedShells,
+  current: {
+    id: shell.id,
+    type: shell.type,
+    name: shell.name,
+    command: shell.command,
+    fullPath: shell.fullPath,
+    version: shell.version,
+  },
+  selectedId: shellConfig.selectedId || null,
+});
+
+// 添加用户自定义 bash 路径：先校验是否为可用 bash，是则持久化并加入列表，否则返回原因。
+app.post('/api/shells/add', (req, res) => {
+  const raw = (req.body && req.body.path) || '';
+  const p = String(raw).trim().replace(/^["']|["']$/g, '');
+  if (!p) {
+    return res.status(400).json({ error: 'Please enter the path to a bash executable' });
+  }
+  // 校验是否为 bash
+  const v = validateBashPath(p);
+  if (!v.ok) {
+    // 不支持：明确告诉用户不能添加，前端弹提示
+    return res.status(400).json({ error: v.reason });
+  }
+  // 去重：与已有（自动探测或已添加）路径相同则不重复添加
+  const key = p.toLowerCase();
+  const exists = detectedShells.some(s => (s.fullPath || s.command).toLowerCase() === key);
+  const customPaths = shellConfig.customPaths || [];
+  if (!exists && !customPaths.some(x => x.toLowerCase() === key)) {
+    shellConfig = { ...shellConfig, customPaths: [...customPaths, p] };
+    saveShellConfig(shellConfig);
+  }
+  // 重建列表（会重新校验全部自定义路径）
+  detectedShells = buildDetectedShells();
+  const added = detectedShells.find(s => (s.fullPath || s.command).toLowerCase() === key);
+  console.log(`[Shell] 已添加自定义 bash: ${p} (${v.version})`);
+  res.json({ ...shellsResponse(), added: added ? added.id : null });
+});
+
+// 移除用户自定义 bash 路径（仅允许移除 custom 项）。若移除的是当前选中项，回落到默认。
+app.post('/api/shells/remove', (req, res) => {
+  const { id } = req.body || {};
+  if (!id) {
+    return res.status(400).json({ error: 'Missing shell id' });
+  }
+  const target = detectedShells.find(s => s.id === id);
+  if (!target || !target.custom) {
+    return res.status(400).json({ error: 'Only user-added custom paths can be removed' });
+  }
+  const key = (target.fullPath || target.command).toLowerCase();
+  const customPaths = (shellConfig.customPaths || []).filter(x => x.toLowerCase() !== key);
+  const wasSelected = shellConfig.selectedId === id;
+  shellConfig = { ...shellConfig, customPaths };
+  if (wasSelected) delete shellConfig.selectedId; // 移除的是选中项：清除选中，回落默认
+  saveShellConfig(shellConfig);
+  detectedShells = buildDetectedShells();
+  // 若移除了当前生效 Shell，需要重新解析有效 Shell
+  if (wasSelected || shell.id === id) {
+    shell = resolveEffectiveShell();
+    console.log(`[Shell] 已移除自定义 bash，当前回落到: ${shell.name || '(无可用 Shell)'}`);
+  }
+  res.json(shellsResponse());
 });
 
 // ==================== CRUD ====================

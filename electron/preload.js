@@ -3,6 +3,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
 
+  // 打开原生文件选择对话框，让用户挑一个 bash 可执行文件。
+  // 返回 { canceled:true } 或 { canceled:false, path:'绝对路径' }。
+  // 渲染进程据此把路径填入「添加自定义 bash 路径」输入框，再走后端校验流程。
+  openExecutableDialog: () => ipcRenderer.invoke('dialog:open-executable'),
+
   // 通过 IPC 调用主进程的原生通知
   showNotification: (title, body, single) => {
     ipcRenderer.send('show-notification', { title, body, single });
