@@ -97,43 +97,74 @@ const saveScripts = (scripts) => {
   fs.writeFileSync(SCRIPTS_FILE, JSON.stringify(scripts, null, 2));
 };
 
-const detectShell = () => {
-  const isWindows = process.platform === 'win32';
-  const result = { command: '', fullPath: '', type: '', name: '', version: '', args: [] };
+// ==================== Shell 探测（列出本机所有受支持的 Shell） ====================
+// 旧实现只挑「最优一个」Shell；现改为「列出全部可用 Shell」，
+// 供前端 App Info 弹窗展示并支持一键切换、持久化。
+// 每个 Shell 描述符含：id（稳定标识，用于持久化选中）、type（统一为 'bash'，因本软件只跑 bash 脚本）、
+//   name（展示名）、command（spawn 命令）、fullPath（展示用真实路径）、args（spawn 参数，均支持从 stdin 读脚本）、version。
+// ⚠️ 只探测「能运行本软件 bash 脚本」的 Shell：POSIX 仅 bash；Windows 仅 WSL / Git Bash。
+//   cmd / PowerShell / pwsh / fish / zsh / sh 等非 bash 解释器无法保证兼容下发的 bash 脚本，不列入可切换项。
 
-  const resolveFullPath = (cmd) => {
-    try {
-      if (isWindows) {
-        const out = execSync(`where ${cmd}`, { timeout: 1000, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
-        return out.split('\r\n')[0] || out.split('\n')[0] || cmd;
-      } else {
-        const out = execSync(`which ${cmd}`, { timeout: 1000, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
-        return out.split('\n')[0] || cmd;
-      }
-    } catch (e) {
-      return cmd;
+// 取命令的真实路径（which / where），失败回落到命令名本身
+const resolveShellPath = (cmd) => {
+  const isWin = process.platform === 'win32';
+  try {
+    const out = execSync(isWin ? `where ${cmd}` : `which ${cmd}`, {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1000,
+    }).toString().trim();
+    const first = (isWin ? out.split(/\r?\n/) : out.split('\n'))[0].trim();
+    return first || cmd;
+  } catch (e) {
+    return cmd;
+  }
+};
+
+// 安全取版本首行（失败返回 ''，绝不抛错拖垮后端）
+const detectShellVersion = (command, versionArg = '--version') => {
+  try {
+    return execSync(`"${command}" ${versionArg}`, {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+    }).toString().split('\n')[0].trim();
+  } catch (e) {
+    return '';
+  }
+};
+
+const GIT_BASH_CANDIDATES = [
+  'C:\\Program Files\\Git\\bin\\bash.exe',
+  'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  process.env.ProgramW6432 ? `${process.env.ProgramW6432}\\Git\\bin\\bash.exe` : '',
+  process.env.ProgramFiles ? `${process.env.ProgramFiles}\\Git\\bin\\bash.exe` : '',
+];
+
+const detectAllShells = () => {
+  const isWin = process.platform === 'win32';
+  const found = [];
+
+  if (!isWin) {
+    // POSIX（macOS / Linux）：本软件只跑 bash 脚本，故仅探测 bash 这一种受支持的 Shell。
+    // （zsh/sh/fish 等非 bash 解释器无法保证兼容本软件下发的 bash 脚本，不列入可切换项。）
+    const fullPath = resolveShellPath('bash');
+    // resolveShellPath 失败时回落为命令名本身（未命中 PATH），即本机没装 bash，跳过。
+    if (fullPath !== 'bash') {
+      found.push({
+        id: 'bash',
+        type: 'bash',
+        name: 'Bash',
+        command: 'bash',
+        fullPath,
+        args: ['-s'],   // -s：非交互式从 stdin 读取脚本，与 Windows 端一致
+        version: detectShellVersion('bash'),
+      });
     }
-  };
-
-  if (!isWindows) {
-    result.command = 'bash';
-    result.fullPath = resolveFullPath('bash');
-    result.type = 'bash';
-    // -s：让 bash 从 stdin 读取并执行脚本，不启动交互式 shell，
-    // 在 Windows 上可避免 WSL/Git Bash 弹出终端窗口。
-    result.args = ['-s'];
-    result.name = result.fullPath;
-    try {
-      result.version = execSync('bash --version', { timeout: 1000 }).toString().split('\n')[0].trim();
-    } catch (e) {}
-    return result;
+    return found;
   }
 
-  // ---- Windows：检测 WSL / Git Bash（不实际执行 bash，避免 WSL 冷启动超时） ----
-  // 原实现用 execSync 跑 `bash.exe -c "echo test"` 并以 1s 超时判断，但 WSL 冷启动常 >1s，
-  // 导致「明明装了 WSL 却偶尔被判为无 Shell」，且同步阻塞拖慢后端启动。
-  // 改为：WSL 用 `where wsl.exe`（毫秒级，不启动虚拟机），Git Bash 用文件存在性判断（fs.existsSync）。
-  // 真正的 bash 冷启动只发生在用户首次执行脚本时，一次性开销，可接受。
+  // ---- Windows：仅探测受支持的 bash 环境（WSL / Git Bash）----
+  // 本软件只执行 bash 脚本，cmd / PowerShell / pwsh 均非 bash 解释器，无法运行下发的脚本，故不列入。
+  // 判定均用「存在性 / where」（毫秒级），不实际启动 Shell，避免 WSL 冷启动超时。
 
   // 1) WSL：where wsl.exe 命中即说明已安装（不拉起 WSL 虚拟机，几乎瞬时）
   let wslPath = '';
@@ -142,53 +173,90 @@ const detectShell = () => {
       .toString().trim().split(/\r?\n/)[0] || '';
   } catch (e) {}
   if (wslPath) {
-    result.command = 'wsl.exe';
-    result.fullPath = wslPath;     // 显示用：真实 wsl.exe 路径
-    result.type = 'bash';
-    result.args = ['bash', '-s'];  // 经 wsl.exe 非交互式执行，避免弹出 Windows Terminal
-    result.name = 'WSL bash (via wsl.exe)';
-    try {
-      result.version = execSync(`"${wslPath}" --version`, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).toString().split('\n')[0].trim();
-    } catch (e) {}
-    return result;
+    found.push({
+      id: 'wsl',
+      type: 'bash',            // 仍走 bash 语法，便于脚本兼容
+      name: 'WSL (bash)',
+      command: 'wsl.exe',
+      fullPath: wslPath,
+      args: ['bash', '-s'],  // 经 wsl.exe 非交互式执行，避免弹出 Windows Terminal
+      version: detectShellVersion('wsl.exe', '--version'),
+    });
   }
 
-  // 2) Git Bash：用文件存在性判断（fs.existsSync，毫秒级，不执行任何命令）
-  const gitBashCandidates = [
-    'C:\\Program Files\\Git\\bin\\bash.exe',
-    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-    process.env.ProgramW6432 ? `${process.env.ProgramW6432}\\Git\\bin\\bash.exe` : '',
-    process.env.ProgramFiles ? `${process.env.ProgramFiles}\\Git\\bin\\bash.exe` : '',
-  ];
-  for (const p of gitBashCandidates) {
+  // 2) Git Bash：文件存在性判断（fs.existsSync，毫秒级，不执行任何命令）
+  for (const p of GIT_BASH_CANDIDATES) {
     if (p && fs.existsSync(p)) {
-      result.command = p;
-      result.fullPath = p;
-      result.type = 'bash';
-      result.args = ['-s'];        // Git Bash 用 -s 非交互式，避免弹出 MinTTY
-      result.name = 'Git Bash';
-      try {
-        result.version = execSync(`"${p}" --version`, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).toString().split('\n')[0].trim();
-      } catch (e) {}
-      return result;
+      found.push({
+        id: `gitbash:${p}`,
+        type: 'bash',
+        name: 'Git Bash',
+        command: p,
+        fullPath: p,
+        args: ['-s'],        // Git Bash 用 -s 非交互式，避免弹出 MinTTY
+        version: detectShellVersion(p),
+      });
     }
   }
 
-  // 未找到任何 bash 环境（WSL / Git Bash 均不存在）。
-  // 此时无可用 Shell，脚本将无法正常执行；返回空 command，前端会提示用户安装，
-  // 应用继续正常运行（仅脚本执行不可用），绝不崩溃。
-  console.log('⚠️  Warning: 未在当前 Windows 环境检测到 WSL / Git Bash，脚本将无法执行（仅支持 bash 语法，须 WSL 或 Git Bash）。');
-  return result;
+  return found;
 };
 
-// 探测可用 Shell。任何异常都不应拖垮整个后端：检测失败时降级为「无 Shell」模式，
-// 由前端提示用户安装 WSL / Git Bash，应用继续正常运行（仅脚本执行不可用），而非启动即崩溃。
-let shell = { command: '', fullPath: '', type: '', name: '', version: '', args: [] };
+// ==================== Shell 配置（持久化选中） ====================
+// 持久化文件位于用户数据目录（SCRIPT_DATA_DIR，Electron 下即 userData），
+// 仅保存 { selectedId } —— 选中 Shell 的真实路径在每次启动时重新探测，
+// 避免「Shell 被卸载后配置里还残留无效绝对路径」。
+const SHELL_CONFIG_PATH = process.env.SCRIPT_DATA_DIR
+  ? path.join(process.env.SCRIPT_DATA_DIR, 'shell-config.json')
+  : path.join(__dirname, 'shell-config.json');
+
+const loadShellConfig = () => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(SHELL_CONFIG_PATH, 'utf8'));
+    return cfg && typeof cfg === 'object' ? cfg : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+const saveShellConfig = (cfg) => {
+  try {
+    fs.writeFileSync(SHELL_CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  } catch (e) {
+    console.error('[Shell] 保存 Shell 配置失败:', e.message);
+  }
+};
+
+// 默认 Shell：保持旧行为——POSIX 用 bash；Windows 优先 WSL，其次 Git Bash，
+// 都没有则降级为「无 Shell」（即本机无任何 bash 环境，bash 脚本无法执行）。
+// 探测到的全部都是 bash 系，默认自动选第一个 bash（WSL 优先于 Git Bash）。
+const pickDefaultShell = (all) => {
+  const bash = all.find(s => s.type === 'bash'); // wsl / gitbash 都是 type 'bash'
+  if (bash) return bash;
+  return { command: '', fullPath: '', type: '', name: '', version: '', args: [] };
+};
+
+// 探测全部 Shell（启动时一次）
+let detectedShells = [];
 try {
-  shell = detectShell();
+  detectedShells = detectAllShells();
 } catch (e) {
-  console.error('[Shell] detection failed, falling back to no-shell mode:', e.message);
+  console.error('[Shell] 探测失败，降级为无 Shell 模式:', e.message);
 }
+
+let shellConfig = loadShellConfig();
+
+// 有效 Shell = 持久化选中（若存在且仍可用）优先，否则默认；
+// 这是「后续脚本执行」实际使用的 Shell，spawn 处直接读全局 shell。
+const resolveEffectiveShell = () => {
+  if (shellConfig.selectedId) {
+    const picked = detectedShells.find(s => s.id === shellConfig.selectedId);
+    if (picked) return picked;
+  }
+  return pickDefaultShell(detectedShells);
+};
+
+let shell = resolveEffectiveShell();
 
 // ==================== 子进程 locale 注入 ====================
 // GUI（Electron）启动的服务进程往往没有继承终端的 LANG/LC_* 设置，
@@ -330,6 +398,53 @@ app.get('/api/system-info', (req, res) => {
       name: shell.name,
       version: shell.version
     }
+  });
+});
+
+// 列出本机所有受支持 Shell + 当前生效 Shell（含持久化的选中项）
+// 前端 App Info 弹窗据此展示可切换列表并标记当前项。
+app.get('/api/shells', (req, res) => {
+  res.json({
+    shells: detectedShells,
+    current: {
+      id: shell.id,
+      type: shell.type,
+      name: shell.name,
+      command: shell.command,
+      fullPath: shell.fullPath,
+      version: shell.version,
+    },
+    selectedId: shellConfig.selectedId || null,
+  });
+});
+
+// 切换生效 Shell（一键切换 + 持久化）；后续脚本执行均在该 Shell 上进行。
+app.post('/api/shells/select', (req, res) => {
+  const { id } = req.body || {};
+  if (!id) {
+    return res.status(400).json({ error: 'Missing shell id' });
+  }
+  const target = detectedShells.find(s => s.id === id);
+  if (!target) {
+    return res.status(400).json({ error: `Shell not found: ${id}` });
+  }
+  // 持久化选中（只存 id，路径每次启动重新探测）
+  shellConfig = { selectedId: id };
+  saveShellConfig(shellConfig);
+  // 立即生效：后续 spawn 直接读全局 shell
+  shell = target;
+  console.log(`[Shell] 已切换到: ${target.name} (${target.fullPath || target.command})`);
+  res.json({
+    shells: detectedShells,
+    current: {
+      id: shell.id,
+      type: shell.type,
+      name: shell.name,
+      command: shell.command,
+      fullPath: shell.fullPath,
+      version: shell.version,
+    },
+    selectedId: id,
   });
 });
 

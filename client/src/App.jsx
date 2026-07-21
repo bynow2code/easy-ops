@@ -63,6 +63,10 @@ function App() {
   const [outputs, setOutputs] = useState({})
   const [runIds, setRunIds] = useState({})  // scriptId -> 执行 runId，用于「强制中断」
   const [systemInfo, setSystemInfo] = useState(null)
+  // App Info 弹窗内「可切换 Shell 列表」状态：全部已探测 Shell / 当前生效 Shell 的 id / 正在切换的 id
+  const [shellList, setShellList] = useState([])
+  const [currentShellId, setCurrentShellId] = useState(null)
+  const [switchingShellId, setSwitchingShellId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
@@ -419,6 +423,36 @@ function App() {
       setSystemInfo(response.data)
     } catch (error) {
       console.error('Error fetching system info:', error)
+    }
+  }
+
+  // 拉取本机所有受支持 Shell 及当前生效项，供 App Info 弹窗展示与一键切换
+  const fetchShells = async () => {
+    try {
+      const response = await axios.get('/api/shells')
+      setShellList(response.data.shells || [])
+      setCurrentShellId(response.data.selectedId || (response.data.current && response.data.current.id) || null)
+    } catch (error) {
+      console.error('Error fetching shells:', error)
+    }
+  }
+
+  // 一键切换生效 Shell：POST 持久化，成功后刷新列表与 systemInfo（使「Shell」行同步）
+  const handleSwitchShell = async (id) => {
+    if (id === currentShellId) return
+    setSwitchingShellId(id)
+    try {
+      const response = await axios.post('/api/shells/select', { id })
+      setShellList(response.data.shells || [])
+      setCurrentShellId(response.data.selectedId || id)
+      // 同步更新 systemInfo.shell，让弹窗顶部「Shell」行立刻反映新选择
+      setSystemInfo(prev => prev ? { ...prev, shell: response.data.current } : prev)
+    } catch (error) {
+      console.error('Error switching shell:', error)
+      // 切换失败：重新拉取，丢弃脏状态
+      fetchShells()
+    } finally {
+      setSwitchingShellId(null)
     }
   }
 
@@ -1053,7 +1087,7 @@ function App() {
             </button>
             <button
               className="tool-icon-btn"
-              onClick={() => setShowInfoModal(true)}
+              onClick={() => { setShowInfoModal(true); fetchShells(); }}
               title="App info"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -1521,6 +1555,34 @@ function App() {
                         </button>
                       </div>
                     )}
+                  </div>
+                  <div className="info-row">
+                    <label>Shells</label>
+                    <div className="shell-list">
+                      {shellList.length === 0 && (
+                        <span className="info-sub">Detecting available shells…</span>
+                      )}
+                      {shellList.map(s => {
+                        const isCurrent = s.id === currentShellId
+                        return (
+                          <div key={s.id} className={`shell-item ${isCurrent ? 'current' : ''}`}>
+                            <div className="shell-item-main">
+                              <span className="shell-item-name">{s.name}</span>
+                              {s.version && <span className="shell-item-meta">{s.version}</span>}
+                            </div>
+                            <span className="shell-item-path">{s.fullPath || s.command}</span>
+                            <button
+                              className={`btn-shell-switch ${isCurrent ? 'on' : ''}`}
+                              disabled={isCurrent || switchingShellId === s.id}
+                              onClick={() => handleSwitchShell(s.id)}
+                              title={isCurrent ? 'Currently active' : `Run scripts with ${s.name}`}
+                            >
+                              {isCurrent ? 'Active' : (switchingShellId === s.id ? 'Switching…' : 'Use')}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 </>
               )}
