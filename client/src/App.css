@@ -696,6 +696,12 @@ html, body, #root {
   transition: border-color 0.15s, background-color 0.15s;
 }
 
+/* 空分组（无脚本）：不再占据 1/2 高度，仅保留标题栏作为拖拽落点，
+   有脚本的分组（flex:1）随之填满整个脚本列表 */
+.script-group.empty {
+  flex: 0 0 auto;
+}
+
 .group-table {
   flex: 1;
   min-height: 0;

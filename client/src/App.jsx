@@ -1192,7 +1192,7 @@ function App() {
 
             const renderTable = (groupName, scripts) => (
               <div
-                className={`script-group ${activeDropGroup === groupName ? 'drop-active' : ''}`}
+                className={`script-group ${scripts.length === 0 ? 'empty' : ''} ${activeDropGroup === groupName ? 'drop-active' : ''}`}
                 onDragOver={(e) => handleDragOverGroup(e, groupName)}
                 onDrop={(e) => handleDropToGroup(e, groupName)}
               >
@@ -1200,6 +1200,7 @@ function App() {
                   <h3 className="group-title">{groupName === 'backend' ? 'Backend Scripts' : 'Frontend Scripts'}</h3>
                   <span className="group-count">{scripts.length}</span>
                 </div>
+                {scripts.length > 0 && (
                 <div className="group-table">
                   <table className="scripts-table">
                     <thead>
@@ -1308,6 +1309,7 @@ function App() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             )
 
