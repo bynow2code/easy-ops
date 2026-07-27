@@ -658,6 +658,54 @@ app.get('/api/scripts', (req, res) => {
   res.json(scripts);
 });
 
+// 批量导入脚本配置（全量覆盖当前 scripts.json）。
+// body 兼容两种形态：裸数组 [ { name, content, ... } ]，或 { scripts: [ ... ] }。
+// 后端再做一次严格校验与归一化（补齐 id / group / orderNum / createdAt），
+// 任一条不合法的脚本都会整体 400 拒绝，确保不会写入半截脏数据。
+app.post('/api/scripts/import', (req, res) => {
+  try {
+    const body = req.body;
+    let list = null;
+    if (Array.isArray(body)) {
+      list = body;
+    } else if (body && typeof body === 'object' && Array.isArray(body.scripts)) {
+      list = body.scripts;
+    }
+    if (!list) {
+      return res.status(400).json({ error: '请求体必须包含 scripts 数组' });
+    }
+
+    const normalized = [];
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (!s || typeof s !== 'object' || Array.isArray(s)) {
+        return res.status(400).json({ error: `第 ${i + 1} 条脚本不是合法的对象` });
+      }
+      if (typeof s.name !== 'string' || s.name.trim() === '') {
+        return res.status(400).json({ error: `第 ${i + 1} 条脚本的 name 必须是非空字符串` });
+      }
+      if (typeof s.content !== 'string') {
+        return res.status(400).json({ error: `第 ${i + 1} 条脚本的 content 必须是字符串` });
+      }
+      const group = (s.group === 'frontend' || s.group === 'backend') ? s.group : 'backend';
+      normalized.push({
+        id: (typeof s.id === 'string' && s.id) ? s.id : `${Date.now().toString()}-${i}`,
+        name: s.name,
+        content: s.content,
+        group,
+        orderNum: (typeof s.orderNum === 'number') ? s.orderNum : i,
+        createdAt: (typeof s.createdAt === 'string') ? s.createdAt : new Date().toISOString()
+      });
+    }
+
+    saveScripts(normalized);
+    res.json({ success: true, count: normalized.length });
+  } catch (err) {
+    console.error('[import] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/scripts', (req, res) => {
   const { name, content, group } = req.body;
 

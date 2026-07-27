@@ -28,6 +28,56 @@ const normalizeReleaseNotes = (notes) => {
 // 与终端书写一致，避免长路径在含空格处被换行割裂，也方便直接复制到 shell 使用。
 const escapePathForShell = (p) => (p || '').replace(/ /g, '\\ ');
 
+// 校验导入的脚本配置 JSON。支持两种形态：
+//   1) 裸数组：[ { name, content, ... }, ... ]
+//   2) 包裹对象：{ type, version, scripts: [ ... ] }
+// 任一脚本缺少合法 name / content，或 group / orderNum 类型错误，均视为格式错误 -> 拦截。
+// 返回 { ok, error?, scripts? }，scripts 为通过校验的原始数组（交由后端做归一化与持久化）。
+const validateScriptsConfig = (data) => {
+  let list = null;
+  if (Array.isArray(data)) {
+    list = data;
+  } else if (data && typeof data === 'object' && Array.isArray(data.scripts)) {
+    list = data.scripts;
+  }
+  if (!list) {
+    return { ok: false, error: '配置根节点必须是脚本数组，或包含 scripts 数组的对象。' };
+  }
+  if (list.length === 0) {
+    return { ok: true, scripts: [] };
+  }
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (!s || typeof s !== 'object' || Array.isArray(s)) {
+      return { ok: false, error: `第 ${i + 1} 条脚本不是合法的对象。` };
+    }
+    if (typeof s.name !== 'string' || s.name.trim() === '') {
+      return { ok: false, error: `第 ${i + 1} 条脚本缺少有效的 name（必须是非空字符串）。` };
+    }
+    if (typeof s.content !== 'string') {
+      return { ok: false, error: `第 ${i + 1} 条脚本的 content 必须是字符串。` };
+    }
+    if (s.group != null && s.group !== 'backend' && s.group !== 'frontend') {
+      return { ok: false, error: `第 ${i + 1} 条脚本的 group 只能是 "backend" 或 "frontend"。` };
+    }
+    if (s.orderNum != null && typeof s.orderNum !== 'number') {
+      return { ok: false, error: `第 ${i + 1} 条脚本的 orderNum 必须是数字。` };
+    }
+  }
+  return { ok: true, scripts: list };
+};
+
+// 无可用 Shell 时的执行报错文案：按平台区分，避免 macOS / Linux 上误提示 WSL / Git Bash。
+const noShellErrorText = (platform) => {
+  if (platform === 'win32') {
+    return 'No available shell detected (WSL or Git Bash required). The script cannot be executed.';
+  }
+  if (platform === 'darwin') {
+    return 'No available shell detected (a bash interpreter is required). The script cannot be executed.';
+  }
+  return 'No available shell detected (bash is required). The script cannot be executed.';
+};
+
 // 运行中：旋转的绿色图标（替代原本的 "Running..." 文字），0.9s 匀速旋转
 const RunningSpinner = () => (
   <svg className="running-spinner-icon" viewBox="0 0 24 24" width="14" height="14" aria-label="Running" role="img">
@@ -81,6 +131,8 @@ function App() {
   const outputRefs = useRef({})
   const outputPanelRefs = useRef({})
   const maximizedOutputRef = useRef(null)
+  // 导入脚本配置用的隐藏文件选择框
+  const importFileRef = useRef(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
   const outputsScrollRef = useRef(null)
   // 记录批量执行中已被用户关闭的脚本 id：对应后端事件将被忽略，避免「关闭后又重新出现」
@@ -420,6 +472,81 @@ function App() {
     } catch (error) {
       console.error('Error fetching scripts:', error)
     }
+  }
+
+  // 导出脚本列表配置：把当前 scripts 序列化成一个带标识头的 JSON 文件并下载。
+  // 标识头（type/version/exportedAt）便于导入时识别与排错，不影响内容校验。
+  const handleExportScripts = () => {
+    const payload = {
+      type: 'easyops-scripts-config',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      scripts: scripts
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `easyops-scripts-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  // 点击「导入」：唤起隐藏的文件选择框（仅接受 JSON）。
+  const handleImportClick = () => {
+    if (importFileRef.current) {
+      importFileRef.current.click()
+    }
+  }
+
+  // 读取所选文件 -> 解析 JSON -> 校验 -> 通过后提交后端持久化（全量覆盖当前脚本列表）。
+  // 任何一步失败（解析失败 / 格式错误 / 校验不通过）都会拦截，不会写入任何数据。
+  const handleImportFile = (e) => {
+    const file = e.target.files && e.target.files[0]
+    // 重置 value，保证同一文件可重复选择触发 onChange
+    e.target.value = ''
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onerror = () => {
+      alert('读取文件失败，请重试。')
+    }
+    reader.onload = async () => {
+      let parsed
+      try {
+        parsed = JSON.parse(reader.result)
+      } catch (err) {
+        alert('导入被拦截：文件不是合法的 JSON。\n' + err.message)
+        return
+      }
+
+      const { ok, error, scripts: validScripts } = validateScriptsConfig(parsed)
+      if (!ok) {
+        alert('导入被拦截：配置格式错误。\n' + error)
+        return
+      }
+
+      // 全量覆盖当前脚本列表属于破坏性操作，导入前先确认
+      if (!window.confirm(`即将导入 ${validScripts.length} 条脚本配置，将覆盖当前所有脚本列表。是否继续？`)) {
+        return
+      }
+
+      try {
+        const resp = await axios.post('/api/scripts/import', { scripts: validScripts })
+        if (resp.data && resp.data.success) {
+          await fetchScripts()
+          alert(`导入成功，共 ${resp.data.count} 条脚本。`)
+        } else {
+          alert('导入失败：服务器未返回成功状态。')
+        }
+      } catch (err) {
+        const msg = (err.response && err.response.data && err.response.data.error) || err.message || '未知错误'
+        alert('导入失败：' + msg)
+      }
+    }
+    reader.readAsText(file)
   }
 
   const fetchSystemInfo = async () => {
@@ -773,7 +900,7 @@ function App() {
     if (systemInfo && !systemInfo.shell?.command) {
       setOutputs(prev => ({
         ...prev,
-        [id]: { output: '', error: 'No available shell detected (WSL or Git Bash required). The script cannot be executed.\n', exitCode: -1, live: false, timestamp: Date.now() }
+        [id]: { output: '', error: noShellErrorText(systemInfo && systemInfo.platform) + '\n', exitCode: -1, live: false, timestamp: Date.now() }
       }))
       return
     }
@@ -894,7 +1021,7 @@ function App() {
       setOutputs(prev => {
         const next = { ...prev }
         selectedIds.forEach(id => {
-          next[id] = { output: '', error: 'No available shell detected (WSL or Git Bash required). The script cannot be executed.\n', exitCode: -1, live: false, timestamp: now }
+          next[id] = { output: '', error: noShellErrorText(systemInfo && systemInfo.platform) + '\n', exitCode: -1, live: false, timestamp: now }
         })
         return next
       })
@@ -1112,22 +1239,35 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* 无可用 Shell：醒目横幅提示，而非让用户在点运行后才看到 cryptic 报错 */}
-      {systemInfo != null && !(systemInfo.shell && systemInfo.shell.command) && (
-        <div
-          style={{
-            background: '#fff3cd',
-            color: '#7a5b00',
-            borderBottom: '1px solid #ffe69c',
-            padding: '10px 18px',
-            fontSize: '13px',
-            lineHeight: 1.5
-          }}
-        >
-          ⚠️ No <b>WSL</b> or <b>Git Bash</b> detected: script execution is unavailable.
-          Please install WSL (<code>wsl --install</code>) or Git Bash on Windows, then restart the app.
-        </div>
-      )}
+      {/* 无可用 Shell：醒目横幅提示，而非让用户在点运行后才看到 cryptic 报错。
+          文案按平台区分：Windows 提示 WSL / Git Bash；macOS / Linux 提示 bash，避免 macOS 上误报 WSL。 */}
+      {systemInfo != null && !(systemInfo.shell && systemInfo.shell.command) && (() => {
+        const platform = systemInfo.platform;
+        const isWin = platform === 'win32';
+        const isMac = platform === 'darwin';
+        const title = isWin ? 'No WSL or Git Bash detected' : 'No bash shell detected';
+        const hint = isWin ? (
+          <>Please install WSL (<code>wsl --install</code>) or Git Bash on Windows, then restart the app.</>
+        ) : isMac ? (
+          <>Please ensure a bash interpreter is available (e.g. install Xcode Command Line Tools via <code>xcode-select --install</code>), then restart the app.</>
+        ) : (
+          <>Please install bash, then restart the app.</>
+        );
+        return (
+          <div
+            style={{
+              background: '#fff3cd',
+              color: '#7a5b00',
+              borderBottom: '1px solid #ffe69c',
+              padding: '10px 18px',
+              fontSize: '13px',
+              lineHeight: 1.5
+            }}
+          >
+            ⚠️ {title}: script execution is unavailable. {hint}
+          </div>
+        );
+      })()}
       <header className="header">
         <h1>Script Manager</h1>
 
@@ -1153,6 +1293,23 @@ function App() {
           </div>
 
           <div className="toolbar-right">
+            {/* 导入 / 导出脚本列表配置：置于「检查更新」按钮左侧，沿用 tool-icon-btn 风格 */}
+            <button
+              className="tool-icon-btn"
+              onClick={handleImportClick}
+              title="导入脚本配置（JSON）"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span className="tool-icon-label">导入</span>
+            </button>
+            <button
+              className="tool-icon-btn"
+              onClick={handleExportScripts}
+              title="导出脚本配置（JSON）"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span className="tool-icon-label">导出</span>
+            </button>
             <button
               className="tool-icon-btn"
               onClick={handleCheckUpdates}
@@ -1171,6 +1328,15 @@ function App() {
           </div>
         </div>
       </header>
+
+      {/* 导入脚本配置用的隐藏文件选择框：点击「导入」按钮时由代码触发 */}
+      <input
+        ref={importFileRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={handleImportFile}
+      />
 
       <div className="main-layout">
         {/* 左侧：脚本列表，分上下两组：后端脚本在上，前端脚本在下 */}
