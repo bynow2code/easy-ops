@@ -126,6 +126,8 @@ function App() {
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
+  // 批量删除选中脚本的确认弹窗开关
+  const [deleteConfirmBatch, setDeleteConfirmBatch] = useState(false)
   const [maximizedScriptId, setMaximizedScriptId] = useState(null)
   const eventSourceRefs = useRef({})
   const outputRefs = useRef({})
@@ -723,6 +725,27 @@ function App() {
     setEditingScript({ ...script })
   }
 
+  // 批量删除选中的脚本：调用后端批量删除接口，成功后同步本地列表 / 选中态 / 输出缓存。
+  // 按钮在任意选中脚本正在运行时已禁用，这里不再做运行态兜底。
+  const confirmBatchDelete = async () => {
+    const ids = selectedIds
+    setDeleteConfirmBatch(false)
+    if (ids.length === 0) return
+    try {
+      await axios.delete('/api/scripts/batch', { data: { ids } })
+      setScripts(prev => prev.filter(s => !ids.includes(s.id)))
+      setSelectedIds(prev => prev.filter(sid => !ids.includes(sid)))
+      setOutputs(prev => {
+        const next = { ...prev }
+        ids.forEach(id => { delete next[id] })
+        return next
+      })
+    } catch (error) {
+      console.error('Error batch deleting scripts:', error)
+      alert('Failed to delete selected scripts')
+    }
+  }
+
   const handleDragStart = (e, id) => {
     setDraggingId(id)
     const dt = e.nativeEvent.dataTransfer
@@ -1290,6 +1313,14 @@ function App() {
             >
               Add Script
             </button>
+            <button
+              onClick={() => setDeleteConfirmBatch(true)}
+              disabled={selectedIds.length === 0 || selectedIds.some(id => executingIds[id] || batchRunningIds[id])}
+              className="btn btn-delete"
+              title="删除选中的脚本"
+            >
+              {`删除选中 (${selectedIds.length})`}
+            </button>
           </div>
 
           <div className="toolbar-right">
@@ -1690,6 +1721,26 @@ function App() {
                 Cancel
               </button>
               <button type="button" onClick={confirmDeleteScript} className="btn btn-delete">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批量删除选中脚本的确认弹窗 */}
+      {deleteConfirmBatch && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirmBatch(false)}>
+          <div className="modal-content modal-confirm" onClick={e => e.stopPropagation()}>
+            <h2>Confirm Deletion</h2>
+            <p style={{ marginBottom: 16, color: '#666' }}>
+              {`确定要删除选中的 ${selectedIds.length} 个脚本吗？此操作不可撤销。`}
+            </p>
+            <div className="form-actions">
+              <button type="button" onClick={() => setDeleteConfirmBatch(false)} className="btn btn-cancel">
+                Cancel
+              </button>
+              <button type="button" onClick={confirmBatchDelete} className="btn btn-delete">
                 Delete
               </button>
             </div>

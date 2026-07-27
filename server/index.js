@@ -757,6 +757,30 @@ app.delete('/api/scripts/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// 批量删除：body 传 { ids: ['id1','id2',...] }（DELETE 带 body，express.json 已解析）。
+// 用 Set 做 O(1) 过滤，原子替换整个 scripts.json；无任何命中则返回 404。
+app.delete('/api/scripts/batch', (req, res) => {
+  try {
+    const { ids } = (req.body || {});
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+    const idSet = new Set(ids);
+    let scripts = getScripts();
+    const before = scripts.length;
+    scripts = scripts.filter(s => !idSet.has(s.id));
+    const deleted = before - scripts.length;
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'No matching scripts to delete' });
+    }
+    saveScripts(scripts);
+    res.json({ success: true, deleted });
+  } catch (err) {
+    console.error('[batch-delete] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 批量重排序（支持分组切换）：body 传 { order: ['id1','id2',...], groups?: { id: 'backend'|'frontend' } }
 app.post('/api/scripts/reorder', (req, res) => {
   try {
