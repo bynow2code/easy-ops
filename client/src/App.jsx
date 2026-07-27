@@ -1070,11 +1070,19 @@ function App() {
     // 触发外层 Execution Outputs 容器滚动到顶部
     setScrollToTopKey(k => k + 1)
 
-    // 为每个 batch 脚本初始化输出（按 batch 顺序分配递减时间戳以保持排序）
+    // 为每个 batch 脚本初始化输出。
+    // 时间戳按「脚本在左侧列表中的顺序(list order)」分配递减，而不是按勾选顺序，
+    // 这样 Execution Outputs 里的窗口顺序与脚本列表一致（用户期望的行为）。
+    // 单独执行仍用 Date.now()，时间戳更大，自然排到批量组之上（最新执行在最前）。
     const batchTimestamp = Date.now()
     const initialOutputs = {}
-    batchIds.forEach((id, index) => {
-      initialOutputs[id] = { output: '', error: '', exitCode: null, live: true, timestamp: batchTimestamp - index }
+    const listOrderOf = (id) => {
+      const idx = scripts.findIndex(s => s.id === id)
+      return idx >= 0 ? idx : scripts.length + batchIds.indexOf(id)
+    }
+    batchIds.forEach((id) => {
+      const order = listOrderOf(id)
+      initialOutputs[id] = { output: '', error: '', exitCode: null, live: true, timestamp: batchTimestamp - order }
     })
     setOutputs(prev => ({ ...prev, ...initialOutputs }))
 
@@ -1548,8 +1556,9 @@ function App() {
                 const aOut = outputs[a.id]
                 const bOut = outputs[b.id]
                 // 按时间戳倒序：最新执行的脚本输出排在最前（顶部）。
-                // 批量脚本在启动时已按批次顺序赋递减时间戳，彼此间仍保持批次顺序，
-                // 而中途单独执行的脚本会拿到更新的时间戳，自然排到顶部。
+                // 批量脚本在启动时已按「脚本列表顺序」赋递减时间戳（见 handleBatchExecute），
+                // 因此批量窗口之间保持与左侧脚本列表一致的顺序；
+                // 单独执行的脚本时间戳更大，自然排到批量组之上。
                 return (bOut.timestamp || 0) - (aOut.timestamp || 0)
               }).map(script => {
                 const output = outputs[script.id]
