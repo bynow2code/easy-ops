@@ -41,7 +41,7 @@ const validateScriptsConfig = (data) => {
     list = data.scripts;
   }
   if (!list) {
-    return { ok: false, error: '配置根节点必须是脚本数组，或包含 scripts 数组的对象。' };
+    return { ok: false, error: 'Config root must be an array of scripts, or an object containing a scripts array.' };
   }
   if (list.length === 0) {
     return { ok: true, scripts: [] };
@@ -49,19 +49,19 @@ const validateScriptsConfig = (data) => {
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
     if (!s || typeof s !== 'object' || Array.isArray(s)) {
-      return { ok: false, error: `第 ${i + 1} 条脚本不是合法的对象。` };
+      return { ok: false, error: `Script #${i + 1} is not a valid object.` };
     }
     if (typeof s.name !== 'string' || s.name.trim() === '') {
-      return { ok: false, error: `第 ${i + 1} 条脚本缺少有效的 name（必须是非空字符串）。` };
+      return { ok: false, error: `Script #${i + 1} is missing a valid name (must be a non-empty string).` };
     }
     if (typeof s.content !== 'string') {
-      return { ok: false, error: `第 ${i + 1} 条脚本的 content 必须是字符串。` };
+      return { ok: false, error: `Script #${i + 1} content must be a string.` };
     }
     if (s.group != null && s.group !== 'backend' && s.group !== 'frontend') {
-      return { ok: false, error: `第 ${i + 1} 条脚本的 group 只能是 "backend" 或 "frontend"。` };
+      return { ok: false, error: `Script #${i + 1} group must be "backend" or "frontend".` };
     }
     if (s.orderNum != null && typeof s.orderNum !== 'number') {
-      return { ok: false, error: `第 ${i + 1} 条脚本的 orderNum 必须是数字。` };
+      return { ok: false, error: `Script #${i + 1} orderNum must be a number.` };
     }
   }
   return { ok: true, scripts: list };
@@ -513,25 +513,25 @@ function App() {
 
     const reader = new FileReader()
     reader.onerror = () => {
-      alert('读取文件失败，请重试。')
+      alert('Failed to read the file. Please try again.')
     }
     reader.onload = async () => {
       let parsed
       try {
         parsed = JSON.parse(reader.result)
       } catch (err) {
-        alert('导入被拦截：文件不是合法的 JSON。\n' + err.message)
+        alert('Import blocked: file is not valid JSON.\n' + err.message)
         return
       }
 
       const { ok, error, scripts: validScripts } = validateScriptsConfig(parsed)
       if (!ok) {
-        alert('导入被拦截：配置格式错误。\n' + error)
+        alert('Import blocked: invalid config format.\n' + error)
         return
       }
 
       // 全量覆盖当前脚本列表属于破坏性操作，导入前先确认
-      if (!window.confirm(`即将导入 ${validScripts.length} 条脚本配置，将覆盖当前所有脚本列表。是否继续？`)) {
+      if (!window.confirm(`About to import ${validScripts.length} script config(s). This will overwrite the current script list. Continue?`)) {
         return
       }
 
@@ -539,13 +539,13 @@ function App() {
         const resp = await axios.post('/api/scripts/import', { scripts: validScripts })
         if (resp.data && resp.data.success) {
           await fetchScripts()
-          alert(`导入成功，共 ${resp.data.count} 条脚本。`)
+          alert(`Import succeeded: ${resp.data.count} script(s) imported.`)
         } else {
-          alert('导入失败：服务器未返回成功状态。')
+          alert('Import failed: server did not return a success status.')
         }
       } catch (err) {
-        const msg = (err.response && err.response.data && err.response.data.error) || err.message || '未知错误'
-        alert('导入失败：' + msg)
+        const msg = (err.response && err.response.data && err.response.data.error) || err.message || 'Unknown error'
+        alert('Import failed: ' + msg)
       }
     }
     reader.readAsText(file)
@@ -1317,29 +1317,27 @@ function App() {
               onClick={() => setDeleteConfirmBatch(true)}
               disabled={selectedIds.length === 0 || selectedIds.some(id => executingIds[id] || batchRunningIds[id])}
               className="btn btn-delete"
-              title="删除选中的脚本"
+              title="Delete selected scripts"
             >
-              {`删除选中 (${selectedIds.length})`}
+              {`Delete Selected (${selectedIds.length})`}
             </button>
           </div>
 
           <div className="toolbar-right">
-            {/* 导入 / 导出脚本列表配置：置于「检查更新」按钮左侧，沿用 tool-icon-btn 风格 */}
+            {/* 导入 / 导出脚本列表配置：置于「检查更新」按钮左侧，沿用 tool-icon-btn 风格，仅图标 */}
             <button
               className="tool-icon-btn"
               onClick={handleImportClick}
-              title="导入脚本配置（JSON）"
+              title="Import scripts config (JSON)"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <span className="tool-icon-label">导入</span>
             </button>
             <button
               className="tool-icon-btn"
               onClick={handleExportScripts}
-              title="导出脚本配置（JSON）"
+              title="Export scripts config (JSON)"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              <span className="tool-icon-label">导出</span>
             </button>
             <button
               className="tool-icon-btn"
@@ -1734,7 +1732,7 @@ function App() {
           <div className="modal-content modal-confirm" onClick={e => e.stopPropagation()}>
             <h2>Confirm Deletion</h2>
             <p style={{ marginBottom: 16, color: '#666' }}>
-              {`确定要删除选中的 ${selectedIds.length} 个脚本吗？此操作不可撤销。`}
+              {`Are you sure you want to delete the selected ${selectedIds.length} script(s)? This action cannot be undone.`}
             </p>
             <div className="form-actions">
               <button type="button" onClick={() => setDeleteConfirmBatch(false)} className="btn btn-cancel">

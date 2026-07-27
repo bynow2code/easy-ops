@@ -672,20 +672,20 @@ app.post('/api/scripts/import', (req, res) => {
       list = body.scripts;
     }
     if (!list) {
-      return res.status(400).json({ error: '请求体必须包含 scripts 数组' });
+      return res.status(400).json({ error: 'Request body must contain a scripts array' });
     }
 
     const normalized = [];
     for (let i = 0; i < list.length; i++) {
       const s = list[i];
       if (!s || typeof s !== 'object' || Array.isArray(s)) {
-        return res.status(400).json({ error: `第 ${i + 1} 条脚本不是合法的对象` });
+        return res.status(400).json({ error: `Script #${i + 1} is not a valid object` });
       }
       if (typeof s.name !== 'string' || s.name.trim() === '') {
-        return res.status(400).json({ error: `第 ${i + 1} 条脚本的 name 必须是非空字符串` });
+        return res.status(400).json({ error: `Script #${i + 1} name must be a non-empty string` });
       }
       if (typeof s.content !== 'string') {
-        return res.status(400).json({ error: `第 ${i + 1} 条脚本的 content 必须是字符串` });
+        return res.status(400).json({ error: `Script #${i + 1} content must be a string` });
       }
       const group = (s.group === 'frontend' || s.group === 'backend') ? s.group : 'backend';
       normalized.push({
@@ -742,23 +742,10 @@ app.put('/api/scripts/:id', (req, res) => {
   res.json(scripts[index]);
 });
 
-app.delete('/api/scripts/:id', (req, res) => {
-  const { id } = req.params;
-  let scripts = getScripts();
-  const initialLength = scripts.length;
-
-  scripts = scripts.filter(s => s.id !== id);
-
-  if (scripts.length === initialLength) {
-    return res.status(404).json({ error: 'Script not found' });
-  }
-
-  saveScripts(scripts);
-  res.json({ success: true });
-});
-
 // 批量删除：body 传 { ids: ['id1','id2',...] }（DELETE 带 body，express.json 已解析）。
 // 用 Set 做 O(1) 过滤，原子替换整个 scripts.json；无任何命中则返回 404。
+// ⚠️ 必须注册在 `DELETE /api/scripts/:id` 之前：否则 "/batch" 会被 :id 捕获，
+//    命中单条删除逻辑，找不到 id 为 "batch" 的脚本而误报 404。
 app.delete('/api/scripts/batch', (req, res) => {
   try {
     const { ids } = (req.body || {});
@@ -779,6 +766,21 @@ app.delete('/api/scripts/batch', (req, res) => {
     console.error('[batch-delete] ERROR:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.delete('/api/scripts/:id', (req, res) => {
+  const { id } = req.params;
+  let scripts = getScripts();
+  const initialLength = scripts.length;
+
+  scripts = scripts.filter(s => s.id !== id);
+
+  if (scripts.length === initialLength) {
+    return res.status(404).json({ error: 'Script not found' });
+  }
+
+  saveScripts(scripts);
+  res.json({ success: true });
 });
 
 // 批量重排序（支持分组切换）：body 传 { order: ['id1','id2',...], groups?: { id: 'backend'|'frontend' } }
