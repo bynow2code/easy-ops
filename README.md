@@ -93,8 +93,18 @@ EasyOps 把这些脚本统一管起来：
 
 ### 8. 查看信息与更新
 
-- 通过菜单打开 **App Info**，可看到当前 Shell 类型、可执行文件路径、版本号等。
+- 通过菜单打开 **App Info**，可看到：应用版本、**Server Port**（服务端口，带 Copy 按钮可直接复制）、当前 Shell 类型 / 版本 / 可执行文件路径（同样可一键复制）等。
 - 通过菜单 **检查更新**，可手动触发版本检查并查看更新日志。
+
+### 9. 输出面板操作
+
+每个 **Execution Outputs** 窗口都带独立控制：
+
+- **最大化（Maximize）**：点右上角图标把该条输出放大到全屏视图，方便查看长日志。
+- **强制停止（Stop）**：脚本运行中会出现 Stop 按钮，点它可立即终止当前执行——通过后端 `runId` 精准 kill 该脚本，不会误伤同批其它正在跑的脚本。
+- **重新执行（Re-run）**：脚本跑完（非运行中）后，同一按钮变为 Re-run，点一下用相同配置再跑一次。
+- **自动滚动（Auto-scroll）**：每个面板可独立开启 / 关闭「输出自动贴底」；关闭后滚动查看历史内容不会被新输出顶下去。
+- **一键关闭**：面板顶部提供「关闭所有」入口，可一次性清空全部输出窗口。
 
 ---
 
@@ -119,8 +129,18 @@ Windows 上应用会自动识别 **Git Bash / WSL** 作为执行环境，无需�
 **Q：我的脚本用的是哪个 Shell？**
 应用会自动检测当前环境：Windows 使用 Git Bash / WSL（bash 语法脚本），macOS / Linux 使用 bash。可在 App Info 中查看当前实际使用的 Shell。若本机无可用 Shell（包括手动开启 App Info 中的「无 Shell 模式」），主界面会弹出醒目提示：Windows 提示安装 WSL / Git Bash，macOS 提示安装 Xcode Command Line Tools（`xcode-select --install`），Linux 提示安装 bash；此时脚本无法执行。
 
+**Q：可以自定义 / 切换执行脚本用的 bash 路径吗？**
+可以。打开 **App Info** → **Shells** 区域：
+- **切换 Shell**：列表里会列出自动探测到的可用 Shell（如 Git Bash、WSL、系统 bash 等），点击对应项的 **Use** 即可把"运行脚本所用的 Shell"切换成它（当前生效的会显示 **Active**）。
+- **添加自定义路径**：有些 bash 装在非常规路径，自动探测扫不到。可在下方输入框填写路径（例如 `C:\tools\git\bin\bash.exe` 或 `/opt/homebrew/bin/bash`），也可点 **Browse…** 从系统里选一个可执行文件，再点 **Add**。添加前会校验该路径是否为可用的 bash，校验通过才会加入列表。
+- **移除自定义项**：自己添加的路径（标记为 custom）可点 **Remove** 删除，自动探测到的则不可删除。
+
 **Q：数据存在哪？**
-脚本内容保存在应用数据目录下（开发模式在 `server/scripts.json`），卸载应用前请按需备份。
+脚本配置保存在应用数据目录下，具体路径可在 **App Info** 中查看：
+- **Scripts Config**：脚本列表（`scripts.json`）的完整路径，带 Copy 按钮可直接复制。
+- **Shell Config**：Shell 检测配置文件的完整路径（同样可一键复制）。
+
+卸载应用前，请按 App Info 里显示的 **Scripts Config** 路径按需备份该文件即可。
 
 **Q：用脚本 SSH 连远程服务器，第一次执行卡住或报 host key 错误？**
 首次 SSH 连接一台新主机时，SSH 会交互式询问「是否信任该主机并把指纹加入 known_hosts（yes/no）」，而应用内的脚本执行是**非交互式**的，无法回答这个提问，于是会卡住或失败。
