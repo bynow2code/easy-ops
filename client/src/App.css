@@ -10,6 +10,27 @@
   --text: #333333;
   --text-secondary: #666666;
   --text-muted: #999999;
+  --bg-state-info: #e6f7ff;
+  --bg-state-info-hover: #f0f7ff;
+  --bg-state-info-active: #e6f4ff;
+  --border-state-info: #91caff;
+  --border-state-info-hover: #d6eaff;
+  --text-state-info: #1677ff;
+  --bg-state-success: #f6ffed;
+  --border-state-success: #b7eb8b;
+  --text-state-success: #52c41a;
+  --bg-state-danger: #fff2f0;
+  --bg-state-danger-alt: #fff5f5;
+  --bg-state-danger-hover: #fff1f0;
+  --border-state-danger: #ffccc7;
+  --text-state-danger: #ff4d4f;
+  --text-state-danger-deep: #d4380d;
+  --bg-state-warning: #fffbe6;
+  --bg-state-warning-alt: #fff7e6;
+  --border-state-warning: #ffe58f;
+  --border-state-warning-deep: #ffbb96;
+  --text-state-warning: #ad8b00;
+  --text-state-warning-deep: #614700;
 }
 
 :root[data-theme="light"] {
@@ -23,6 +44,27 @@
   --text: #333333;
   --text-secondary: #666666;
   --text-muted: #999999;
+  --bg-state-info: #e6f7ff;
+  --bg-state-info-hover: #f0f7ff;
+  --bg-state-info-active: #e6f4ff;
+  --border-state-info: #91caff;
+  --border-state-info-hover: #d6eaff;
+  --text-state-info: #1677ff;
+  --bg-state-success: #f6ffed;
+  --border-state-success: #b7eb8b;
+  --text-state-success: #52c41a;
+  --bg-state-danger: #fff2f0;
+  --bg-state-danger-alt: #fff5f5;
+  --bg-state-danger-hover: #fff1f0;
+  --border-state-danger: #ffccc7;
+  --text-state-danger: #ff4d4f;
+  --text-state-danger-deep: #d4380d;
+  --bg-state-warning: #fffbe6;
+  --bg-state-warning-alt: #fff7e6;
+  --border-state-warning: #ffe58f;
+  --border-state-warning-deep: #ffbb96;
+  --text-state-warning: #ad8b00;
+  --text-state-warning-deep: #614700;
 }
 
 :root[data-theme="dark"] {
@@ -36,20 +78,62 @@
   --text: #e8e8e8;
   --text-secondary: #b0b0b0;
   --text-muted: #888888;
+  --bg-state-info: #162840;
+  --bg-state-info-hover: #1f3a5c;
+  --bg-state-info-active: #14294a;
+  --border-state-info: #2a5588;
+  --border-state-info-hover: #3b6fa3;
+  --text-state-info: #91caff;
+  --bg-state-success: #1d3a1f;
+  --border-state-success: #4a8a4e;
+  --text-state-success: #95de64;
+  --bg-state-danger: #3a1a1a;
+  --bg-state-danger-alt: #3a1a1a;
+  --bg-state-danger-hover: #4a2424;
+  --border-state-danger: #a83a3a;
+  --text-state-danger: #ff7875;
+  --text-state-danger-deep: #ff9c6b;
+  --bg-state-warning: #3d3000;
+  --bg-state-warning-alt: #3d3000;
+  --border-state-warning: #a67d00;
+  --border-state-warning-deep: #8c5a00;
+  --text-state-warning: #ffec3d;
+  --text-state-warning-deep: #ffd666;
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
     color-scheme: dark;
-  --bg: #181818;
-  --bg-subtle: #1f1f1f;
-  --bg-surface: #242424;
-  --bg-hover: #2c2c2c;
-  --border: #333333;
-  --border-strong: #444444;
-  --text: #e8e8e8;
-  --text-secondary: #b0b0b0;
-  --text-muted: #888888;
+    --bg: #181818;
+    --bg-subtle: #1f1f1f;
+    --bg-surface: #242424;
+    --bg-hover: #2c2c2c;
+    --border: #333333;
+    --border-strong: #444444;
+    --text: #e8e8e8;
+    --text-secondary: #b0b0b0;
+    --text-muted: #888888;
+    --bg-state-info: #162840;
+    --bg-state-info-hover: #1f3a5c;
+    --bg-state-info-active: #14294a;
+    --border-state-info: #2a5588;
+    --border-state-info-hover: #3b6fa3;
+    --text-state-info: #91caff;
+    --bg-state-success: #1d3a1f;
+    --border-state-success: #4a8a4e;
+    --text-state-success: #95de64;
+    --bg-state-danger: #3a1a1a;
+    --bg-state-danger-alt: #3a1a1a;
+    --bg-state-danger-hover: #4a2424;
+    --border-state-danger: #a83a3a;
+    --text-state-danger: #ff7875;
+    --text-state-danger-deep: #ff9c6b;
+    --bg-state-warning: #3d3000;
+    --bg-state-warning-alt: #3d3000;
+    --border-state-warning: #a67d00;
+    --border-state-warning-deep: #8c5a00;
+    --text-state-warning: #ffec3d;
+    --text-state-warning-deep: #ffd666;
   }
 }
 
@@ -313,7 +397,7 @@ html, body, #root {
 }
 
 .scripts-table tbody tr.selected {
-  background-color: #e6f7ff;
+  background-color: var(--bg-state-info);
 }
 
 .checkbox-col {
@@ -441,18 +525,18 @@ html, body, #root {
 }
 
 .exit-code.success {
-  background-color: #f6ffed;
+  background-color: var(--bg-state-success);
   color: #52c41a;
 }
 
 .exit-code.error {
-  background-color: #fff2f0;
+  background-color: var(--bg-state-danger);
   color: #ff4d4f;
 }
 
 .exit-code.stopped {
-  background-color: #fff7e6;
-  color: #d48806;
+  background-color: var(--bg-state-warning-alt);
+  color: var(--text-state-warning);
 }
 
 .output-section {
@@ -460,7 +544,7 @@ html, body, #root {
 }
 
 .output-section.error {
-  background-color: #fff2f0;
+  background-color: var(--bg-state-danger);
 }
 
 .output-section h3 {
@@ -581,24 +665,24 @@ html, body, #root {
 }
 
 .status-badge.running {
-  background-color: #e6f7ff;
-  color: #1890ff;
+  background-color: var(--bg-state-info);
+  color: var(--text-state-info);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
 .status-badge.success {
-  background-color: #f6ffed;
+  background-color: var(--bg-state-success);
   color: #52c41a;
 }
 
 .status-badge.error {
-  background-color: #fff2f0;
+  background-color: var(--bg-state-danger);
   color: #ff4d4f;
 }
 
 .status-badge.stopped {
-  background-color: #fff7e6;
-  color: #d48806;
+  background-color: var(--bg-state-warning-alt);
+  color: var(--text-state-warning);
 }
 
 .live-dot {
@@ -765,7 +849,7 @@ html, body, #root {
 
 .script-group.drop-active {
   border-color: #1677ff;
-  background-color: #e6f4ff;
+  background-color: var(--bg-state-info-active);
 }
 
 .group-header {
@@ -825,9 +909,9 @@ html, body, #root {
 }
 
 .btn-close-all:hover {
-  color: #d93026;
-  border-color: #d93026;
-  background: #fff5f5;
+  color: var(--text-state-danger);
+  border-color: var(--text-state-danger);
+  background: var(--bg-state-danger-alt);
 }
 
 .right-panel .outputs-container {
@@ -908,15 +992,15 @@ html, body, #root {
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 3px;
-  background: #e6f7ff;
+  background: var(--bg-state-info);
   color: #1677ff;
   flex-shrink: 0;
   line-height: 1.4;
 }
 
 .group-badge.frontend {
-  background: #fff7e6;
-  color: #d46b08;
+  background: var(--bg-state-warning-alt);
+  color: var(--text-state-warning);
 }
 
 /* 运行中：BE/FE 分组徽标像红绿灯绿灯一样闪烁，提升输出小窗的可见性 */
@@ -926,13 +1010,13 @@ html, body, #root {
 
 @keyframes traffic-yellow-flash {
   0%, 100% {
-    background-color: #fffbe6;
-    color: #d4b106;
+    background-color: var(--bg-state-warning);
+    color: var(--text-state-warning);
     box-shadow: 0 0 0 0 rgba(250, 173, 20, 0);
   }
   50% {
-    background-color: #ffe58f;
-    color: #874d00;
+    background-color: var(--border-state-warning);
+    color: var(--text-state-warning-deep);
     box-shadow: 0 0 8px 2px rgba(250, 173, 20, 0.55);
   }
 }
@@ -980,7 +1064,7 @@ html, body, #root {
 }
 
 .right-panel .output-section.error .output-section-label {
-  color: #d93026;
+  color: var(--text-state-danger);
 }
 
 .output-content-wrapper {
@@ -1012,12 +1096,12 @@ html, body, #root {
 }
 
 .right-panel .output-section.error .output-content-wrapper {
-  border-color: #ffccc7;
+  border-color: var(--border-state-danger);
 }
 
 .right-panel .output-section.error .output-content-wrapper .output-content {
-  background: #fff5f5;
-  color: #d93026;
+  background: var(--bg-state-danger-alt);
+  color: var(--text-state-danger);
 }
 
 /* Shell Editor */
@@ -1114,8 +1198,8 @@ html, body, #root {
 }
 
 .btn-stop:hover {
-  background-color: #fff1f0;
-  color: #d93026;
+  background-color: var(--bg-state-danger-hover);
+  color: var(--text-state-danger);
 }
 
 /* 自动贴底开关：向下箭头标识「贴底」行为，开启时蓝色高亮，关闭时灰色 */
@@ -1150,17 +1234,17 @@ html, body, #root {
   font-size: 11px;
   padding: 3px 10px;
   margin-right: 8px;
-  background-color: #fff1f0;
-  color: #d93026;
-  border: 1px solid #ffccc7;
+  background-color: var(--bg-state-danger-hover);
+  color: var(--text-state-danger);
+  border: 1px solid var(--border-state-danger);
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .btn-stop-all:hover {
-  background-color: #ffe7e3;
-  border-color: #d93026;
+  background-color: var(--bg-state-danger-alt);
+  border-color: var(--text-state-danger);
 }
 
 /* Maximized output modal */
@@ -1240,9 +1324,9 @@ html, body, #root {
 }
 
 .maximized-output-content.error {
-  background: #fff5f5;
-  border-color: #ffccc7;
-  color: #d93026;
+  background: var(--bg-state-danger-alt);
+  border-color: var(--border-state-danger);
+  color: var(--text-state-danger);
 }
 
 .maximized-error-section {
@@ -1290,8 +1374,8 @@ html, body, #root {
 }
 
 .form-error-banner {
-  background-color: #fff2f0;
-  border: 1px solid #ffccc7;
+  background-color: var(--bg-state-danger);
+  border: 1px solid var(--border-state-danger);
   border-radius: 4px;
   padding: 8px 12px;
   margin-bottom: 12px;
@@ -1318,8 +1402,8 @@ html, body, #root {
 
 .tool-icon-btn:hover {
   color: #1890ff;
-  background-color: #f0f7ff;
-  border-color: #d6eaff;
+  background-color: var(--bg-state-info-hover);
+  border-color: var(--border-state-info-hover);
 }
 
 .tool-icon-btn svg {
@@ -1546,8 +1630,8 @@ html, body, #root {
 
 /* 当前生效的 Shell 高亮 */
 .shell-item.current {
-  background: #e6f4ff;
-  border-color: #91caff;
+  background: var(--bg-state-info-active);
+  border-color: var(--border-state-info);
 }
 
 .shell-item-main {
@@ -1600,14 +1684,14 @@ html, body, #root {
 }
 
 .btn-shell-switch:hover:not(:disabled) {
-  background: #f0f7ff;
+  background: var(--bg-state-info-hover);
   border-color: #1890ff;
 }
 
 .btn-shell-switch.on,
 .btn-shell-switch:disabled {
-  background: #f6ffed;
-  border-color: #b7eb8b;
+  background: var(--bg-state-success);
+  border-color: var(--border-state-success);
   color: #52c41a;
   cursor: default;
 }
@@ -1617,7 +1701,7 @@ html, body, #root {
   font-size: 11px;
   padding: 4px 10px;
   background: var(--bg-surface);
-  border: 1px solid #ffccc7;
+  border: 1px solid var(--border-state-danger);
   border-radius: 4px;
   cursor: pointer;
   color: #ff4d4f;
@@ -1626,7 +1710,7 @@ html, body, #root {
 }
 
 .btn-shell-remove:hover:not(:disabled) {
-  background: #fff1f0;
+  background: var(--bg-state-danger-hover);
   border-color: #ff4d4f;
 }
 
@@ -1705,8 +1789,8 @@ html, body, #root {
 .shell-add-error {
   font-size: 12px;
   color: #ff4d4f;
-  background: #fff1f0;
-  border: 1px solid #ffccc7;
+  background: var(--bg-state-danger-hover);
+  border: 1px solid var(--border-state-danger);
   border-radius: 6px;
   padding: 6px 10px;
   margin-top: 2px;
@@ -1719,8 +1803,8 @@ html, body, #root {
   gap: 2px;
   padding: 8px 10px;
   margin-bottom: 8px;
-  background: #fffbe6;
-  border: 1px dashed #ffe58f;
+  background: var(--bg-state-warning);
+  border: 1px dashed var(--border-state-warning);
   border-radius: 6px;
 }
 .shell-no-shell-label {
@@ -1729,7 +1813,7 @@ html, body, #root {
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #614700;
+  color: var(--text-state-warning-deep);
   cursor: pointer;
 }
 .shell-no-shell-label input {
@@ -1739,18 +1823,28 @@ html, body, #root {
 }
 .shell-no-shell-hint {
   font-size: 11px;
-  color: #ad8b00;
+  color: var(--text-state-warning);
   padding-left: 21px;
 }
 /* 无 Shell 模式开启时的提示条 */
 .shell-mode-note {
   display: block;
   font-size: 12px;
-  color: #d4380d;
-  background: #fff2e8;
-  border: 1px solid #ffbb96;
+  color: var(--text-state-danger-deep);
+  background: var(--bg-state-danger);
+  border: 1px solid var(--border-state-warning-deep);
   border-radius: 6px;
   padding: 8px 10px;
+}
+
+/* 顶部无可用 Shell 提示横幅 */
+.no-shell-banner {
+  background: var(--bg-state-warning);
+  color: var(--text-state-warning-deep);
+  border-bottom: 1px solid var(--border-state-warning);
+  padding: 10px 18px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .update-error-text {

@@ -1303,16 +1303,7 @@ function App() {
           <>Please install bash, then restart the app.</>
         );
         return (
-          <div
-            style={{
-              background: '#fff3cd',
-              color: '#7a5b00',
-              borderBottom: '1px solid #ffe69c',
-              padding: '10px 18px',
-              fontSize: '13px',
-              lineHeight: 1.5
-            }}
-          >
+          <div className="no-shell-banner">
             ⚠️ {title}: script execution is unavailable. {hint}
           </div>
         );
