@@ -121,3 +121,14 @@ Windows 上应用会自动识别 **Git Bash / WSL** 作为执行环境，无需�
 
 **Q：数据存在哪？**
 脚本内容保存在应用数据目录下（开发模式在 `server/scripts.json`），卸载应用前请按需备份。
+
+**Q：用脚本 SSH 连远程服务器，第一次执行卡住或报 host key 错误？**
+首次 SSH 连接一台新主机时，SSH 会交互式询问「是否信任该主机并把指纹加入 known_hosts（yes/no）」，而应用内的脚本执行是**非交互式**的，无法回答这个提问，于是会卡住或失败。
+请**先在系统自带的终端（macOS/Linux 的 Terminal、Windows 的 Git Bash / WSL）里手动连一次该主机**，例如：
+
+```bash
+ssh user@your-server-ip
+```
+
+按提示输入 `yes` 把主机指纹加入 `~/.ssh/known_hosts` 后，再回到本工具执行 SSH 脚本即可正常连接，不再需要交互确认。
+（同理，若服务器重装过系统导致 fingerprint 变更，先 `ssh-keygen -R your-server-ip` 清掉旧记录，再手动连一次重新信任即可。）
