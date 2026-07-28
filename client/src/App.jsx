@@ -1309,8 +1309,6 @@ function App() {
         );
       })()}
       <header className="header">
-        <h1>Script Manager</h1>
-
         {/* 工具栏：按钮在左，检查更新 + App Info 图标在右 */}
         <div className="toolbar-row">
           <div className="toolbar-left">

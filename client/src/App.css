@@ -204,13 +204,6 @@ html, body, #root {
   padding-bottom: 8px;
 }
 
-.header h1 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0 0 6px 0;
-}
-
 /* ==================== 工具栏行：按钮在左，图标在右，全部对齐同一基线 ==================== */
 .toolbar-row {
   display: flex;
