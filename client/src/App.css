@@ -1,3 +1,58 @@
+/* ==================== 主题变量：默认浅色，支持 system / light / dark ==================== */
+:root {
+  color-scheme: light dark;
+  --bg: #f5f5f5;
+  --bg-subtle: #fafafa;
+  --bg-surface: #ffffff;
+  --bg-hover: #f0f0f0;
+  --border: #e8e8e8;
+  --border-strong: #d9d9d9;
+  --text: #333333;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f5f5;
+  --bg-subtle: #fafafa;
+  --bg-surface: #ffffff;
+  --bg-hover: #f0f0f0;
+  --border: #e8e8e8;
+  --border-strong: #d9d9d9;
+  --text: #333333;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #181818;
+  --bg-subtle: #1f1f1f;
+  --bg-surface: #242424;
+  --bg-hover: #2c2c2c;
+  --border: #333333;
+  --border-strong: #444444;
+  --text: #e8e8e8;
+  --text-secondary: #b0b0b0;
+  --text-muted: #888888;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+  --bg: #181818;
+  --bg-subtle: #1f1f1f;
+  --bg-surface: #242424;
+  --bg-hover: #2c2c2c;
+  --border: #333333;
+  --border-strong: #444444;
+  --text: #e8e8e8;
+  --text-secondary: #b0b0b0;
+  --text-muted: #888888;
+  }
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -6,7 +61,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background-color: #f5f5f5;
+  background-color: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -15,7 +70,7 @@ body {
 /* Firefox 滚动条（thin） */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d0d0d0 transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 /* ==================== 全局自定义滚动条（替代 Windows 默认宽滚动条） ==================== */
@@ -29,17 +84,17 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #d0d0d0;
+  background-color: var(--border-strong);
   border-radius: 3px;
   transition: background-color 0.2s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #b0b0b0;
+  background-color: var(--text-muted);
 }
 
 ::-webkit-scrollbar-thumb:active {
-  background-color: #909090;
+  background-color: var(--text-muted);
 }
 
 html, body, #root {
@@ -68,7 +123,7 @@ html, body, #root {
 .header h1 {
   font-size: 15px;
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   margin: 0 0 6px 0;
 }
 
@@ -170,12 +225,12 @@ html, body, #root {
 }
 
 .btn-cancel {
-  background-color: #f5f5f5;
-  color: #666;
+  background-color: var(--bg);
+  color: var(--text-secondary);
 }
 
 .btn-cancel:hover {
-  background-color: #e8e8e8;
+  background-color: var(--border);
 }
 
 .btn-locate {
@@ -191,30 +246,30 @@ html, body, #root {
 
 .btn-close {
   background-color: transparent;
-  color: #999;
+  color: var(--text-muted);
   padding: 2px 6px;
   font-size: 11px;
 }
 
 .btn-close:hover {
-  background-color: #f5f5f5;
+  background-color: var(--bg);
 }
 
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  background-color: white;
+  background-color: var(--bg-surface);
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .empty-state p {
-  color: #999;
+  color: var(--text-muted);
   font-size: 14px;
 }
 
 .scripts-container {
-  background-color: white;
+  background-color: var(--bg-surface);
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -238,14 +293,14 @@ html, body, #root {
 .scripts-table td {
   padding: 5px 8px;
   text-align: left;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--bg-subtle);
   word-wrap: break-word;
 }
 
 .scripts-table th {
-  background-color: #fafafa;
+  background-color: var(--bg-subtle);
   font-weight: 600;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -254,7 +309,7 @@ html, body, #root {
 }
 
 .scripts-table tbody tr:hover {
-  background-color: #fafafa;
+  background-color: var(--bg-subtle);
 }
 
 .scripts-table tbody tr.selected {
@@ -281,7 +336,7 @@ html, body, #root {
 }
 
 .drag-handle {
-  color: #bbb;
+  color: var(--border-strong);
   cursor: grab;
   font-size: 14px;
   letter-spacing: -1px;
@@ -289,7 +344,7 @@ html, body, #root {
 }
 
 .drag-handle:hover {
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .scripts-table tbody tr.dragging {
@@ -327,7 +382,7 @@ html, body, #root {
 
 .script-name {
   font-weight: 500;
-  color: #333;
+  color: var(--text);
   font-size: 13px;
 }
 
@@ -348,11 +403,11 @@ html, body, #root {
 .outputs-container h2 {
   font-size: 14px;
   margin-bottom: 8px;
-  color: #333;
+  color: var(--text);
 }
 
 .output-panel {
-  background-color: white;
+  background-color: var(--bg-surface);
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   margin-bottom: 8px;
@@ -365,13 +420,13 @@ html, body, #root {
   justify-content: space-between;
   align-items: center;
   padding: 6px 10px;
-  background-color: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  background-color: var(--bg-subtle);
+  border-bottom: 1px solid var(--bg-subtle);
 }
 
 .output-name {
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   font-size: 13px;
 }
 
@@ -411,14 +466,14 @@ html, body, #root {
 .output-section h3 {
   font-size: 11px;
   margin-bottom: 4px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .output-content {
   font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
   font-size: 11px;
   line-height: 1.4;
-  color: #333;
+  color: var(--text);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -437,7 +492,7 @@ html, body, #root {
 }
 
 .modal-content {
-  background-color: white;
+  background-color: var(--bg-surface);
   border-radius: 8px;
   width: 92%;
   max-width: 820px;
@@ -470,7 +525,7 @@ html, body, #root {
 .modal-content h2 {
   font-size: 16px;
   margin-bottom: 16px;
-  color: #333;
+  color: var(--text);
 }
 
 .form-group {
@@ -481,7 +536,7 @@ html, body, #root {
   display: block;
   margin-bottom: 4px;
   font-weight: 500;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
@@ -490,7 +545,7 @@ html, body, #root {
 .form-group select {
   width: 100%;
   padding: 8px;
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   font-size: 13px;
   font-family: inherit;
@@ -520,8 +575,8 @@ html, body, #root {
   padding: 2px 8px;
   border-radius: 10px;
   font-size: 11px;
-  background-color: #f0f0f0;
-  color: #666;
+  background-color: var(--bg-subtle);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -657,9 +712,9 @@ html, body, #root {
   width: 45%;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   overflow: hidden;
   min-height: 0;
 }
@@ -668,9 +723,9 @@ html, body, #root {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   min-height: 0;
 }
 
@@ -723,7 +778,7 @@ html, body, #root {
 .group-title {
   font-size: 12px;
   font-weight: 600;
-  color: #8c8c8c;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin: 0;
@@ -731,8 +786,8 @@ html, body, #root {
 
 .group-count {
   font-size: 11px;
-  color: #999;
-  background: #f0f0f0;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
   border-radius: 10px;
   padding: 1px 8px;
 }
@@ -752,7 +807,7 @@ html, body, #root {
   font-size: 14px;
   margin: 0;
   padding: 12px 12px 10px 12px;
-  color: #333;
+  color: var(--text);
 }
 
 .btn-close-all {
@@ -760,9 +815,9 @@ html, body, #root {
   padding: 3px 10px;
   margin-right: 12px;
   border-radius: 4px;
-  border: 1px solid #e0e0e0;
-  background: #fff;
-  color: #999;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
@@ -792,7 +847,7 @@ html, body, #root {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: #999;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -801,9 +856,9 @@ html, body, #root {
 }
 
 .right-panel .output-panel {
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 8px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid var(--border);
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   /* 每个输出窗口作为弹性项参与「平分容器空间」：
      flex:1 1 auto —— 空间足够时各窗口等长平分（单窗口则填满容器）；
@@ -824,8 +879,8 @@ html, body, #root {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--bg-subtle);
   border-radius: 8px 8px 0 0;
   flex-shrink: 0;  /* 表头固定，增长的空间全交给内容区 */
   /* 固定最小高度，避免点击执行时「Exit 徽标 ↔ 旋转图标」切换导致
@@ -885,7 +940,7 @@ html, body, #root {
 .right-panel .output-name {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -893,7 +948,7 @@ html, body, #root {
 
 .output-meta {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
   white-space: nowrap;
   flex-shrink: 0;
   margin-left: 4px;
@@ -911,7 +966,7 @@ html, body, #root {
 
 .output-section-label {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
   margin-bottom: 4px;
   font-weight: 500;
   text-transform: uppercase;
@@ -938,13 +993,13 @@ html, body, #root {
   overflow-x: hidden;
   /* 边框/底色移到滚动容器：无论内容是否滚动，四边（含底部横线）始终贴合窗口边缘，
      避免长内容滚动时底部横线随 <pre> 一起滚出视野 */
-  background: #fff;
-  border: 1px solid #e8e8e8;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 4px;
 }
 
 .right-panel .output-content {
-  background: #fff;
+  background: var(--bg-surface);
   /* 自身不再画边框/圆角，由外层 wrapper 负责方框；min-height:100% 让短内容也撑满整框 */
   min-height: 100%;
   padding: 8px 8px 8px 8px;
@@ -967,7 +1022,7 @@ html, body, #root {
 
 /* Shell Editor */
 .shell-editor-wrapper {
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -994,9 +1049,9 @@ html, body, #root {
   min-height: 40px;
   flex-shrink: 0;
   border-radius: 6px;
-  border: 1px solid #d9d9d9;
-  background: #fff;
-  color: #888;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1015,7 +1070,7 @@ html, body, #root {
 }
 
 .scroll-top-btn:hover {
-  background: #fafafa;
+  background: var(--bg-subtle);
   color: #1890ff;
   border-color: #1890ff;
   box-shadow: 0 2px 10px rgba(24, 144, 255, 0.25);
@@ -1030,7 +1085,7 @@ html, body, #root {
 .btn-maximize,
 .btn-stop {
   background-color: transparent;
-  color: #999;
+  color: var(--text-muted);
   padding: 2px 6px;
   font-size: 11px;
   cursor: pointer;
@@ -1043,7 +1098,7 @@ html, body, #root {
 
 .btn-rerun:hover:not(:disabled),
 .btn-maximize:hover {
-  background-color: #f5f5f5;
+  background-color: var(--bg);
   color: #1890ff;
 }
 
@@ -1066,7 +1121,7 @@ html, body, #root {
 /* 自动贴底开关：向下箭头标识「贴底」行为，开启时蓝色高亮，关闭时灰色 */
 .btn-autofollow {
   background-color: transparent;
-  color: #bbb;
+  color: var(--border-strong);
   padding: 2px 4px;
   font-size: 11px;
   cursor: pointer;
@@ -1082,7 +1137,7 @@ html, body, #root {
 }
 
 .btn-autofollow:hover {
-  background-color: #f5f5f5;
+  background-color: var(--bg);
 }
 
 .btn-autofollow svg {
@@ -1124,8 +1179,8 @@ html, body, #root {
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  background: #fafafa;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
   border-radius: 8px 8px 0 0;
   flex-shrink: 0;
 }
@@ -1147,7 +1202,7 @@ html, body, #root {
 .maximized-name {
   font-size: 14px;
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1173,13 +1228,13 @@ html, body, #root {
   font-family: 'Consolas', 'Monaco', 'Menlo', monospace;
   font-size: 13px;
   line-height: 1.55;
-  color: #333;
+  color: var(--text);
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
   padding: 12px;
-  background: #fff;
-  border: 1px solid #e8e8e8;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 4px;
   min-height: 100%;
 }
@@ -1251,7 +1306,7 @@ html, body, #root {
   gap: 4px;
   padding: 3px 8px;
   background: transparent;
-  color: #888;
+  color: var(--text-secondary);
   border: 1px solid transparent;
   border-radius: 5px;
   cursor: pointer;
@@ -1296,11 +1351,11 @@ html, body, #root {
 .update-body {
   margin: 12px 0;
   font-size: 14px;
-  color: #333;
+  color: var(--text);
 }
 
 .update-hint {
-  color: #888;
+  color: var(--text-secondary);
   font-size: 13px;
   margin-top: 4px;
 }
@@ -1308,8 +1363,8 @@ html, body, #root {
 .update-notes {
   max-height: 200px;
   overflow: auto;
-  background-color: #f5f5f5;
-  border: 1px solid #eee;
+  background-color: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px 10px;
   font-size: 12px;
@@ -1322,7 +1377,7 @@ html, body, #root {
 .update-notes .markdown-body {
   font-size: 12px;
   line-height: 1.6;
-  color: #333;
+  color: var(--text);
   background-color: transparent;
   padding: 0;
 }
@@ -1345,14 +1400,14 @@ html, body, #root {
 .update-notes ul, .update-notes ol,
 .update-notes .markdown-body ul, .update-notes .markdown-body ol { margin: 4px 0; padding-left: 18px; }
 .update-notes code, .update-notes .markdown-body code {
-  background: #ececec;
+  background: var(--border);
   border-radius: 3px;
   padding: 1px 4px;
   font-family: monospace;
   font-size: 11px;
 }
 .update-notes pre, .update-notes .markdown-body pre {
-  background: #ececec;
+  background: var(--border);
   border-radius: 4px;
   padding: 8px;
   overflow: auto;
@@ -1362,8 +1417,8 @@ html, body, #root {
 .update-notes blockquote, .update-notes .markdown-body blockquote {
   margin: 4px 0;
   padding-left: 8px;
-  border-left: 3px solid #d9d9d9;
-  color: #666;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
 }
 
 /* 更新日志中的链接：可点击、蓝色、悬停下划线 */
@@ -1403,13 +1458,13 @@ html, body, #root {
 
 .info-row label {
   font-size: 12px;
-  color: #666;
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
 .info-value {
   font-size: 14px;
-  color: #333;
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1418,7 +1473,7 @@ html, body, #root {
 
 .info-sub {
   font-size: 14px;
-  color: #888;
+  color: var(--text-secondary);
   font-family: inherit;
   margin-left: 2px;
 }
@@ -1427,8 +1482,8 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #f5f5f5;
-  border: 1px solid #eee;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 8px;
   font-size: 12px;
@@ -1438,7 +1493,7 @@ html, body, #root {
   flex: 1;
   min-width: 0;
   font-family: monospace;
-  color: #333;
+  color: var(--text);
   white-space: nowrap;
   overflow-x: auto;
 }
@@ -1446,24 +1501,24 @@ html, body, #root {
 .btn-copy {
   font-size: 11px;
   padding: 3px 8px;
-  background: #fff;
-  border: 1px solid #d9d9d9;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   cursor: pointer;
-  color: #333;
+  color: var(--text);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .btn-copy:hover {
-  background: #f5f5f5;
+  background: var(--bg);
   border-color: #1890ff;
   color: #1890ff;
 }
 
 .info-hint {
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
   margin-top: 8px;
 }
 
@@ -1483,8 +1538,8 @@ html, body, #root {
     "path   actions";
   align-items: center;
   gap: 2px 10px;
-  background: #fafafa;
-  border: 1px solid #eee;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
 }
@@ -1506,20 +1561,20 @@ html, body, #root {
 .shell-item-name {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   white-space: nowrap;
 }
 
 .shell-item-meta {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .shell-item-path {
   grid-area: path;
   font-family: monospace;
   font-size: 11px;
-  color: #888;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow-x: auto;
 }
@@ -1535,8 +1590,8 @@ html, body, #root {
 .btn-shell-switch {
   font-size: 11px;
   padding: 4px 12px;
-  background: #fff;
-  border: 1px solid #d9d9d9;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   cursor: pointer;
   color: #1890ff;
@@ -1561,7 +1616,7 @@ html, body, #root {
 .btn-shell-remove {
   font-size: 11px;
   padding: 4px 10px;
-  background: #fff;
+  background: var(--bg-surface);
   border: 1px solid #ffccc7;
   border-radius: 4px;
   cursor: pointer;
@@ -1593,10 +1648,10 @@ html, body, #root {
   font-family: 'Consolas', 'Monaco', 'Menlo', monospace;
   font-size: 12px;
   padding: 6px 10px;
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  color: #333;
-  background: #fff;
+  color: var(--text);
+  background: var(--bg-surface);
 }
 
 .shell-add-input:focus {
@@ -1608,18 +1663,18 @@ html, body, #root {
 .btn-shell-browse {
   font-size: 12px;
   padding: 6px 12px;
-  background: #fff;
-  border: 1px solid #d9d9d9;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   cursor: pointer;
-  color: #555;
+  color: var(--text);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .btn-shell-browse:hover:not(:disabled) {
-  background: #f5f5f5;
-  border-color: #bfbfbf;
+  background: var(--bg);
+  border-color: var(--text-muted);
 }
 
 .btn-shell-add {
@@ -1640,9 +1695,9 @@ html, body, #root {
 }
 
 .btn-shell-add:disabled {
-  background: #f5f5f5;
-  border-color: #d9d9d9;
-  color: #bbb;
+  background: var(--bg);
+  border-color: var(--border-strong);
+  color: var(--border-strong);
   cursor: default;
 }
 
@@ -1706,7 +1761,7 @@ html, body, #root {
 .update-progress-bar {
   width: 100%;
   height: 8px;
-  background-color: #f0f0f0;
+  background-color: var(--bg-subtle);
   border-radius: 4px;
   overflow: hidden;
   margin-top: 8px;

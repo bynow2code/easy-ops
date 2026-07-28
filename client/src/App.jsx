@@ -122,6 +122,19 @@ function App() {
   const [addShellError, setAddShellError] = useState('') // 添加失败提示（如「不是 bash，不能添加」）
   const [removingShellId, setRemovingShellId] = useState(null)
   const [noShellMode, setNoShellMode] = useState(false) // 🧪 无 Shell 模式（测试用，持久化）
+  // 界面主题：'system' | 'light' | 'dark'，默认跟随系统，持久化到 localStorage。
+  // 点击工具栏主题图标循环切换 system -> light -> dark -> system。
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('easyops-theme') || 'system' } catch { return 'system' }
+  })
+  const THEME_ORDER = ['system', 'light', 'dark']
+  const cycleTheme = () => {
+    setTheme(prev => {
+      const next = THEME_ORDER[(THEME_ORDER.indexOf(prev) + 1) % THEME_ORDER.length]
+      try { localStorage.setItem('easyops-theme', next) } catch {}
+      return next
+    })
+  }
   const [dragOverId, setDragOverId] = useState(null)
   const [draggingId, setDraggingId] = useState(null)
   const [activeDropGroup, setActiveDropGroup] = useState(null)
@@ -458,6 +471,11 @@ function App() {
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [showInfoModal])
+
+  // 将主题应用到 <html data-theme>，CSS 据此切换变量；'system' 由媒体查询自动跟随系统
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
 
   // 当执行触发时，将外层 Execution Outputs 容器滚动到顶部
   // useLayoutEffect 在 DOM 提交后、浏览器绘制前执行，避免竞态条件
@@ -1355,6 +1373,23 @@ function App() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
               {updateState === 'downloaded' && <span className="update-badge">!</span>}
             </button>
+            {/* 主题切换：system -> light -> dark 循环，图标随当前状态变化；放在 App Info 左侧 */}
+            <button
+              className="tool-icon-btn"
+              onClick={cycleTheme}
+              title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)} (click to switch)`}
+            >
+              {theme === 'light' ? (
+                // 太阳：浅色
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+              ) : theme === 'dark' ? (
+                // 月亮：深色
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+              ) : (
+                // 显示器/自动：跟随系统（半亮半暗）
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M12 3v11" strokeOpacity="0.5"/></svg>
+              )}
+            </button>
             <button
               className="tool-icon-btn"
               onClick={() => { setShowInfoModal(true); fetchShells(); }}
@@ -1720,7 +1755,7 @@ function App() {
         <div className="modal-overlay" onClick={() => setDeleteConfirmId(null)}>
           <div className="modal-content modal-confirm" onClick={e => e.stopPropagation()}>
             <h2>Confirm Deletion</h2>
-            <p style={{ marginBottom: 16, color: '#666' }}>
+            <p style={{ marginBottom: 16, color: 'var(--text-secondary)' }}>
               Are you sure you want to delete this script? This action cannot be undone.
             </p>
             <div className="form-actions">
@@ -1740,7 +1775,7 @@ function App() {
         <div className="modal-overlay" onClick={() => setDeleteConfirmBatch(false)}>
           <div className="modal-content modal-confirm" onClick={e => e.stopPropagation()}>
             <h2>Confirm Deletion</h2>
-            <p style={{ marginBottom: 16, color: '#666' }}>
+            <p style={{ marginBottom: 16, color: 'var(--text-secondary)' }}>
               {`Are you sure you want to delete the selected ${selectedIds.length} script(s)? This action cannot be undone.`}
             </p>
             <div className="form-actions">
