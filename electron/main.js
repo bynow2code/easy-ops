@@ -167,7 +167,7 @@ const createWindow = (port) => {
   mainWindow = new BrowserWindow({
     width: 1500,
     height: 950,
-    minWidth: 960,
+    minWidth: 1280,
     minHeight: 640,
     backgroundColor: '#f5f5f5',
     webPreferences: {
