@@ -1002,6 +1002,7 @@ html, body, #root {
   animation: traffic-yellow-flash 1s ease-in-out infinite;
   z-index: 2;
   transform-origin: center;
+  will-change: transform, box-shadow;
 }
 
 @keyframes traffic-yellow-flash {
@@ -1026,6 +1027,8 @@ html, body, #root {
   border-radius: 6px;
   position: relative;
   z-index: 1;
+  /* 提升为独立合成层，避免每帧重绘整块面板（含大量文字）拖累流式输出时的流畅度 */
+  will-change: box-shadow, background-color;
 }
 
 @keyframes panel-locate-flash {

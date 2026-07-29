@@ -160,6 +160,13 @@ function App() {
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
   // 当前被「定位」的脚本 id：点击 Locate 时让对应输出面板强高亮（徽标黄色脉冲 + 面板黄色描边），作为显眼提示
   const [locatingId, setLocatingId] = useState(null)
+  // 定位特效定时器：用 ref 持有，保证每次点击都「重置并重新开始」3s 计时，
+  // 避免连续点击时旧定时器提前清空 locatingId（特效异常短），也避免定时器泄漏
+  const locateTimerRef = useRef(null)
+  // 组件卸载时清理定位定时器，避免对已卸载组件 setState
+  useEffect(() => () => {
+    if (locateTimerRef.current) clearTimeout(locateTimerRef.current)
+  }, [])
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
   // 小输出面板「自动贴底」开关状态：{ [scriptId]: boolean }，缺省（undefined）视为 true（默认自动贴底）
@@ -740,11 +747,24 @@ function App() {
     const panel = outputPanelRefs.current[id]
     if (!panel) return
 
-    panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    // 定位时让对应输出面板强高亮（徽标黄色脉冲 + 整块面板黄色描边），约 3s 后自动停止
+    // 仅当面板不在视口内时才滚动；已在视口内则跳过，避免连续点击反复触发平滑滚动
+    // 动画造成卡顿（每一次点击都会重启一次 smooth 滚动）
+    const rect = panel.getBoundingClientRect()
+    const vh = window.innerHeight || document.documentElement.clientHeight
+    const inView = rect.top >= 0 && rect.bottom <= vh
+    if (!inView) {
+      // 脚本仍在实时输出时，布局高度不断变化，smooth 滚动目标会反复漂移导致卡顿，
+      // 此时改用瞬时滚动，避免与流式内容更新打架
+      const live = outputs[id] && outputs[id].live
+      panel.scrollIntoView({ behavior: live ? 'auto' : 'smooth', block: 'start' })
+    }
+
+    // 触发强高亮特效，并保证每次点击都从本次重新开始计时（3s 后自动停止）
     setLocatingId(id)
-    setTimeout(() => {
+    if (locateTimerRef.current) clearTimeout(locateTimerRef.current)
+    locateTimerRef.current = setTimeout(() => {
       setLocatingId(prev => (prev === id ? null : prev))
+      locateTimerRef.current = null
     }, 3000)
   }
 
