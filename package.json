@@ -2,6 +2,7 @@
   "name": "easyops",
   "version": "1.0.0",
   "description": "EasyOps - Script Manager Desktop App",
+  "license": "MIT",
   "main": "electron/main.js",
   "repository": {
     "type": "git",

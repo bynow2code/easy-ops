@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="README.md">简体中文</a> · <a href="README_EN.md">English</a>
+</p>
+
 # EasyOps 脚本管家
 
 > 一个帮你**集中管理、随手执行 Shell 脚本**的桌面小工具。把零散的运维/开发脚本收进一个窗口，分类、编辑、一键运行、实时看日志，不用再开着终端敲命令。
@@ -153,3 +157,9 @@ ssh user@your-server-ip
 
 按提示输入 `yes` 把主机指纹加入 `~/.ssh/known_hosts` 后，再回到本工具执行 SSH 脚本即可正常连接，不再需要交互确认。
 （同理，若服务器重装过系统导致 fingerprint 变更，先 `ssh-keygen -R your-server-ip` 清掉旧记录，再手动连一次重新信任即可。）
+
+---
+
+## 许可证
+
+本项目基于 [MIT 许可证](LICENSE) 开源。
