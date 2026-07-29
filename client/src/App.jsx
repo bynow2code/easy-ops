@@ -135,7 +135,7 @@ function App() {
   const cycleTheme = () => {
     setTheme(prev => {
       const next = THEME_ORDER[(THEME_ORDER.indexOf(prev) + 1) % THEME_ORDER.length]
-      try { localStorage.setItem('easyops-theme', next) } catch {}
+      try { localStorage.setItem('easyops-theme', next) } catch { /* 存储不可用时忽略，不影响主题切换 */ }
       return next
     })
   }
@@ -158,7 +158,7 @@ function App() {
   const closedBatchIds = useRef(new Set())
   // 用于在执行时触发外层容器滚动到顶部（通过 useLayoutEffect 确保 DOM 提交后再滚动）
   const [scrollToTopKey, setScrollToTopKey] = useState(0)
-  // 当前被「定位」的脚本 id：点击 Locate 时让对应输出面板的 BE/FE 徽标绿色闪烁，作为显眼提示
+  // 当前被「定位」的脚本 id：点击 Locate 时让对应输出面板强高亮（徽标黄色脉冲 + 面板黄色描边），作为显眼提示
   const [locatingId, setLocatingId] = useState(null)
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
@@ -324,6 +324,9 @@ function App() {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => {
       clearInterval(timer)
+      // 故意读取 cleanup 时刻的最新 ref：组件生命周期内新建的 EventSource 都要在卸载时关闭，
+      // 若改成 effect  setup 时捕获的局部变量反而会漏掉后续新建的连接。
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       Object.values(eventSourceRefs.current).forEach(es => es.close())
     }
   }, [])
@@ -431,7 +434,7 @@ function App() {
       followObserver.current?.unobserve(prevMaximizedContentRef.current)
     }
     prevMaximizedContentRef.current = maximizedContentRef.current
-  }, [outputs, maximizedScriptId, ensureObserver])
+  }, [outputs, maximizedScriptId, ensureObserver, pinToBottom])
 
   // 监听 ESC 键关闭最大化窗口
   useEffect(() => {
@@ -713,7 +716,7 @@ function App() {
     if (!panel) return
 
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    // 定位时让对应输出面板的 BE/FE 徽标绿色闪烁（与运行时一致），约 3s 后自动停止
+    // 定位时让对应输出面板强高亮（徽标黄色脉冲 + 整块面板黄色描边），约 3s 后自动停止
     setLocatingId(id)
     setTimeout(() => {
       setLocatingId(prev => (prev === id ? null : prev))
@@ -1592,7 +1595,7 @@ function App() {
                 const output = outputs[script.id]
                 const isRunning = executingIds[script.id] || batchRunningIds[script.id]
                 return (
-                  <div key={script.id} className="output-panel" ref={el => { outputPanelRefs.current[script.id] = el }}>
+                  <div key={script.id} className={`output-panel ${locatingId === script.id ? 'locating' : ''}`} ref={el => { outputPanelRefs.current[script.id] = el }}>
                     <div className="output-header">
                       <div className="output-header-left">
                         <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${locatingId === script.id ? 'running' : ''}`}>
@@ -2170,7 +2173,7 @@ function App() {
         if (!script || !output) return null
         return (
           <div className="modal-overlay" onClick={() => setMaximizedScriptId(null)}>
-            <div className="modal-content modal-maximized" onClick={e => e.stopPropagation()}>
+            <div className={`modal-content modal-maximized ${locatingId === maximizedScriptId ? 'locating' : ''}`} onClick={e => e.stopPropagation()}>
               <div className="maximized-header">
                 <div className="maximized-header-left">
                   <span className={`group-badge ${script.group === 'frontend' ? 'frontend' : ''} ${locatingId === script.id ? 'running' : ''}`}>
