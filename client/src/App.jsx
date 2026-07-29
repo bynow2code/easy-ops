@@ -158,12 +158,29 @@ function App() {
   const [locatingId, setLocatingId] = useState(null)
   // 每秒更新，用于刷新「多久前」显示
   const [now, setNow] = useState(Date.now())
-  // 每个输出面板「自动贴底」开关状态：{ [scriptId]: boolean }，缺省（undefined）视为 true（默认自动贴底）
+  // 小输出面板「自动贴底」开关状态：{ [scriptId]: boolean }，缺省（undefined）视为 true（默认自动贴底）
   const [autoFollowMap, setAutoFollowMap] = useState({})
   const autoFollowRef = useRef(autoFollowMap)
   autoFollowRef.current = autoFollowMap
+  // 放大窗「自动贴底」开关状态：与大窗相互独立，避免二者互相污染
+  // （同一脚本同时拥有小窗与大窗两个滚动容器，若共用一个按 id 的开关，
+  //  在放大窗里开关贴底 / 上滑会自动关掉，关闭放大窗后小窗也被改掉）。
+  const [maxAutoFollowMap, setMaxAutoFollowMap] = useState({})
+  const maxAutoFollowRef = useRef(maxAutoFollowMap)
+  maxAutoFollowRef.current = maxAutoFollowMap
   // 缺省（未设置）视为开启自动贴底
   const isAutoFollow = (id) => autoFollowRef.current[id] !== false
+  const isMaxAutoFollow = (id) => maxAutoFollowRef.current[id] !== false
+  // 判断滚动容器属于哪个窗口，从而读取对应的贴底开关
+  const isMaxEl = (el) => el === maximizedOutputRef.current
+  const followRefFor = (el) => (isMaxEl(el) ? maxAutoFollowRef : autoFollowRef)
+  // 该容器是否「已关闭自动贴底」
+  const followOff = (el, id) => followRefFor(el).current[id] === false
+  // 按容器归属写入对应的贴底开关
+  const setFollowForEl = (el, id, value) => {
+    if (isMaxEl(el)) setMaxAutoFollowMap(prev => ({ ...prev, [id]: value }))
+    else setAutoFollowMap(prev => ({ ...prev, [id]: value }))
+  }
 
   // ==================== 自动跟随：ResizeObserver ====================
   // 规则：正在运行（live）的脚本始终贴底；其它状态（已完成等）在重排/重渲染时
@@ -185,7 +202,7 @@ function App() {
   const pinToBottom = useCallback((el, id) => {
     if (!el || !el.isConnected) return
     const doPin = () => {
-      if (id != null && autoFollowRef.current[id] === false) return
+      if (id != null && followOff(el, id)) return
       if (el.isConnected) {
         el.scrollTop = el.scrollHeight
         lastScrollTop.current.set(el, el.scrollTop)
@@ -218,8 +235,8 @@ function App() {
           // 需贴底的是当前可见的那个（放大窗打开时优先放大窗）。
           const isMax = maximizedScriptIdRef.current === id
           const el = (isMax && maximizedOutputRef.current) ? maximizedOutputRef.current : outputRefs.current[id]
-          // 正在运行且自动贴底开启：始终贴底（小窗/放大窗统一）
-          if (out && out.live && autoFollowRef.current[id] !== false && el && el.isConnected) {
+          // 正在运行且自动贴底开启：始终贴底（小窗/放大窗各自按自身开关判断）
+          if (out && out.live && !followOff(el, id) && el && el.isConnected) {
             pinToBottom(el, id)
           }
         })
@@ -372,9 +389,13 @@ function App() {
     return unsub
   }, [])
 
-  // 记录每个输出容器当前的滚动位置，重排/重渲染后用于还原（仅对「非运行」状态有意义），
+  // 记录每个「滚动容器元素」当前的滚动位置，重排/重渲染后用于还原（仅对「非运行」状态有意义），
   // 避免滚动条被重置到起始位置。运行中的面板由 pinToBottom 始终贴底，无需记录。
-  const scrollPositions = useRef({})
+  // 注意：必须按「容器元素」(WeakMap) 记录，而非按 script id。
+  // 同一脚本同时拥有「小窗」与「放大窗」两个滚动容器，二者共用一个 id；
+  // 若按 id 记录，放大窗里滚动到的位置会覆盖小窗的记录，关闭放大窗时小窗会被
+  // 还原到放大窗的位置（表现为「原窗口滚动条被挪到 1/2 等位置」）。
+  const scrollPositions = useRef(new WeakMap())
 
   // 监听用户滚动事件（依据滚动方向精确区分「用户上滑」与「程序自动贴底」）：
   //  - 记录当前滚动位置，供重排/重渲染后还原；
@@ -386,14 +407,14 @@ function App() {
     const curr = el.scrollTop
     const prev = lastScrollTop.current.has(el) ? lastScrollTop.current.get(el) : curr
     lastScrollTop.current.set(el, curr)
-    scrollPositions.current[id] = curr
+    scrollPositions.current.set(el, curr)
     const isAtBottom = el.scrollHeight - curr - el.clientHeight < 20
     if (isAtBottom) {
-      // 回到底部：恢复自动贴底
-      if (autoFollowRef.current[id] === false) setAutoFollowMap(prev => ({ ...prev, [id]: true }))
+      // 回到底部：恢复自动贴底（仅影响当前滚动容器所属窗口的开关）
+      if (followRefFor(el).current[id] === false) setFollowForEl(el, id, true)
     } else if (curr < prev - 2) {
       // 明显向上滑动（留 2px 容差抵消抖动）→ 用户想查看历史输出，关闭自动贴底
-      if (autoFollowRef.current[id] !== false) setAutoFollowMap(prev => ({ ...prev, [id]: false }))
+      if (followRefFor(el).current[id] !== false) setFollowForEl(el, id, false)
     }
   }, [])
 
@@ -404,11 +425,11 @@ function App() {
   useLayoutEffect(() => {
     const restore = (id, el) => {
       const out = outputs[id]
-      if (out && out.live && autoFollowRef.current[id] !== false) {
+      if (out && out.live && !followOff(el, id)) {
         pinToBottom(el, id)
       } else {
         // 非运行中，或运行中但已关闭自动贴底：还原之前位置
-        const saved = scrollPositions.current[id]
+        const saved = scrollPositions.current.get(el)
         if (typeof saved === 'number') el.scrollTop = saved
       }
     }
@@ -419,6 +440,10 @@ function App() {
     // 放大窗：立即贴底，并让 ResizeObserver 跟踪正确的内容元素
     if (maximizedScriptId && maximizedOutputRef.current && maximizedContentRef.current) {
       restore(maximizedScriptId, maximizedOutputRef.current)
+      // 继承「小窗」当前滚动位置：点开放大窗时停在同一处（继续阅读），
+      // 且互不污染——小窗各自记录自己的位置（见 scrollPositions 的 WeakMap 设计）。
+      const smallEl = outputRefs.current[maximizedScriptId]
+      if (smallEl) maximizedOutputRef.current.scrollTop = smallEl.scrollTop
       contentToId.current.set(maximizedContentRef.current, maximizedScriptId)
       ensureObserver().observe(maximizedContentRef.current)
     }
@@ -958,6 +983,7 @@ function App() {
     // 若窗口已存在（用户可能手动关过自动贴底），则保留用户当前设置，不在每次执行时强制重新开启
     if (!hadOutput) {
       setAutoFollowMap(prev => ({ ...prev, [id]: true }))
+      setMaxAutoFollowMap(prev => ({ ...prev, [id]: true }))
     }
 
     // 触发外层 Execution Outputs 容器滚动到顶部
@@ -1080,6 +1106,11 @@ function App() {
     // 仅当某输出窗口是「首次出现」时才把它重置为自动贴底开启；
     // 已存在的窗口（用户可能手动关过自动贴底）保留当前设置，不在每次批量执行时强制重新开启
     setAutoFollowMap(prev => {
+      const next = { ...prev }
+      batchIds.forEach(id => { if (!outputs[id]) next[id] = true })
+      return next
+    })
+    setMaxAutoFollowMap(prev => {
       const next = { ...prev }
       batchIds.forEach(id => { if (!outputs[id]) next[id] = true })
       return next
@@ -1654,7 +1685,11 @@ function App() {
                           )}
                         </button>
                         <button
-                          onClick={() => setMaximizedScriptId(script.id)}
+                          onClick={() => {
+                            setMaximizedScriptId(script.id)
+                            // 大窗贴底开关从「小窗当前状态」继承，二者之后相互独立
+                            setMaxAutoFollowMap(prev => ({ ...prev, [script.id]: autoFollowRef.current[script.id] }))
+                          }}
                           className="btn btn-maximize"
                           title="Maximize output"
                         >
@@ -2174,20 +2209,20 @@ function App() {
                     </span>
                   )}
                   <button
-                    className={`btn-autofollow ${isAutoFollow(maximizedScriptId) ? 'on' : 'off'}`}
-                    title={isAutoFollow(maximizedScriptId) ? 'Auto-scroll: On (click to disable)' : 'Auto-scroll: Off (click to enable)'}
+                    className={`btn-autofollow ${isMaxAutoFollow(maximizedScriptId) ? 'on' : 'off'}`}
+                    title={isMaxAutoFollow(maximizedScriptId) ? 'Auto-scroll: On (click to disable)' : 'Auto-scroll: Off (click to enable)'}
                     onClick={() => {
-                      const next = !isAutoFollow(maximizedScriptId)
-                      setAutoFollowMap(prev => ({ ...prev, [maximizedScriptId]: next }))
+                      const next = !isMaxAutoFollow(maximizedScriptId)
+                      setMaxAutoFollowMap(prev => ({ ...prev, [maximizedScriptId]: next }))
                       if (next) {
                         // 同步更新 ref，避免 pinToBottom 的 autoFollow 检查读到旧值而跳过贴底
-                        autoFollowRef.current = { ...autoFollowRef.current, [maximizedScriptId]: true }
+                        maxAutoFollowRef.current = { ...maxAutoFollowRef.current, [maximizedScriptId]: true }
                         const el = maximizedOutputRef.current
                         if (el) pinToBottom(el, maximizedScriptId)
                       }
                     }}
                   >
-                    <AutoFollowIcon on={isAutoFollow(maximizedScriptId)} />
+                    <AutoFollowIcon on={isMaxAutoFollow(maximizedScriptId)} />
                   </button>
                   <button
                     onClick={() => output.live
