@@ -1556,6 +1556,17 @@ html, body, #root {
   margin-left: 2px;
 }
 
+/* App Info 里的仓库链接：外观像可点击链接，且可在长 URL 处换行避免撑破布局 */
+.info-link {
+  color: var(--accent, #4f8cff);
+  text-decoration: none;
+  word-break: break-all;
+  cursor: pointer;
+}
+.info-link:hover {
+  text-decoration: underline;
+}
+
 .info-path {
   display: flex;
   align-items: center;

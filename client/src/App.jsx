@@ -28,6 +28,10 @@ const normalizeReleaseNotes = (notes) => {
 // 与终端书写一致，避免长路径在含空格处被换行割裂，也方便直接复制到 shell 使用。
 const escapePathForShell = (p) => (p || '').replace(/ /g, '\\ ');
 
+// 项目仓库主页。App Info 里展示的 GitHub 链接就指向这里，
+// 点击后用系统默认浏览器新开标签页打开（走 electronAPI.openExternal）。
+const GITHUB_REPO_URL = 'https://github.com/bynow2code/easy-ops';
+
 // 校验导入的脚本配置 JSON。支持两种形态：
 //   1) 裸数组：[ { name, content, ... }, ... ]
 //   2) 包裹对象：{ type, version, scripts: [ ... ] }
@@ -1847,6 +1851,28 @@ function App() {
               <div className="info-row">
                 <label>Version</label>
                 <div className="info-value">v{appVersion}</div>
+              </div>
+              <div className="info-row">
+                <label>GitHub</label>
+                <div className="info-value">
+                  <a
+                    className="info-link"
+                    href={GITHUB_REPO_URL}
+                    // 在 Electron 里用 target="_blank" 会套壳开新窗口，
+                    // 改为拦截默认行为，走主进程的 shell.openExternal 用系统默认浏览器打开；
+                    // 非 Electron 环境（纯网页调试）则回退到 window.open 新标签页。
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (window.electronAPI?.openExternal) {
+                        window.electronAPI.openExternal(GITHUB_REPO_URL);
+                      } else {
+                        window.open(GITHUB_REPO_URL, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
+                  >
+                    {GITHUB_REPO_URL}
+                  </a>
+                </div>
               </div>
               {systemInfo && (
                 <>

@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 渲染进程据此把路径填入「添加自定义 bash 路径」输入框，再走后端校验流程。
   openExecutableDialog: () => ipcRenderer.invoke('dialog:open-executable'),
 
+  // 用系统默认浏览器打开外部链接（仓库主页、文档等）。
+  // 只允许 http/https，走主进程的 shell.openExternal，避免 App 内套壳打开网页。
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // 通过 IPC 调用主进程的原生通知
   showNotification: (title, body, single) => {
     ipcRenderer.send('show-notification', { title, body, single });

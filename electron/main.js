@@ -265,6 +265,21 @@ ipcMain.handle('get-app-info', () => {
   };
 });
 
+// ==================== 用系统默认浏览器打开外部链接 ====================
+// 渲染进程里凡是跳转到仓库主页、文档等外部 URL，都应走这里，
+// 由 Electron 的 shell.openExternal 交给系统默认浏览器打开，
+// 而不是在 App 内新开一个 BrowserWindow（那样会变成套壳网页，且可能加载失败）。
+ipcMain.handle('open-external', (_event, url) => {
+  // 只允许 http/https，避免被传入 file://、javascript: 等危险协议
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
+  try {
+    shell.openExternal(url);
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
+
 // ==================== 原生文件选择对话框（选 bash 可执行文件） ====================
 // 仅当窗口存在时才弹窗；用户取消返回 { canceled:true }。
 // 过滤器：Windows 上默认只看 .exe（bash 在 Win 上都是 *.exe）；
