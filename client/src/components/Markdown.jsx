@@ -19,19 +19,24 @@ export default function Markdown({ content, className, maxLength }) {
   }
 
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw, rehypeSanitize]}
-      // github-markdown-css 要求外层容器带 markdown-body 类
-      className={`markdown-body ${className || ''}`}
-      components={{
-        // 链接在新标签页打开，且保留 GitHub release 里原始链接的行为
-        a: ({ ...props }) => (
-          <a {...props} target="_blank" rel="noopener noreferrer" />
-        ),
-      }}
-    >
-      {text}
-    </ReactMarkdown>
+    // github-markdown-css 要求外层容器带 markdown-body 类。
+    // 注意：react-markdown v9+ 已移除 <ReactMarkdown> 的 className prop，
+    // 直接传 className 会被忽略，必须用外层 div 包裹才能套上样式。
+    <div className={`markdown-body ${className || ''}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw, rehypeSanitize]}
+        components={{
+          // 链接在新标签页打开，且保留 GitHub release 里原始链接的行为
+          // 解构掉 node：react-markdown 会把 hast 节点作为 node 传入，
+          // 直接 {...props} 展开到 <a> 会触发 React 的 unknown prop 警告。
+          a: ({ node, ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" />
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
   )
 }
