@@ -69,7 +69,7 @@
         "nsis",
         "zip"
       ],
-      "icon": "client/public/logo-win.png",
+      "icon": "client/public/logo.ico",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
