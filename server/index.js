@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn, execSync, execFileSync } = require('child_process');
 
 const app = express();
-const DEFAULT_PORT = 3001;
+const DEFAULT_PORT = 3001; // 仅作 serverPort 的初始占位值；真实端口由 OS 分配（见 startServer 的 PORT=0 策略），实际从不监听 3001
 // ⚠️ 不能写 __dirname（打包后在 Program Files\...\resources\server 下，普通用户无写权限会直接崩）
 // 改为写到系统临时目录，跨平台可写。
 // 该文件仅本应用读取，内容为【本后端】实际监听端口；启动时先清空，避免读到上一次运行的旧端口。
@@ -14,7 +14,8 @@ const PORT_FILE = path.join(require('os').tmpdir(), 'easyops-port.txt');
 // 实际监听的端口，供 /api/system-info 暴露给前端（启动后填充）
 let serverPort = DEFAULT_PORT;
 
-// 决定脚本数据文件存储位置：Electron 打包后使用用户数据目录，避免写入只读安装目录
+// 决定脚本数据文件存储位置：优先使用 SCRIPT_DATA_DIR（Electron 下由主进程指向 userData 用户数据目录，可读写）；
+// 仅当该变量未设置（如本地独立运行 server）时才回退到 __dirname —— 此时仅适用于开发环境，安装目录只读时不适用。
 const resolveDataFile = () => {
   const dataDir = process.env.SCRIPT_DATA_DIR;
   if (dataDir) {
@@ -353,8 +354,8 @@ let shellConfig = loadShellConfig();
 // 自定义路径每次调用都重新校验（buildCustomShell 内部跑 --version），
 // 失效或已不是 bash 的自动丢弃，避免列表里出现不可用项。
 const buildDetectedShells = () => {
-  // 🧪 无 Shell 模式（测试用，持久化在 shell-config.json.noShellMode）：
-  // 直接返回空，模拟「本机探测不到任何 bash 解释器」，用于验证无 Shell 时的启动与执行行为。
+  // 无 Shell 模式（持久化在 shell-config.json.noShellMode，可在 App Info 中手动开关）：
+  // 开启后直接返回空列表，模拟「本机探测不到任何 bash 解释器」的环境。
   if (shellConfig.noShellMode) return [];
 
   let auto = [];
@@ -582,7 +583,7 @@ const shellsResponse = () => ({
     version: shell.version,
   },
   selectedId: shellConfig.selectedId || null,
-  // 🧪 无 Shell 模式（测试用，持久化在 shell-config.json.noShellMode）
+  // 无 Shell 模式（持久化在 shell-config.json.noShellMode，可在 App Info 中手动开关）
   noShellMode: !!shellConfig.noShellMode,
 });
 
@@ -639,8 +640,8 @@ app.post('/api/shells/remove', (req, res) => {
   res.json(shellsResponse());
 });
 
-// 🧪 无 Shell 模式开关（测试用，持久化）：开启后模拟「本机没有任何 bash 解释器」，
-// 用于验证无 Shell 时程序的启动与执行行为；关闭则恢复真实探测。
+// 无 Shell 模式开关（持久化于 shell-config.json.noShellMode，可在 App Info 中手动开关）：
+// 开启后模拟「本机没有任何 bash 解释器」，关闭则恢复真实探测（用户可在无 Shell 机器上借此验证启动/执行行为）。
 app.post('/api/shells/no-shell-mode', (req, res) => {
   const enabled = !!(req.body && req.body.enabled);
   shellConfig = { ...shellConfig, noShellMode: enabled };

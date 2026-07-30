@@ -314,9 +314,9 @@ function App() {
 
   // ==================== 系统通知 ====================
 
-  // 请求通知权限（Electron 内 Web Notification API 对应系统原生通知）
   // 发送脚本执行完成的系统通知
-  // Electron 环境走原生 Notification API（preload 注入），浏览器环境降级为 Web Notification
+  // Electron 环境走主进程注入的原生 Notification API（无需网页权限）；
+  // 浏览器环境降级为 Web Notification（依赖此前已授予的通知权限，本函数不主动调用 requestPermission）。
   const sendCompletionNotification = (scriptName, exitCode, durationMs, remaining) => {
     let durStr = ''
     if (durationMs != null) {
