@@ -997,6 +997,80 @@ html, body, #root {
   color: var(--text-state-warning);
 }
 
+/* 脚本列表中「单独指定了 Shell」的标记：内敛小标签，像行内备注而非告警 */
+/* 脚本名 + 单独 Shell 标记 同行排列，避免标记另起一行浪费纵向空间 */
+.script-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 脚本名容器：相对定位，供右上角小圆点（单独 Shell 标记）定位 */
+.script-name-wrap {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+}
+
+/* 列表「单独指定了 Shell」的标记：脚本名右上角一个黄色小圆点（类似通知红点，但保持黄色）。
+   极简、不占空间；鼠标悬停脚本名时（data-tip）在下方弹出解释器名称。 */
+/* 列表「单独指定了 Shell」的标记：脚本名右侧一个金黄小圆点，与脚本名垂直居中（落在行的中间），
+   极简不抢眼；鼠标悬停脚本名时在上方弹出解释器名称气泡。 */
+.shell-override-dot {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #e6a700;
+  box-shadow: 0 0 0 1.2px var(--bg);
+  cursor: help;
+}
+
+/* 单独指定 Shell 的脚本：悬停脚本名时在「正上方」弹出解释器名称气泡（自定义 tooltip）。
+   颜色用 CSS 变量，自动跟随浅色/深色主题切换。::before 是小三角（向下指），::after 是气泡本体。 */
+.script-name-wrap[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+  border-radius: 4px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  pointer-events: none;
+}
+.script-name-wrap[data-tip]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 7px;
+  margin-bottom: -1px;
+  border: 4px solid transparent;
+  border-top-color: var(--bg);
+  z-index: 101;
+  pointer-events: none;
+}
+
+/* 表单内「Shell Interpreter」下拉下方的辅助说明文字 */
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted, #888);
+}
+
 /* 定位窗口：BE/FE 徽标强提醒——鲜金→亮金黄脉冲 + 放大 + 强金色光晕，3s 后随 locatingId 清空自动停止 */
 .group-badge.running {
   animation: traffic-yellow-flash 1s ease-in-out infinite;

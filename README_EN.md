@@ -29,6 +29,7 @@ In short, it's a **launcher + manager for your scripts**, turning repetitive com
 |---------|-------------|
 | 📁 **Script Management** | Create, edit, and delete Shell scripts; content is saved as you go |
 | 🗂️ **Group Management** | Supports groups like Backend / Frontend; drag to switch a script's group |
+| 🖥️ **Per-script Shell** | Each script can pick its own Shell interpreter from the global shell list when editing; if left unset it follows the global config. A small **yellow dot** at the top-right corner of a script's name (like a notification badge, but yellow) means it overrides the global shell. |
 | ↕️ **Drag & Drop Sorting** | Reorder scripts by dragging; cross-group dragging is supported |
 | ⚡ **Real-time Streaming Execution** | Built on SSE, script output scrolls in real time just like a terminal |
 | 🔁 **Batch Execution** | Select multiple scripts and run them with one click; scripts run concurrently |
@@ -58,7 +59,7 @@ In short, it's a **launcher + manager for your scripts**, turning repetitive com
 
 1. Click **New Script** (or a similar entry).
 2. Give the script a name, e.g. "Start Backend Service".
-3. Choose a group (Backend / Frontend).
+3. Choose a group (Backend / Frontend). To run this script with a specific Shell interpreter instead of the global one, pick it from the **Shell Interpreter** dropdown; leaving it empty follows the global shell config.
 4. Write your Shell commands in the editor, for example:
 
    ```bash
@@ -85,6 +86,7 @@ On the right side of the toolbar, to the left of the "Check for Updates" (↻) b
 - **Import (↑)**: Pick a local `.json` file to **fully overwrite** the current config. The file must conform to the format:
   - The root can be a script array `[ { name, content, ... } ]`, or a wrapper object `{ "scripts": [ ... ] }`;
   - Each script must contain a valid `name` (non-empty string) and `content` (string); `group` is limited to `backend` / `frontend`, and `orderNum` must be a number.
+  - Each script may include an optional `shellId` (string): the id of a specific Shell interpreter; empty or omitted means follow the global config.
   - Malformed files are **rejected outright** with a specific reason — nothing gets written. A confirmation dialog appears before import to avoid accidental overwrites.
 
 ### 6. Batch Delete

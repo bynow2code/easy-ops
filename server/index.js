@@ -392,6 +392,20 @@ const resolveEffectiveShell = () => {
 
 let shell = resolveEffectiveShell();
 
+// 解析「某脚本实际执行时应使用的 Shell」：
+//   1. 若脚本显式指定了 shellId 且该 id 在当前可用 Shell 列表（detectedShells）中存活 -> 用它（脚本级覆盖全局）；
+//   2. 否则回落到全局生效 Shell（resolveEffectiveShell，已含「用户选中 > 默认」逻辑）。
+// 这样实现了「脚本可单独设置用哪个 Shell，没设置就走全局」的需求，且脚本级配置失效（如 Shell 被卸载）
+// 时自动退回全局，不会让脚本彻底跑不起来。
+const resolveScriptShell = (script) => {
+  const id = script && script.shellId;
+  if (id) {
+    const found = detectedShells.find(s => s.id === id);
+    if (found) return found;
+  }
+  return shell; // 全局生效 Shell
+};
+
 // ==================== 子进程 locale 注入 ====================
 // GUI（Electron）启动的服务进程往往没有继承终端的 LANG/LC_* 设置，
 // 当脚本内部调用 man/manpath 等依赖 locale 的命令时会报
@@ -689,13 +703,19 @@ app.post('/api/scripts/import', (req, res) => {
         return res.status(400).json({ error: `Script #${i + 1} content must be a string` });
       }
       const group = (s.group === 'frontend' || s.group === 'backend') ? s.group : 'backend';
+      // shellId：脚本单独指定的 Shell 解释器 id（须与全局 shell 列表中的 id 一致）。
+      // 留空 / 缺省 / 显式 null 均表示「跟随全局 Shell 配置」；后端执行时再做有效性校验。
+      let shellId = s.shellId;
+      if (shellId === undefined || shellId === null || shellId === '') shellId = null;
+      else shellId = String(shellId);
       normalized.push({
         id: (typeof s.id === 'string' && s.id) ? s.id : `${Date.now().toString()}-${i}`,
         name: s.name,
         content: s.content,
         group,
         orderNum: (typeof s.orderNum === 'number') ? s.orderNum : i,
-        createdAt: (typeof s.createdAt === 'string') ? s.createdAt : new Date().toISOString()
+        createdAt: (typeof s.createdAt === 'string') ? s.createdAt : new Date().toISOString(),
+        shellId
       });
     }
 
@@ -708,17 +728,20 @@ app.post('/api/scripts/import', (req, res) => {
 });
 
 app.post('/api/scripts', (req, res) => {
-  const { name, content, group } = req.body;
+  const { name, content, group, shellId } = req.body;
 
   const scripts = getScripts();
   const maxOrder = scripts.reduce((max, s) => Math.max(max, s.orderNum != null ? s.orderNum : -1), -1);
+  // shellId 仅作透传保存：允许为空（跟随全局）；非空时原样落库，执行时再校验是否仍可用。
+  const safeShellId = (shellId === undefined || shellId === null || shellId === '') ? null : String(shellId);
   const newScript = {
     id: Date.now().toString(),
     name: name || '',
     content: content || '',
     group: group || 'backend',
     orderNum: maxOrder + 1,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    shellId: safeShellId
   };
 
   scripts.push(newScript);
@@ -728,7 +751,7 @@ app.post('/api/scripts', (req, res) => {
 
 app.put('/api/scripts/:id', (req, res) => {
   const { id } = req.params;
-  const { name, content, group } = req.body;
+  const { name, content, group, shellId } = req.body;
 
   const scripts = getScripts();
   const index = scripts.findIndex(s => s.id === id);
@@ -739,6 +762,10 @@ app.put('/api/scripts/:id', (req, res) => {
 
   scripts[index] = { ...scripts[index], name, content };
   if (group) scripts[index].group = group;
+  // shellId 透传更新：显式传 '' / null 表示该脚本改回「跟随全局」；非空则记录单独指定的 Shell。
+  if ('shellId' in req.body) {
+    scripts[index].shellId = (shellId === undefined || shellId === null || shellId === '') ? null : String(shellId);
+  }
   saveScripts(scripts);
   res.json(scripts[index]);
 });
@@ -841,6 +868,9 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
     return;
   }
 
+  // 解析本脚本实际使用的 Shell：脚本单独指定且仍存活 -> 用它的；否则跟随全局生效 Shell。
+  const effectiveShell = resolveScriptShell(script);
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -849,8 +879,10 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   // 避免未捕获异常导致后端进程崩溃——后端一旦崩溃就无法清理子进程，会留下孤立进程。
   res.on('error', () => {});
 
-  // 无可用 Shell（如 Windows 上未安装 WSL / Git Bash）：无法执行，直接返回错误，避免 spawn('') 异常
-  if (!shell.command) {
+  // 无可用 Shell（如 Windows 上未安装 WSL / Git Bash）：无法执行，直接返回错误，避免 spawn('') 异常。
+  // 注意：检查的是「本脚本实际生效的 Shell」（脚本级覆盖优先），而非只检查全局 Shell，
+  // 这样即便全局无 Shell，只要该脚本单独指定了一个有效的 Shell，仍可执行。
+  if (!effectiveShell || !effectiveShell.command) {
     res.write(`data: ${JSON.stringify({ type: 'error', message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
     res.end();
     return;
@@ -863,7 +895,17 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   // 生成本次执行的 runId，供前端「强制中断」使用（必须在使用前定义，避免 TDZ 报错）
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  res.write(`data: ${JSON.stringify({ type: 'start', runId, scriptId: script.id, scriptName: script.name })}\n\n`);
+  // 回传本次实际使用的 Shell（id + name），供前端在输出面板标记「该脚本本次用了哪个 Shell」，
+  // 尤其是脚本单独指定了与全局不同的 Shell 时，让用户清楚知道执行环境。
+  res.write(`data: ${JSON.stringify({
+    type: 'start',
+    runId,
+    scriptId: script.id,
+    scriptName: script.name,
+    shellId: effectiveShell.id || null,
+    shellName: effectiveShell.name || effectiveShell.command,
+    isCustomShell: !!(script.shellId && script.shellId === (effectiveShell.id || null))
+  })}\n\n`);
 
   const execStartTime = Date.now();
 
@@ -878,7 +920,8 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   //   且 windowsHide 无法覆盖 wsl.exe 拉起的独立终端；Windows 的 killChild 用 taskkill /T /F，本就不依赖 detached，故此处关闭。
   // windowsHide: true 隐藏子进程控制台窗口（非 Windows 平台自动忽略）；
   // shell.args 对 bash 传 '-s'，使其非交互式地从 stdin 读取脚本，避免 WSL/Git Bash 弹出终端。
-  const child = spawn(shell.command, shell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
+  // 此处使用「本脚本实际生效的 Shell」（effectiveShell），实现「脚本单独指定 Shell」的执行。
+  const child = spawn(effectiveShell.command, effectiveShell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
   runningProcesses.set(runId, { children: [child], isBatch: false });
   child.stdin.write(script.content);
   child.stdin.end();
@@ -938,18 +981,6 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   // 避免未捕获异常导致后端进程崩溃——后端一旦崩溃就无法清理子进程，会留下孤立进程。
   res.on('error', () => {});
 
-  // 无可用 Shell（如 Windows 上未安装 WSL / Git Bash）：无法执行，逐脚本返回错误后结束
-  if (!shell.command) {
-    ids.forEach((scriptId) => {
-      res.write(`data: ${JSON.stringify({ type: 'start', runId: '', scriptId, scriptName: 'Unknown' })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
-    });
-    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
-    res.end();
-    return;
-  }
-
   // 禁用超时，防止长命令执行时断连
   req.socket.setTimeout(0);
   req.setTimeout(0);
@@ -991,18 +1022,41 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
       return;
     }
 
+    // 解析本脚本实际使用的 Shell：脚本单独指定且仍存活 -> 用它的；否则跟随全局生效 Shell。
+    const effectiveShell = resolveScriptShell(script);
+
     // 关键改动：批量里每个脚本使用【独立的 runId】，而非整批共享一个。
     // 这样「单独 Stop 某一个」或「关掉某一个脚本的输出面板」就能只杀它自己的进程树，
     // 不会误伤同批其它仍在跑的脚本（修复「批量进行中关单面板 → 该脚本仍在后台隐藏运行」的泄漏）。
     const scriptRunId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     batchRunIds.push(scriptRunId);
 
-    res.write(`data: ${JSON.stringify({ type: 'start', runId: scriptRunId, scriptId, scriptName: script.name })}\n\n`);
+    // 若本脚本实际生效的 Shell 不可用（脚本未指定且全局无 Shell / 或指定的 Shell 已失效且全局亦无），
+    // 单独为该脚本返回错误后继续下一个，避免一个坏脚本拖垮整批。
+    if (!effectiveShell || !effectiveShell.command) {
+      res.write(`data: ${JSON.stringify({ type: 'start', runId: '', scriptId, scriptName: script.name })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
+      completedCount++;
+      tryFinish();
+      return;
+    }
+
+    res.write(`data: ${JSON.stringify({
+      type: 'start',
+      runId: scriptRunId,
+      scriptId,
+      scriptName: script.name,
+      shellId: effectiveShell.id || null,
+      shellName: effectiveShell.name || effectiveShell.command,
+      isCustomShell: !!(script.shellId && script.shellId === (effectiveShell.id || null))
+    })}\n\n`);
 
     const execStartTime = Date.now();
 
-    // detached 仅在非 Windows 平台开启，避免 Windows 上弹出新控制台窗口（见单条执行处注释）
-    const child = spawn(shell.command, shell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
+    // detached 仅在非 Windows 平台开启，避免 Windows 上弹出新控制台窗口（见单条执行处注释）。
+    // 使用「本脚本实际生效的 Shell」（effectiveShell），实现「脚本单独指定 Shell」的执行。
+    const child = spawn(effectiveShell.command, effectiveShell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
     children.push(child);
     // 以「独立 runId」登记该脚本的子进程：/api/execute/:runId/stop 即可精确命中、只杀这一棵
     runningProcesses.set(scriptRunId, { children: [child], isBatch: true });

@@ -107,7 +107,8 @@ function App() {
   const [scripts, setScripts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newScript, setNewScript] = useState({ name: '', content: '', group: 'backend' })
+  // newScript 增加 shellId：null / '' 表示「跟随全局 Shell 配置」；非空表示从全局 Shell 列表里选的具体 shell id。
+  const [newScript, setNewScript] = useState({ name: '', content: '', group: 'backend', shellId: '' })
   const [editingScript, setEditingScript] = useState(null)
   const [formErrors, setFormErrors] = useState({})
   const [editErrors, setEditErrors] = useState({})
@@ -345,6 +346,10 @@ function App() {
   useEffect(() => {
     fetchScripts()
     fetchSystemInfo()
+    // 预拉取 Shell 列表与全局选中项：供 Add/Edit 脚本表单的「Shell Interpreter」下拉使用，
+    // 也供脚本列表判断「该脚本是否单独指定了与全局不同的 Shell」并打标记。
+    // App Info 弹窗打开时会再 fetch 一次（保持开关状态的实时性），此处仅为表单/列表前置数据。
+    fetchShells()
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => {
       clearInterval(timer)
@@ -734,7 +739,7 @@ function App() {
     setFormErrors({})
     try {
       await axios.post('/api/scripts', newScript)
-      setNewScript({ name: '', content: '', group: 'backend' })
+      setNewScript({ name: '', content: '', group: 'backend', shellId: '' })
       setShowAddForm(false)
       fetchScripts()
     } catch (error) {
@@ -959,7 +964,9 @@ function App() {
       await axios.put(`/api/scripts/${editingScript.id}`, {
         name: editingScript.name,
         content: editingScript.content,
-        group: editingScript.group
+        group: editingScript.group,
+        // shellId：'' / null 表示该脚本改回「跟随全局」；非空则单独指定 Shell。
+        shellId: editingScript.shellId || null
       })
       setEditingScript(null)
       fetchScripts()
@@ -1027,7 +1034,9 @@ function App() {
         setOutputs(prev => {
           const curr = prev[id]
           if (curr && !curr.live) return prev
-          return { ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp } }
+          // shellName / isCustomShell 由后端在 start 事件回传：标记「本次执行实际使用的 Shell」，
+          // 若该脚本单独指定了与全局不同的 Shell，则 isCustomShell=true，面板头部高亮提示。
+          return { ...prev, [id]: { output: '', error: '', exitCode: null, live: true, timestamp, shellName: data.shellName || null, isCustomShell: !!data.isCustomShell } }
         })
       } else if (data.type === 'stdout') {
         setOutputs(prev => {
@@ -1186,7 +1195,7 @@ function App() {
           setOutputs(prev => {
             const curr = prev[scriptId]
             if (curr && !curr.live) return prev
-            return { ...prev, [scriptId]: { output: '', error: '', exitCode: null, live: true, timestamp: scriptTimestamps[scriptId]?.timestamp || batchTimestamp } }
+            return { ...prev, [scriptId]: { output: '', error: '', exitCode: null, live: true, timestamp: scriptTimestamps[scriptId]?.timestamp || batchTimestamp, shellName: data.shellName || null, isCustomShell: !!data.isCustomShell } }
           })
         }
       } else if (data.type === 'stdout') {
@@ -1548,7 +1557,31 @@ function App() {
                               />
                             </td>
                             <td className="name-col">
-                              <div className="script-name">{script.name}</div>
+                              <div className="script-name-cell">
+                                {(() => {
+                                  const sid = script.shellId
+                                  if (!sid) return (
+                                    <span className="script-name-wrap">
+                                      <span className="script-name">{script.name}</span>
+                                    </span>
+                                  )
+                                  const picked = shellList.find(s => s.id === sid)
+                                  if (!picked) return (
+                                    <span className="script-name-wrap">
+                                      <span className="script-name">{script.name}</span>
+                                    </span>
+                                  )
+                                  // 单独指定了 Shell：脚本名右上角黄色小圆点（视觉标记）+ 鼠标悬停（自定义 tooltip）才显示解释器名称。
+                                  // 用自定义 tooltip 而非原生 title，是为了让提示稳定出现在「下方」（原生 title 在上方空间不足时会被浏览器挪到上方）。
+                                  const tip = `Shell: ${picked.name}${picked.version ? ` ${picked.version}` : ''}`
+                                  return (
+                                    <span className="script-name-wrap" data-tip={tip}>
+                                      <span className="script-name">{script.name}</span>
+                                      <span className="shell-override-dot" />
+                                    </span>
+                                  )
+                                })()}
+                              </div>
                             </td>
                             <td>
                               <span className={`status-badge ${isLive ? 'running' : (isStopped ? 'stopped' : (out && out.exitCode === 0 ? 'success' : (out ? 'error' : '')))}`}>
@@ -2127,6 +2160,21 @@ function App() {
                 </select>
               </div>
               <div className="form-group">
+                <label>Shell Interpreter</label>
+                <select
+                  value={newScript.shellId || ''}
+                  onChange={e => setNewScript(prev => ({ ...prev, shellId: e.target.value }))}
+                >
+                  {/* 默认项：跟随全局 Shell 配置；后端以 null 落库 */}
+                  <option value="">Global default (follow system shell config)</option>
+                  {/* 从全局 Shell 列表里选一个：脚本单独指定该 Shell 解释器 */}
+                  {shellList.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}{s.version ? ` (${s.version})` : ''}</option>
+                  ))}
+                </select>
+                <span className="field-hint">Leave as "Global default" to run this script with the system-wide shell config. Pick a specific interpreter if this script needs a different one.</span>
+              </div>
+              <div className="form-group">
                 <label>Script Name <span className="required-mark">*</span></label>
                 <input
                   type="text"
@@ -2181,6 +2229,21 @@ function App() {
                   <option value="backend">Backend</option>
                   <option value="frontend">Frontend</option>
                 </select>
+              </div>
+              <div className="form-group">
+                <label>Shell Interpreter</label>
+                <select
+                  value={editingScript.shellId || ''}
+                  onChange={e => setEditingScript(prev => ({ ...prev, shellId: e.target.value }))}
+                >
+                  {/* 默认项：跟随全局 Shell 配置 */}
+                  <option value="">Global default (follow system shell config)</option>
+                  {/* 从全局 Shell 列表里选一个：脚本单独指定该 Shell 解释器 */}
+                  {shellList.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}{s.version ? ` (${s.version})` : ''}</option>
+                  ))}
+                </select>
+                <span className="field-hint">Leave as "Global default" to run this script with the system-wide shell config. Pick a specific interpreter if this script needs a different one.</span>
               </div>
               <div className="form-group">
                 <label>Script Name <span className="required-mark">*</span></label>
