@@ -1,13 +1,15 @@
 # EasyOps Project
 
 ## Project Structure
-- electron v43.2.0
-- node-pty v1.1.0 
-- xterm.js v6.0.0 
-- xterm/addon-fit 0.11.0
+- electron ^v43.2.0
+- node-pty ^v1.1.0 
+- xterm.js ^v6.0.0 
+- xterm/addon-fit ^v0.11.0
 - PTY Host 
 - IPC
-- vite v8.2.0
+- vite ^v8.2.0
+- react ^v19.2.8
+- electron-builder ^v26.15.3
 
 ## Code Standards
 - 用面向接口（依赖注入）做架构骨架
