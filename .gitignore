@@ -1,68 +1,19 @@
-# ===== 依赖 =====
+# 依赖
 node_modules/
-**/node_modules/
 
-# ===== 日志与运行时数据 =====
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pids
-*.pid
-*.seed
-*.pid.lock
+# 运行时产物
+logs/
+port.txt
 
-# ===== 测试覆盖率 =====
-coverage/
-*.lcov
-.nyc_output
+# 脚本数据（按需保留或忽略，这里忽略本地数据）
+scripts.json
 
-# ===== 工具缓存 =====
-.cache
-.eslintcache
-.node_repl_history
-
-# ===== 环境变量（可能含密钥，绝不提交） =====
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# ===== 打包产物（npm pack 等） =====
-*.tgz
-
-# ===== IDE / 编辑器 =====
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.cursor/
-
-# ===== 操作系统生成文件 =====
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# ===== EasyOps 专属 =====
-
-# 前端（Vite）构建产物与缓存 —— 注意：项目前端目录是 client/，不是 frontend/
-client/dist/
-client/.vite/
-
-# 后端 esbuild 打包产物（build:server 生成，已内联 express/cors，非源码，必须忽略）
-server/dist/
-
-# 运行期生成的临时文件（PORT_FILE 现已写入系统临时目录 os.tmpdir()，此文件为历史残留）
-# 项目根 tmp/ 目录：esbuild 等命令的临时验证产物（如 eo_app.js / eo_app.css），非源码，禁止提交
-tmp/
-
-# Electron 构建输出
-dist-electron/
-out/
+# 构建产物
+dist/
 release/
+
+# 日志
+*.log
+
+# 编辑器
+.idea/

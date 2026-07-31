@@ -1,81 +1,28 @@
 {
-  "name": "easyops",
-  "version": "1.0.0",
-  "description": "EasyOps - Script Manager Desktop App",
-  "license": "MIT",
+  "name": "easy-ops",
+  "version": "0.1.0",
+  "description": "Shell 脚本管理工具：脚本列表 + 可交互式终端执行",
   "main": "electron/main.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/bynow2code/easy-ops.git"
-  },
+  "author": "bynow",
+  "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "node server/index.js",
-    "client": "cd client && npm run dev",
-    "build": "cd client && npm run build",
-    "build:server": "esbuild server/index.js --bundle --platform=node --target=node20 --format=cjs --outfile=server/dist/index.cjs && node -e \"require('fs').mkdirSync('server/dist',{recursive:true});require('fs').copyFileSync('server/scripts.json','server/dist/scripts.json')\"",
-    "electron-dev": "npm run build && npm run build:server && electron .",
-    "electron-build": "npm run build && npm run build:server && electron-builder --win --x64",
-    "electron-build-dir": "npm run build && npm run build:server && electron-builder --dir --win",
-    "electron-build-mac-intel": "npm run build && npm run build:server && electron-builder --mac --x64",
-    "electron-build-mac-arm": "npm run build && npm run build:server && electron-builder --mac --arm64",
-    "electron-build-mac": "npm run build && npm run build:server && electron-builder --mac --x64 --arm64",
-    "start": "electron ."
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2",
-    "electron": "^43.0.0",
-    "electron-builder": "^26.0.0",
-    "esbuild": "^0.28.1"
+    "dev": "vite",
+    "electron:dev": "electron .",
+    "build": "vite build",
+    "dist": "electron-builder",
+    "verify:logger": "node scripts/verify-logger.js"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "express": "^4.19.2",
+    "node-pty": "^1.1.0",
+    "xterm": "^6.0.0"
   },
-  "build": {
-    "appId": "com.easyops.app",
-    "productName": "EasyOps",
-    "icon": "client/public/logo-1024.png",
-    "directories": {
-      "output": "dist-electron"
-    },
-    "files": [
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "server/dist",
-        "to": "server"
-      },
-      {
-        "from": "client/dist",
-        "to": "client/dist"
-      }
-    ],
-    "electronDownload": {
-      "mirror": "https://npmmirror.com/mirrors/electron/"
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "client/public/logo-mac.png",
-      "category": "public.app-category.developer-tools",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "zip"
-      ],
-      "icon": "client/public/logo.ico",
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^43.2.0",
+    "electron-builder": "^24.13.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.0"
   }
 }
