@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import TopBar from './components/TopBar.jsx';
 import ScriptList from './components/ScriptList.jsx';
 import ExecutionPanel from './components/ExecutionPanel.jsx';
+import AddGroupModal from './components/AddGroupModal.jsx';
 import { initialScripts, mockOutputFor } from './data/mockScripts.js';
 
 /**
@@ -16,6 +17,9 @@ export default function App() {
   const [scripts, setScripts] = useState(initialScripts);
   const [selected, setSelected] = useState(() => new Set());
   const [executions, setExecutions] = useState([]);
+  // 分组列表（静态：仅本地 state，后续接后端时由 /api/groups 替换）
+  const [groups, setGroups] = useState(['BACKEND SCRIPTS', 'FRONTEND SCRIPTS']);
+  const [addGroupOpen, setAddGroupOpen] = useState(false);
 
   const selectedCount = selected.size;
 
@@ -96,6 +100,14 @@ export default function App() {
     window.alert('TODO: 新增脚本表单（下一步接入）');
   };
 
+  const handleAddGroup = () => setAddGroupOpen(true);
+
+  const handleSaveGroup = (name) => {
+    // 静态：仅写入本地分组列表（空分组，不接后端）
+    setGroups((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    setAddGroupOpen(false);
+  };
+
   const handleEdit = (script) => {
     window.alert(`TODO: 编辑脚本 ${script.name}（下一步接入）`);
   };
@@ -146,10 +158,12 @@ export default function App() {
         selectedCount={selectedCount}
         onExecuteSelected={handleExecuteSelected}
         onAddScript={handleAddScript}
+        onAddGroup={handleAddGroup}
         onDeleteSelected={handleDeleteSelected}
       />
       <main className="main">
         <ScriptList
+          groups={groups}
           scripts={scripts}
           selectedSet={selected}
           onToggle={toggle}
@@ -167,6 +181,13 @@ export default function App() {
           onToggleStick={handleToggleStick}
         />
       </main>
+
+      <AddGroupModal
+        open={addGroupOpen}
+        existing={groups}
+        onClose={() => setAddGroupOpen(false)}
+        onSave={handleSaveGroup}
+      />
     </div>
   );
 }

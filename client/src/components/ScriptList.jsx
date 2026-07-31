@@ -1,11 +1,12 @@
-import { useMemo } from 'react';
 import ScriptItem from './ScriptItem.jsx';
 
 /**
- * 左侧脚本列表：按 group 分组渲染；每组含标题、计数与表头。
- * 数据由 App 通过 props 注入，保持本组件为受控的纯渲染。
+ * 左侧脚本列表：按 groups（显式分组列表）渲染；每组含标题、计数与表头。
+ * groups 由 App 通过 props 注入（初始 BACKEND/Frontend，新增分组亦可为空），
+ * 本组件为受控纯渲染：脚本按 group 字段过滤到对应分组下。
  */
 export default function ScriptList({
+  groups,
   scripts,
   selectedSet,
   onToggle,
@@ -15,19 +16,11 @@ export default function ScriptList({
   onRemove,
   onLocate,
 }) {
-  const groups = useMemo(() => {
-    const map = new Map();
-    for (const s of scripts) {
-      if (!map.has(s.group)) map.set(s.group, []);
-      map.get(s.group).push(s);
-    }
-    return Array.from(map.entries());
-  }, [scripts]);
-
   return (
     <section className="panel panel--list">
-      {groups.map(([group, items]) => {
-        const allSelected = items.every((i) => selectedSet.has(i.id));
+      {groups.map((group) => {
+        const items = scripts.filter((s) => s.group === group);
+        const allSelected = items.length > 0 && items.every((i) => selectedSet.has(i.id));
         return (
           <div className="script-group" key={group}>
             <div className="script-group__head">
@@ -35,6 +28,7 @@ export default function ScriptList({
                 <input
                   type="checkbox"
                   checked={allSelected}
+                  disabled={items.length === 0}
                   onChange={() => onSelectGroup(group, items, !allSelected)}
                   aria-label={`Select all in ${group}`}
                 />
@@ -48,18 +42,22 @@ export default function ScriptList({
               <span className="col-actions">Actions</span>
             </div>
             <div className="script-group__rows">
-              {items.map((s) => (
-                <ScriptItem
-                  key={s.id}
-                  script={s}
-                  selected={selectedSet.has(s.id)}
-                  onToggle={onToggle}
-                  onExecute={onExecute}
-                  onEdit={onEdit}
-                  onRemove={onRemove}
-                  onLocate={onLocate}
-                />
-              ))}
+              {items.length === 0 ? (
+                <div className="script-group__empty">No scripts in this group</div>
+              ) : (
+                items.map((s) => (
+                  <ScriptItem
+                    key={s.id}
+                    script={s}
+                    selected={selectedSet.has(s.id)}
+                    onToggle={onToggle}
+                    onExecute={onExecute}
+                    onEdit={onEdit}
+                    onRemove={onRemove}
+                    onLocate={onLocate}
+                  />
+                ))
+              )}
             </div>
           </div>
         );

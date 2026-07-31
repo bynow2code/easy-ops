@@ -367,3 +367,92 @@ input[type="checkbox"] {
   cursor: pointer;
   margin: 0;
 }
+
+/* ------------ Modal: Add Group ------------ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  width: 360px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  display: flex;
+  flex-direction: column;
+}
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.modal__title { font-size: 14px; font-weight: 600; color: var(--text); }
+.modal__close {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; background: transparent;
+  font-size: 18px; line-height: 1; color: var(--text-faint);
+  border-radius: 4px; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.modal__close:hover { background: var(--bg-muted); color: var(--text); }
+
+.modal__body { padding: 16px 14px; }
+.modal__foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field__label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.field__input {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.field__input::placeholder { color: var(--text-faint); }
+.field__input:focus { border-color: var(--c-blue); box-shadow: 0 0 0 3px var(--c-blue-2); }
+.field__input.is-error { border-color: var(--c-red); }
+.field__input.is-error:focus { box-shadow: 0 0 0 3px #fee2e2; }
+
+.field__meta {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; margin-top: 6px;
+}
+.field__hint { color: var(--text-faint); }
+.field__hint.is-error { color: var(--c-red); }
+.field__counter { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.field__counter.is-error { color: var(--c-red); }
+
+/* Cancel 按钮（ghost）补一个克制样式 */
+.btn--ghost {
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.btn--ghost:hover { background: #e5e7eb; color: #374151; }
+.btn:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+
+/* 空分组占位行 */
+.script-group__empty {
+  padding: 10px 4px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-style: italic;
+  border-bottom: 1px solid var(--border-row);
+}

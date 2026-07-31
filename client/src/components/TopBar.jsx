@@ -9,6 +9,7 @@ export default function TopBar({
   selectedCount,
   onExecuteSelected,
   onAddScript,
+  onAddGroup,
   onDeleteSelected,
 }) {
   const disableSel = selectedCount === 0;
@@ -24,6 +25,9 @@ export default function TopBar({
         </button>
         <button className="pill pill--white" onClick={onAddScript}>
           Add Script
+        </button>
+        <button className="pill pill--white" onClick={onAddGroup}>
+          Add Group
         </button>
         <button
           className={`pill pill--muted ${disableSel ? 'is-disabled' : ''}`}
