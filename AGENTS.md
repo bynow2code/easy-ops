@@ -7,6 +7,7 @@
 - xterm/addon-fit 0.11.0
 - PTY Host 
 - IPC
+- vite v8.2.0
 
 ## Code Standards
 - 用面向接口（依赖注入）做架构骨架
