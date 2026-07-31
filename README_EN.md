@@ -29,7 +29,7 @@ In short, it's a **launcher + manager for your scripts**, turning repetitive com
 |---------|-------------|
 | 📁 **Script Management** | Create, edit, and delete Shell scripts; content is saved as you go |
 | 🗂️ **Group Management** | Supports groups like Backend / Frontend; drag to switch a script's group |
-| 🖥️ **Per-script Shell** | Each script can pick its own Shell interpreter from the global shell list when editing; if left unset it follows the global config. A small **yellow dot** at the top-right corner of a script's name (like a notification badge, but yellow) means it overrides the global shell. |
+| 🖥️ **Per-script Shell** | Each script can pick its own Shell interpreter from the global shell list when editing; if left unset it follows the global config. A small **yellow dot** right next to a script's name means it overrides the global shell; hover the dot to see which interpreter it uses. |
 | ↕️ **Drag & Drop Sorting** | Reorder scripts by dragging; cross-group dragging is supported |
 | ⚡ **Real-time Streaming Execution** | Built on SSE, script output scrolls in real time just like a terminal |
 | 🔁 **Batch Execution** | Select multiple scripts and run them with one click; scripts run concurrently |
@@ -134,7 +134,9 @@ On Windows the app automatically recognizes **Git Bash / WSL** as the execution 
 No. On Windows the app runs the Shell with a hidden window; the execution only shows in the in-app output panel — no black box or Windows Terminal will appear.
 
 **Q: Which Shell runs my scripts?**
-The app auto-detects the current environment: Windows uses Git Bash / WSL (bash-syntax scripts), macOS / Linux use bash. You can view the actual Shell in use via App Info. If no usable Shell is available on the machine (including manually enabling "No Shell Mode" in App Info), the main UI shows a prominent warning: on Windows it prompts installing WSL / Git Bash, on macOS it prompts installing Xcode Command Line Tools (`xcode-select --install`), on Linux it prompts installing bash; scripts cannot run in this state.
+The app auto-detects the current environment: Windows uses Git Bash / WSL (bash-syntax scripts), macOS / Linux use bash. You can view the actual Shell in use via App Info.
+
+If no usable Shell is available on the machine (including manually enabling "No Shell Mode" in App Info), a prominent warning appears at the top of the main UI: on Windows it prompts installing WSL / Git Bash, on macOS it prompts installing Xcode Command Line Tools (`xcode-select --install`), on Linux it prompts installing bash; scripts cannot run in this state. The warning includes a direct **App Info** link that opens the Shells settings — if your bash lives at a non-standard path, just type its absolute path in the input (or click Browse), and scripts can run without installing anything extra.
 
 **Q: Can I customize / switch the bash path used to run scripts?**
 Yes. Open **App Info** → **Shells** section:

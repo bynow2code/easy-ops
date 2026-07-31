@@ -462,8 +462,28 @@ const buildChildEnv = () => {
 // 用于「强制中断」功能：前端拿到 runId 后调用 /api/execute/:runId/stop 整组杀死对应进程
 const runningProcesses = new Map();
 
+// 标记「被用户主动停止」的运行：stop 接口或 SSE 断开时写入，用于 close 事件里
+// 把 exitCode 退出正确识别为「已停止」而非「异常退出」（WSL 场景尤为必要，见 execute-stream 的 close）。
+const forceStoppedRuns = new Set();
+
+// ==================== Windows bash 系 Shell 的「PID 桥接」机制 ====================
+// 适用对象：Windows 平台上 type==='bash' 的 Shell，即 WSL / Git Bash / Cygwin / 自定义 bash。
+// 它们共同的「stop 失效」根因（与 macOS/Linux 的进程组杀同源，但 Windows 侧表现不同）：
+//   - WSL：命令是 WSL2 轻量 VM 内的 Linux 进程，Windows 的 taskkill 只杀得到 wsl.exe，杀不到内部进程；
+//   - Git Bash / Cygwin / 自定义 bash：命令是 msys2/cygwin 模拟进程，被 taskkill 强杀父 bash 后会
+//     reparent 到已消失的父进程，taskkill /T 顺着 Windows 进程树再也够不到，成为孤儿（本机实测确认）。
+// 共同解法：执行时让 shell 把「自身（进程组 leader）PID」经 stdout 回传给 node，
+// stop 时再「用同一个 shell 二进制」以 `kill -<pid>` 进程组整组强杀。
+//   - 用进程组（而非 taskkill / 按父子 pkill）是关键：reparent 后进程组依然存在，kill -<pid> 仍能命中；
+//   - PID 用 stdout 回传而非写 /tmp pid 文件：本机 WSL2 实测 `$(cat file)/read/<` 读刚写的文件会返回空，
+//     导致基于 pidfile 的 kill 永远是空操作；而 stdout 捕获稳定可靠。
+// 该桥接仅对「Windows 上的 bash 系 Shell」启用，其它平台零影响：
+//   - 原生 Windows Shell（cmd / PowerShell）的进程是 Windows 原生进程，taskkill /T 直接生效，无需此桥；
+//   - macOS / Linux 走 detached 进程组 + process.kill(-pgid)，本就不依赖这套逻辑。
+const shellRunPidByRunId = new Map(); // runId -> shell（msys2/Linux）进程组 leader PID
+
 // 强制杀死一个子进程（含其派生的子命令）：
-//  - Windows：taskkill /T /F 按 PID 杀整棵进程树（不可忽略，必定生效）
+//  - Windows：taskkill /T /F 按 PID 杀整棵进程树（原生 Windows Shell 进程树有效；bash 系模拟层子进程够不到，由上方桥接补足）
 //  - POSIX：detached 模式下子进程是进程组 leader，用 -pid 向整组发 SIGTERM；
 //           SIGTERM 可能被进程忽略，故 500ms 后升级为不可忽略的 SIGKILL，确保彻底中断。
 //    该 SIGTERM→SIGKILL 升级内置在此函数内，因此所有调用方（手动「停止」按钮、
@@ -474,20 +494,90 @@ const killChild = (child) => {
     if (process.platform === 'win32') {
       try {
         execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' });
+        console.log(`[EasyOps][kill] taskkill pid=${child.pid} /T /F 已下发`);
       } catch (e) {
+        console.warn(`[EasyOps][kill] taskkill pid=${child.pid} 失败，回退 SIGKILL: ${e.message}`);
         try { child.kill('SIGKILL'); } catch (_) {}
       }
     } else {
-      try { process.kill(-child.pid, 'SIGTERM'); } catch (e) {}
+      try { process.kill(-child.pid, 'SIGTERM'); console.log(`[EasyOps][kill] SIGTERM -${child.pid} 已下发`); }
+      catch (e) { console.warn(`[EasyOps][kill] SIGTERM -${child.pid} 失败: ${e.message}`); }
       setTimeout(() => {
-        try { process.kill(-child.pid, 'SIGKILL'); } catch (e) {}
+        try { process.kill(-child.pid, 'SIGKILL'); console.log(`[EasyOps][kill] SIGKILL -${child.pid} 已下发（升级）`); }
+        catch (e) {}
       }, 500);
     }
     return true;
   } catch (e) {
+    console.warn(`[EasyOps][kill] pid=${child && child.pid} 兜底 SIGKILL 异常: ${e.message}`);
     try { child.kill('SIGKILL'); } catch (_) {}
     return true;
   }
+};
+
+// Windows 上的 bash 系 Shell（WSL / Git Bash / Cygwin / 自定义 bash）：taskkill 够不到其模拟层子进程，需走 PID 桥接。
+const isWinBashShell = (sh) =>
+  process.platform === 'win32' && sh && sh.type === 'bash';
+
+// 区分「WSL」与「其它 bash（Git Bash 等）」只影响「stop 时如何重新调用 shell 去 kill」：
+//   - WSL 经 wsl.exe 桥接：wsl.exe bash -c '<kill 脚本>'
+//   - 其它 bash 直接调其 command：<command> -c '<kill 脚本>'
+// （isWslShell 仅在此处用于命令分发，桥接的「是否启用」仍由 isWinBashShell 决定。）
+const isWslShell = (sh) =>
+  process.platform === 'win32' && sh && (/^wsl/i.test(sh.id || '') || /wsl(\.exe)?$/i.test(sh.command || ''));
+
+// 执行时由 shell 经 stdout 回传的「进程组 leader PID」标记前缀。形如 `___EASYOPS_RUN_PID___=63844`。
+const RUN_PID_MARKER = '___EASYOPS_RUN_PID___=';
+
+// 针对 Windows bash 系 Shell 的「stop 失效」根因修复：
+// stop 时「再起一个同名 shell 进程」，按事先从 stdout 捕获的 leader PID 以「进程组」整组强杀
+// （kill -TERM -<pid> / kill -KILL -<pid>）。用进程组（而非 taskkill）规避 reparent 导致的够不到问题。
+const killViaShellBridge = (runId, shell) => {
+  const pid = shellRunPidByRunId.get(runId);
+  if (!pid) { console.warn(`[EasyOps][kill] runId=${runId} 未捕获 shell PID，无法走桥接，回退 taskkill`); return; } // 没拿到 PID（极少见，例如 stdout 标记丢失）→ 退回下方 killChild 的 taskkill 兜底
+  shellRunPidByRunId.delete(runId);
+  // 进程组整组杀：先 TERM，0.3s 后升级 KILL；用 spawn 异步（不 await）避免阻塞 stop 请求；stdio 丢弃。
+  // 注意：PID 是「参数」传入（kill -TERM -"<pid>"），【绝不要】在 shell 内用 $(cat file) 读 pid 文件——
+  // 该写法在本机 WSL2 会返回空，正是早期修复无效的根因。
+  const isWsl = isWslShell(shell);
+  const killScript = `kill -TERM -"${pid}" 2>/dev/null; kill -TERM "${pid}" 2>/dev/null; sleep 0.3; kill -KILL -"${pid}" 2>/dev/null; kill -KILL "${pid}" 2>/dev/null; true`;
+  const via = isWsl ? 'wsl.exe bash -c' : `${shell.command} -c`;
+  console.log(`[EasyOps][kill] runId=${runId} 桥接杀进程组 pid=${pid} via ${via}`);
+  try {
+    if (isWsl) {
+      spawn('wsl.exe', ['bash', '-c', killScript], { detached: false, stdio: 'ignore', windowsHide: true });
+    } else {
+      spawn(shell.command, ['-c', killScript], { detached: false, stdio: 'ignore', windowsHide: true });
+    }
+  } catch (e) { console.warn(`[EasyOps][kill] runId=${runId} 桥接 spawn 失败: ${e.message}`); }
+};
+
+// 构造一个 stdout 过滤器：仅 Windows bash 系 Shell 生效——从输出流里识别并剥离「PID 标记行」，
+// 把其中的 leader PID 存入 shellRunPidByRunId 供 stop 精确强杀，同时避免标记污染脚本真实输出。
+// 标记总在输出最开头；carry 仅用于应对「标记行被拆成两个 chunk」的极端情况（已暂存、不丢弃）。
+const makeShellPidFilter = (runId, useBridge) => {
+  if (!useBridge) return (text) => text; // 非 Windows bash 系：原样透传
+  let carry = '';
+  let done = false;
+  return (text) => {
+    carry += text;
+    if (!done) {
+      const m = carry.match(new RegExp(RUN_PID_MARKER + '(\\d+)'));
+      if (m) {
+        shellRunPidByRunId.set(runId, parseInt(m[1], 10));
+        carry = carry.replace(new RegExp(RUN_PID_MARKER + '\\d+\\n?'), '');
+        done = true;
+        console.log(`[EasyOps][kill] runId=${runId} 已捕获 shell PID=${m[1]}（桥接可用）`);
+      } else {
+        // 标记尚未完整到达（被拆成多个 chunk 的极端情况）：暂存已收到的字节、暂不转发，
+        // 既不把半截标记泄漏到脚本输出，也不丢弃（下一 chunk 补全后即可捕获 PID）。
+        return '';
+      }
+    }
+    const out = carry;
+    carry = '';
+    return out;
+  };
 };
 
 // ==================== 退出清理（防孤立进程） ====================
@@ -883,7 +973,7 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   // 注意：检查的是「本脚本实际生效的 Shell」（脚本级覆盖优先），而非只检查全局 Shell，
   // 这样即便全局无 Shell，只要该脚本单独指定了一个有效的 Shell，仍可执行。
   if (!effectiveShell || !effectiveShell.command) {
-    res.write(`data: ${JSON.stringify({ type: 'error', message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'error', message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts. If your bash is installed at a custom location, you can add its path in App Info (top-right ⓘ icon → "Add a bash path") and try again.' })}\n\n`);
     res.end();
     return;
   }
@@ -922,12 +1012,21 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   // shell.args 对 bash 传 '-s'，使其非交互式地从 stdin 读取脚本，避免 WSL/Git Bash 弹出终端。
   // 此处使用「本脚本实际生效的 Shell」（effectiveShell），实现「脚本单独指定 Shell」的执行。
   const child = spawn(effectiveShell.command, effectiveShell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
-  runningProcesses.set(runId, { children: [child], isBatch: false });
+  runningProcesses.set(runId, { children: [child], isBatch: false, shell: effectiveShell });
+  // Windows bash 系 Shell（WSL / Git Bash / 自定义 bash）特例：脚本跑在「模拟层」而非 Windows 原生进程树，
+  // taskkill 够不到其内部的持续前台子进程（如 tail -f）。故执行前先把「进程组 leader PID」通过 stdout
+  // 回传给 node（stdout 捕获稳定可靠），供 stop 时从 shell 内部按进程组整组强杀（见 killViaShellBridge）。
+  // 外层 bash 输出标记后 exec 替换成内层 bash -s，PID 不变。绝不用 /tmp pid 文件 + $(cat)（本机 WSL2 会返回空）。
+  if (isWinBashShell(effectiveShell)) {
+    child.stdin.write(`echo "${RUN_PID_MARKER}$$"\nexec bash -s\n`);
+  }
   child.stdin.write(script.content);
   child.stdin.end();
 
+  const filterWslOut = makeShellPidFilter(runId, isWinBashShell(effectiveShell));
   child.stdout.on('data', (data) => {
-    res.write(`data: ${JSON.stringify({ type: 'stdout', content: data.toString() })}\n\n`);
+    const text = filterWslOut(data.toString());
+    if (text) res.write(`data: ${JSON.stringify({ type: 'stdout', content: text })}\n\n`);
   });
 
   child.stderr.on('data', (data) => {
@@ -937,13 +1036,19 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   const cleanup = () => {
     clearInterval(heartbeat);
     runningProcesses.delete(runId);
+    shellRunPidByRunId.delete(runId); // 自然结束也清理 bash 系 PID 登记，避免 Map 残留
   };
 
   child.on('close', (code, signal) => {
     cleanup();
     const durationMs = Date.now() - execStartTime;
-    // code 为 null 且 signal 存在，说明进程是被信号终止的（强制中断的 SIGTERM/SIGKILL）
-    const terminated = code === null && !!signal;
+    // terminated：被信号杀死，或被本端主动「停止」（forceStoppedRuns 标记）。
+    // 注意 Windows bash 系场景下，内部进程被 killViaShellBridge 杀掉后，Windows 侧的 wsl.exe / bash.exe
+    // 是以 exitCode 退出而非被信号杀（signal 为 null），必须用 forceStoppedRuns 才能正确识别为「用户主动停止」。
+    const terminated = code === null && !!signal || forceStoppedRuns.has(runId);
+    forceStoppedRuns.delete(runId);
+    // 这是「进程是否真被杀掉」的最终确认：进程树退出后此处必触发；terminated=true 表示是被主动停止。
+    console.log(`[EasyOps][close-event] runId=${runId} exitCode=${code} signal=${signal || null} terminated=${terminated} durationMs=${durationMs}`);
     res.write(`data: ${JSON.stringify({ type: 'close', exitCode: code, signal: signal || null, terminated, durationMs })}\n\n`);
     res.end();
   });
@@ -956,8 +1061,13 @@ app.get('/api/scripts/:id/execute-stream', (req, res) => {
   });
 
   req.on('close', () => {
-    cleanup();
+    forceStoppedRuns.add(runId); // 用户关闭 SSE 也视为主动停止，close 事件显示「Stopped」
+    console.log(`[EasyOps][close] runId=${runId} 用户断开 SSE，执行停止（shell=${effectiveShell && effectiveShell.name}）`);
+    // 注意：桥接必须在 cleanup() 之前——cleanup 会清掉 shellRunPidByRunId 的 PID 登记，
+    // 而 killViaShellBridge 需先读取该 PID 才能从 shell 内部整组强杀（否则回退到 taskkill，Git Bash 够不到 tail）。
+    if (isWinBashShell(effectiveShell)) killViaShellBridge(runId, effectiveShell);
     killChild(child);
+    cleanup();
   });
 });
 
@@ -1035,7 +1145,7 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     // 单独为该脚本返回错误后继续下一个，避免一个坏脚本拖垮整批。
     if (!effectiveShell || !effectiveShell.command) {
       res.write(`data: ${JSON.stringify({ type: 'start', runId: '', scriptId, scriptName: script.name })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts.' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', scriptId, message: 'No available shell detected. On Windows, WSL or Git Bash is required to run bash scripts. If your bash is installed at a custom location, you can add its path in App Info (top-right ⓘ icon → "Add a bash path") and try again.' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: -1 })}\n\n`);
       completedCount++;
       tryFinish();
@@ -1058,13 +1168,22 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     // 使用「本脚本实际生效的 Shell」（effectiveShell），实现「脚本单独指定 Shell」的执行。
     const child = spawn(effectiveShell.command, effectiveShell.args, { detached: process.platform !== 'win32', windowsHide: true, env: buildChildEnv() });
     children.push(child);
+    const useBridge = isWinBashShell(effectiveShell);
     // 以「独立 runId」登记该脚本的子进程：/api/execute/:runId/stop 即可精确命中、只杀这一棵
-    runningProcesses.set(scriptRunId, { children: [child], isBatch: true });
+    runningProcesses.set(scriptRunId, { children: [child], isBatch: true, shell: effectiveShell });
+    // Windows bash 系 Shell 特例：执行前把 leader PID 经 stdout 回传（见单条执行处注释），供 stop 从内部按进程组强杀
+    if (useBridge) {
+      child.stdin.write(`echo "${RUN_PID_MARKER}$$"\nexec bash -s\n`);
+    }
     child.stdin.write(script.content);
     child.stdin.end();
 
+    const filterWslOut = makeShellPidFilter(scriptRunId, useBridge);
     child.stdout.on('data', (data) => {
-      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ type: 'stdout', scriptId, content: data.toString() })}\n\n`);
+      if (!res.writableEnded) {
+        const text = filterWslOut(data.toString());
+        if (text) res.write(`data: ${JSON.stringify({ type: 'stdout', scriptId, content: text })}\n\n`);
+      }
     });
 
     child.stderr.on('data', (data) => {
@@ -1074,10 +1193,13 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
     child.on('close', (code, signal) => {
       // 该脚本自身结束：立刻注销它独立的 runId 登记（自然结束 / 被单独 stop 都会走到这里）
       runningProcesses.delete(scriptRunId);
+      shellRunPidByRunId.delete(scriptRunId); // 自然结束也清理 bash 系 PID 登记
       if (!res.writableEnded) {
         const durationMs = Date.now() - execStartTime;
-        // code 为 null 且 signal 存在，说明是被信号终止的（单独 stop 的 SIGTERM/SIGKILL）
-        const terminated = code === null && !!signal;
+        // terminated：被信号杀死，或被本端主动「停止」（forceStoppedRuns 标记，含 WSL 场景的 exitCode 退出）
+        const terminated = code === null && !!signal || forceStoppedRuns.has(scriptRunId);
+        forceStoppedRuns.delete(scriptRunId);
+        console.log(`[EasyOps][close-event] scriptId=${scriptId} runId=${scriptRunId} exitCode=${code} signal=${signal || null} terminated=${terminated} durationMs=${durationMs}`);
         res.write(`data: ${JSON.stringify({ type: 'close', scriptId, exitCode: code, signal: signal || null, terminated, durationMs })}\n\n`);
       }
       completedCount++;
@@ -1099,8 +1221,15 @@ app.get('/api/scripts/batch-execute-stream', (req, res) => {
   // 用户提前关闭整个共享 SSE（关全部 / 关浏览器 / 软件退出）时：
   // 整批强杀所有子进程，并注销本批次全部独立 runId 的登记。
   req.on('close', () => {
+    console.log(`[EasyOps][close] 批量用户断开 SSE，执行停止（共 ${children.length} 个脚本）`);
     cleanup();
-    children.forEach(child => killChild(child));
+    children.forEach((child, idx) => {
+      const rid = batchRunIds[idx];
+      forceStoppedRuns.add(rid); // 用户关闭 SSE 也视为主动停止
+      const e = runningProcesses.get(rid);
+      if (e && e.shell && isWinBashShell(e.shell)) killViaShellBridge(rid, e.shell);
+      killChild(child);
+    });
     batchRunIds.forEach(rid => runningProcesses.delete(rid));
   });
 });
@@ -1113,11 +1242,15 @@ app.post('/api/execute/:runId/stop', (req, res) => {
   if (!entry) {
     return res.status(404).json({ error: 'No running process for this run', runId });
   }
+  forceStoppedRuns.add(runId); // 标记为主动停止，close 事件据此显示「Stopped」而非「Exit 1」
   let killed = 0;
+  const bridgeUsed = !!(entry.shell && isWinBashShell(entry.shell));
+  if (bridgeUsed) killViaShellBridge(runId, entry.shell); // Windows bash 系：额外从 shell 内部按进程组杀掉模拟层进程树（taskkill 杀不到）
   entry.children.forEach(child => {
     if (killChild(child)) killed++;
   });
   runningProcesses.delete(runId);
+  console.log(`[EasyOps][stop] runId=${runId} killed=${killed} bridgeUsed=${bridgeUsed}`);
   res.json({ success: true, killed, runId });
 });
 

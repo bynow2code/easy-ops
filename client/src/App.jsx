@@ -72,14 +72,17 @@ const validateScriptsConfig = (data) => {
 };
 
 // 无可用 Shell 时的执行报错文案：按平台区分，避免 macOS / Linux 上误提示 WSL / Git Bash。
+// 并提示用户：若 bash 装在非标准路径，可在 App Info 里手动添加其绝对路径。
 const noShellErrorText = (platform) => {
+  const appInfoTip =
+    " You can also add a custom bash path in App Info (top-right ⓘ icon → 'Add a bash path').";
   if (platform === 'win32') {
-    return 'No available shell detected (WSL or Git Bash required). The script cannot be executed.';
+    return 'No available shell detected (WSL or Git Bash required). The script cannot be executed.' + appInfoTip;
   }
   if (platform === 'darwin') {
-    return 'No available shell detected (a bash interpreter is required). The script cannot be executed.';
+    return 'No available shell detected (a bash interpreter is required). The script cannot be executed.' + appInfoTip;
   }
-  return 'No available shell detected (bash is required). The script cannot be executed.';
+  return 'No available shell detected (bash is required). The script cannot be executed.' + appInfoTip;
 };
 
 // 运行中：旋转的绿色图标（替代原本的 "Running..." 文字），0.9s 匀速旋转
@@ -1371,7 +1374,22 @@ function App() {
         );
         return (
           <div className="no-shell-banner">
-            ⚠️ {title}: script execution is unavailable. {hint}
+            <span className="no-shell-banner-icon">⚠️</span>
+            <div className="no-shell-banner-body">
+              <div className="no-shell-banner-title">{title}: script execution is unavailable.</div>
+              <div className="no-shell-banner-hint">
+                {hint}{' '}
+                If your bash is installed at a custom location, you can add its path in{' '}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => { setShowInfoModal(true); fetchShells(); }}
+                >
+                  App Info
+                </button>
+                {' '}(top-right ⓘ icon → “Add a bash path”).
+              </div>
+            </div>
           </div>
         );
       })()}

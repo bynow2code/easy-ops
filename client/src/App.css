@@ -1945,12 +1945,43 @@ html, body, #root {
 
 /* 顶部无可用 Shell 提示横幅 */
 .no-shell-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   background: var(--bg-state-warning);
   color: var(--text-state-warning-deep);
   border-bottom: 1px solid var(--border-state-warning);
   padding: 10px 18px;
   font-size: 13px;
   line-height: 1.5;
+}
+.no-shell-banner-icon {
+  flex-shrink: 0;
+  line-height: 1.5;
+}
+.no-shell-banner-body {
+  min-width: 0;
+}
+.no-shell-banner-title {
+  font-weight: 600;
+}
+.no-shell-banner-hint {
+  margin-top: 2px;
+}
+/* 横幅里「打开 App Info」的内联链接按钮：无边框、品牌色、带下划线，看着像文字链接 */
+.link-btn {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text-primary, #1677ff);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover {
+  color: var(--text-primary-hover, #4096ff);
 }
 
 .update-error-text {

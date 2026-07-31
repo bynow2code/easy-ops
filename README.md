@@ -29,7 +29,7 @@ EasyOps 把这些脚本统一管起来：
 |------|------|
 | 📁 **脚本管理** | 新增、编辑、删除 Shell 脚本，内容随手保存 |
 | 🗂️ **分组管理** | 支持 Backend / Frontend 等分组，拖拽即可切换所属分组 |
-| 🖥️ **单脚本 Shell 指定** | 每个脚本可在编辑时单独选择 Shell 解释器（从全局 Shell 列表里挑）；不指定则跟随全局配置。脚本列表里脚本名右上角带**黄色小圆点**（类似通知红点，但保持黄色）的，即单独指定了 Shell |
+| 🖥️ **单脚本 Shell 指定** | 每个脚本可在编辑时单独选择 Shell 解释器（从全局 Shell 列表里挑）；不指定则跟随全局配置。脚本列表里，脚本名**右侧一个黄色小圆点**的，即单独指定了 Shell；鼠标悬停该圆点可查看具体用的是哪个解释器 |
 | ↕️ **拖拽排序** | 拖动调整脚本顺序，支持跨分组拖拽 |
 | ⚡ **实时流式执行** | 基于 SSE 技术，脚本输出像终端一样实时滚动展示 |
 | 🔁 **批量执行** | 多选脚本后一键批量运行，多个脚本可并发执行 |
@@ -134,7 +134,9 @@ Windows 上应用会自动识别 **Git Bash / WSL** 作为执行环境，无需�
 不会。应用在 Windows 上以隐藏窗口方式运行 Shell，执行过程只显示在应用内的输出面板中，不会跳出黑框或 Windows Terminal。
 
 **Q：我的脚本用的是哪个 Shell？**
-应用会自动检测当前环境：Windows 使用 Git Bash / WSL（bash 语法脚本），macOS / Linux 使用 bash。可在 App Info 中查看当前实际使用的 Shell。若本机无可用 Shell（包括手动开启 App Info 中的「无 Shell 模式」），主界面会弹出醒目提示：Windows 提示安装 WSL / Git Bash，macOS 提示安装 Xcode Command Line Tools（`xcode-select --install`），Linux 提示安装 bash；此时脚本无法执行。
+应用会自动检测当前环境：Windows 使用 Git Bash / WSL（bash 语法脚本），macOS / Linux 使用 bash。可在 App Info 中查看当前实际使用的 Shell。
+
+若本机没有可用 Shell（或手动开启了 App Info 中的「无 Shell 模式」），主界面顶部会弹出醒目提示：Windows 提示安装 WSL / Git Bash，macOS 提示安装 Xcode Command Line Tools（`xcode-select --install`），Linux 提示安装 bash；此时脚本无法执行。提示内附带一个 **App Info** 链接，点击可直接打开 App Info 的 Shells 设置——如果你的 bash 装在非标准路径，可在输入框里填它的绝对路径（或点 Browse 选择），无需额外安装即可让脚本跑起来。
 
 **Q：可以自定义 / 切换执行脚本用的 bash 路径吗？**
 可以。打开 **App Info** → **Shells** 区域：
