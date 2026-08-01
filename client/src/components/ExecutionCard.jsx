@@ -38,7 +38,9 @@ export default function ExecutionCard({ exec, onClose, onRerun, onToggleStick })
           <span className="exec-card__meta">{ago}</span>
         </div>
         <div className="exec-card__head-right">
-          <span className={`exec-card__exit ${exec.status === 'failed' ? 'is-fail' : 'is-ok'}`}>
+          <span
+            className={`exec-card__exit ${exec.exit != null && exec.exit !== 0 ? 'is-fail' : 'is-ok'}`}
+          >
             Exit: {exec.exit ?? '-'}
           </span>
           <button
@@ -54,7 +56,9 @@ export default function ExecutionCard({ exec, onClose, onRerun, onToggleStick })
           <button className="icon-btn" title="Maximize" onClick={() => onRerun(exec.id, 'max')}>
             <IconExpand />
           </button>
-          <button className="exec-card__close" onClick={() => onClose(exec.id)}>Close</button>
+          <button className="exec-card__close" onClick={() => onClose(exec.id)}>
+            Close
+          </button>
         </div>
       </header>
 
@@ -64,9 +68,11 @@ export default function ExecutionCard({ exec, onClose, onRerun, onToggleStick })
 
       <footer className="exec-card__foot">
         <span className={`status-pill status-pill--${exec.status}`}>
-          {exec.status === 'running' ? 'Running' : exec.status === 'failed' ? 'Failed' : 'Finished'}
+          {exec.status === 'running' ? 'Running' : exec.status === 'idle' ? 'Idle' : 'Exited'}
         </span>
-        <span className="exec-card__foot-meta">scroll to bottom: {exec.stickToBottom ? 'on' : 'off'}</span>
+        <span className="exec-card__foot-meta">
+          scroll to bottom: {exec.stickToBottom ? 'on' : 'off'}
+        </span>
       </footer>
     </article>
   );

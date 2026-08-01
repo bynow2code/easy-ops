@@ -13,14 +13,18 @@ export default function ExecutionPanel({
   onRerun,
   onToggleStick,
 }) {
+  const hasMax = executions.some((e) => e.maximized);
+
   return (
     <section className="panel panel--exec">
       <div className="exec-head">
         <div className="exec-head__title">Execution Outputs</div>
-        <button className="pill pill--white" onClick={onCloseAll}>Close all</button>
+        <button className="pill pill--white" onClick={onCloseAll}>
+          Close all
+        </button>
       </div>
 
-      <div className="exec-list">
+      <div className={`exec-list ${hasMax ? 'has-max' : ''}`}>
         {executions.length === 0 ? (
           <div className="exec-empty">
             <div>No execution output yet.</div>

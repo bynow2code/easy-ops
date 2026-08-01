@@ -36,7 +36,8 @@ const buildGroup = (group, items) =>
     id: `${group.toLowerCase()}-${i}`,
     group,
     name,
-    status: 'idle', // idle | running | done | failed
+    content: '', // 脚本正文，新增脚本时由用户填写；mock 数据留空
+    status: 'idle', // idle | running | exited
   }));
 
 export const initialScripts = [
@@ -50,10 +51,21 @@ export function mockOutputFor(name) {
   const isWms = name.startsWith('WMS');
   const isOms = name.startsWith('OMS');
   const isDev = /-DEV$/.test(name);
-  const repo = isPms ? (isDev ? 'dev_mns_pms' : 'mns_pms')
-    : isWms ? (isDev ? 'dev_mns_wms' : 'mns_wms')
-    : isOms ? (isDev ? 'dev_mns_oms' : 'mns_oms')
-    : (isDev ? `dev_${name.toLowerCase()}` : name.toLowerCase());
+  const repo = isPms
+    ? isDev
+      ? 'dev_mns_pms'
+      : 'mns_pms'
+    : isWms
+      ? isDev
+        ? 'dev_mns_wms'
+        : 'mns_wms'
+      : isOms
+        ? isDev
+          ? 'dev_mns_oms'
+          : 'mns_oms'
+        : isDev
+          ? `dev_${name.toLowerCase()}`
+          : name.toLowerCase();
 
   return [
     `======== ${repo} ========`,
@@ -67,6 +79,6 @@ export function mockOutputFor(name) {
     '> ./deploy.sh --env ' + (isDev ? 'dev' : 'test'),
     '部署完成。',
     '',
-    `Process exited with code 0 (${(700 + Math.floor(Math.random() * 900))}ms)`,
+    `Process exited with code 0 (${700 + Math.floor(Math.random() * 900)}ms)`,
   ];
 }

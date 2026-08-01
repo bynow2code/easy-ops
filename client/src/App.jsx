@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import TopBar from './components/TopBar.jsx';
 import ScriptList from './components/ScriptList.jsx';
 import ExecutionPanel from './components/ExecutionPanel.jsx';
 import AddGroupModal from './components/AddGroupModal.jsx';
+import AddScriptModal from './components/AddScriptModal.jsx';
 import { initialScripts, mockOutputFor } from './data/mockScripts.js';
 
 /**
@@ -20,6 +21,31 @@ export default function App() {
   // 分组列表（静态：仅本地 state，后续接后端时由 /api/groups 替换）
   const [groups, setGroups] = useState(['BACKEND SCRIPTS', 'FRONTEND SCRIPTS']);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  const [addScriptOpen, setAddScriptOpen] = useState(false);
+
+  // 左右分栏比例（脚本列表宽度占比 %），支持拖动中线调节
+  const [split, setSplit] = useState(50);
+  const [dragging, setDragging] = useState(false);
+  const mainRef = useRef(null);
+
+  const startDrag = (e) => {
+    e.preventDefault();
+    setDragging(true);
+    const move = (ev) => {
+      const rect = mainRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      let pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      pct = Math.min(80, Math.max(20, pct)); // 限制 20%~80%，避免某一栏被压没
+      setSplit(pct);
+    };
+    const up = () => {
+      setDragging(false);
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
 
   const selectedCount = selected.size;
 
@@ -58,24 +84,22 @@ export default function App() {
     };
     setExecutions((prev) => [exec, ...prev]);
     // 脚本侧状态切到 running
-    setScripts((prev) =>
-      prev.map((s) => (s.id === script.id ? { ...s, status: 'running' } : s))
-    );
+    setScripts((prev) => prev.map((s) => (s.id === script.id ? { ...s, status: 'running' } : s)));
 
     // 模拟流式输出 + 完成
     const tick = (i) => {
       if (i >= lines.length) {
         const duration = Date.now() - startedAt;
         setExecutions((prev) =>
-          prev.map((e) => (e.id === id ? { ...e, status: 'done', exit: 0, duration } : e))
+          prev.map((e) => (e.id === id ? { ...e, status: 'exited', exit: 0, duration } : e)),
         );
         setScripts((prev) =>
-          prev.map((s) => (s.id === script.id ? { ...s, status: 'done' } : s))
+          prev.map((s) => (s.id === script.id ? { ...s, status: 'exited' } : s)),
         );
         return;
       }
       setExecutions((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, lines: lines.slice(0, i + 1) } : e))
+        prev.map((e) => (e.id === id ? { ...e, lines: lines.slice(0, i + 1) } : e)),
       );
       setTimeout(() => tick(i + 1), 80);
     };
@@ -95,9 +119,12 @@ export default function App() {
     setSelected(new Set());
   };
 
-  const handleAddScript = () => {
-    // TODO(下一步): 接入新增脚本表单
-    window.alert('TODO: 新增脚本表单（下一步接入）');
+  const handleAddScript = () => setAddScriptOpen(true);
+
+  const handleSaveScript = ({ name, group, content }) => {
+    const id = `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setScripts((prev) => [...prev, { id, name, group, content: content || '', status: 'idle' }]);
+    setAddScriptOpen(false);
   };
 
   const handleAddGroup = () => setAddGroupOpen(true);
@@ -117,19 +144,14 @@ export default function App() {
     setScripts((prev) => prev.filter((s) => s.id !== script.id));
   };
 
-  const handleLocate = (script) => {
-    window.alert(`TODO: 定位脚本 ${script.name}（下一步接入）`);
-  };
-
-  const handleClose = (execId) =>
-    setExecutions((prev) => prev.filter((e) => e.id !== execId));
+  const handleClose = (execId) => setExecutions((prev) => prev.filter((e) => e.id !== execId));
 
   const handleCloseAll = () => setExecutions([]);
 
   const handleRerun = (execId, mode) => {
     if (mode === 'max') {
       setExecutions((prev) =>
-        prev.map((e) => (e.id === execId ? { ...e, maximized: !e.maximized } : e))
+        prev.map((e) => (e.id === execId ? { ...e, maximized: !e.maximized } : e)),
       );
       return;
     }
@@ -140,7 +162,7 @@ export default function App() {
 
   const handleToggleStick = (execId) =>
     setExecutions((prev) =>
-      prev.map((e) => (e.id === execId ? { ...e, stickToBottom: !e.stickToBottom } : e))
+      prev.map((e) => (e.id === execId ? { ...e, stickToBottom: !e.stickToBottom } : e)),
     );
 
   // 演示用：进入应用时自动跑两个脚本，复现截图中的运行态
@@ -149,7 +171,7 @@ export default function App() {
     const fe = scripts.find((s) => s.name === 'PMS-后端-DEV');
     if (be) setTimeout(() => runScript(be), 200);
     if (fe) setTimeout(() => runScript(fe), 600);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -161,8 +183,9 @@ export default function App() {
         onAddGroup={handleAddGroup}
         onDeleteSelected={handleDeleteSelected}
       />
-      <main className="main">
+      <main className={`main ${dragging ? 'is-dragging' : ''}`} ref={mainRef}>
         <ScriptList
+          style={{ flex: `0 0 ${split}%` }}
           groups={groups}
           scripts={scripts}
           selectedSet={selected}
@@ -171,7 +194,13 @@ export default function App() {
           onExecute={handleExecute}
           onEdit={handleEdit}
           onRemove={handleRemove}
-          onLocate={handleLocate}
+        />
+        <div
+          className="v-splitter"
+          onMouseDown={startDrag}
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize"
         />
         <ExecutionPanel
           executions={executions}
@@ -187,6 +216,13 @@ export default function App() {
         existing={groups}
         onClose={() => setAddGroupOpen(false)}
         onSave={handleSaveGroup}
+      />
+
+      <AddScriptModal
+        open={addScriptOpen}
+        groups={groups}
+        onClose={() => setAddScriptOpen(false)}
+        onSave={handleSaveScript}
       />
     </div>
   );

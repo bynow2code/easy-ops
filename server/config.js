@@ -15,8 +15,7 @@ const os = require('os');
 
 // 默认日志目录：打包后由主进程注入 userData/logs；
 // 开发 / 独立运行时回退到用户主目录下的 .easyops/logs。
-const LOG_DIR =
-  process.env.EASYOPS_LOG_DIR || path.join(os.homedir(), '.easyops', 'logs');
+const LOG_DIR = process.env.EASYOPS_LOG_DIR || path.join(os.homedir(), '.easyops', 'logs');
 
 module.exports = {
   // 脚本持久化文件（脚本列表 / 新增脚本写入此处）

@@ -38,11 +38,21 @@ export default function TopBar({
         </button>
       </div>
       <div className="top-bar__right">
-        <IconBtn title="Download"><IconDownload /></IconBtn>
-        <IconBtn title="Upload"><IconUpload /></IconBtn>
-        <IconBtn title="Refresh"><IconRefresh /></IconBtn>
-        <IconBtn title="Fullscreen"><IconExpand /></IconBtn>
-        <IconBtn title="Settings"><IconSettings /></IconBtn>
+        <IconBtn title="Download">
+          <IconDownload />
+        </IconBtn>
+        <IconBtn title="Upload">
+          <IconUpload />
+        </IconBtn>
+        <IconBtn title="Refresh">
+          <IconRefresh />
+        </IconBtn>
+        <IconBtn title="Fullscreen">
+          <IconExpand />
+        </IconBtn>
+        <IconBtn title="Settings">
+          <IconSettings />
+        </IconBtn>
       </div>
     </header>
   );

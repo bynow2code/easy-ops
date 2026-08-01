@@ -130,7 +130,6 @@ function createLogger(userConfig = {}) {
       return config.dir;
     } catch (e) {
       if (enableConsole) {
-        // eslint-disable-next-line no-console
         console.error(`[logger] 无法创建日志目录 ${config.dir}: ${e.message}`);
       }
       fileDisabled = true;
@@ -200,12 +199,7 @@ function createLogger(userConfig = {}) {
     const entry = buildEntry(level, message, context, error);
 
     if (enableConsole) {
-      const out =
-        level === 'error'
-          ? console.error
-          : level === 'warn'
-          ? console.warn
-          : console.log;
+      const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
       out(consoleLine(entry));
     }
     if (enableFile) writeFile(fileLine(entry));

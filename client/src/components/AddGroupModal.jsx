@@ -45,7 +45,9 @@ export default function AddGroupModal({ open, existing = [], onClose, onSave }) 
       <div className="modal" role="dialog" aria-modal="true" aria-label="Add Group">
         <div className="modal__head">
           <span className="modal__title">Add Group</span>
-          <button className="modal__close" onClick={onClose} aria-label="Close">×</button>
+          <button className="modal__close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
         </div>
 
         <div className="modal__body">
@@ -81,7 +83,9 @@ export default function AddGroupModal({ open, existing = [], onClose, onSave }) 
         </div>
 
         <div className="modal__foot">
-          <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn--ghost" onClick={onClose}>
+            Cancel
+          </button>
           <button className="btn btn--blue" disabled={!valid} onClick={handleSave}>
             Save
           </button>
