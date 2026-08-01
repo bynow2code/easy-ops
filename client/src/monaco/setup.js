@@ -16,12 +16,20 @@
  */
 import * as monaco from 'monaco-editor/editor/editor.api';
 import 'monaco-editor/languages/definitions/shell/register';
+// 关键：editor.api 仅含编辑器内核 + FormattingConflicts 一个贡献，
+// 并不注册 SuggestController（补全浮层 UI / triggerSuggest 命令）。
+// 补上 suggest 贡献模块，补全浮层才能被查询并显示；其余 70+ 语言包仍不引入，保住体积优化。
+import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js';
 import editorWorker from 'monaco-editor/editor/editor.worker?worker';
+import { registerShellCompletions } from './shellCompletions';
 
 self.MonacoEnvironment = {
   getWorker() {
     return new editorWorker();
   },
 };
+
+// 注册 shell 代码提示（命令 / 关键字 / 变量）
+registerShellCompletions();
 
 export { monaco };

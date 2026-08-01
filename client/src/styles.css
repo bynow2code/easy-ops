@@ -260,6 +260,15 @@ body {
   display: flex;
   flex-direction: column;
 }
+/* 拖拽中：高亮可投放的分组 */
+.script-group.is-dragover .script-group__rows {
+  outline: 1.5px dashed var(--c-blue);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+.script-group.is-dragover .script-group__head {
+  background: rgba(37, 99, 235, 0.06);
+}
 
 .script-row {
   display: grid;
@@ -271,6 +280,12 @@ body {
 }
 .script-row:hover {
   background: #fbfcfd;
+}
+.script-row.is-dragging {
+  opacity: 0.45;
+}
+.script-row__drag:active {
+  cursor: grabbing;
 }
 
 .script-row__drag {
@@ -422,17 +437,26 @@ body {
   height: 20px;
   border-radius: 4px;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   padding: 0 6px;
+  white-space: nowrap;
 }
-.badge--be {
+.badge--1 {
   background: var(--c-blue-2);
   color: var(--c-blue-3);
 }
-.badge--fe {
+.badge--2 {
   background: var(--c-purple-2);
   color: var(--c-purple);
+}
+.badge--3 {
+  background: #ccfbf1;
+  color: var(--c-teal);
+}
+.badge--4 {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .exec-card__name {
@@ -442,6 +466,14 @@ body {
 .exec-card__meta {
   color: var(--text-faint);
   font-size: 12px;
+}
+
+.exec-card__meta--shell {
+  padding: 1px 7px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 999px;
+  background: var(--bg-soft, #f6f7f9);
+  color: var(--text-muted, #475569);
 }
 
 .exec-card__exit {
@@ -703,16 +735,68 @@ input[type='checkbox'] {
   filter: none;
 }
 
-/* 添加脚本：更宽以容纳 Monaco 编辑器 */
-.modal--script {
-  width: 560px;
+/* 添加脚本：条件替换右侧输出区的编辑器面板（与 .panel 同列弹性，占满右区） */
+.editor-panel {
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  min-height: 0;
+  overflow: hidden;
+}
+.editor-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.editor-panel__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.editor-panel__body {
+  flex: 1;
+  min-height: 0;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+/* 编辑器字段占满面板剩余高度，Monaco 随之撑开 */
+.editor-panel__editor {
+  flex: 1;
+  min-height: 0;
+}
+.editor-panel__editor .monaco-host {
+  flex: 1;
+  height: auto;
+  min-height: 240px;
+}
+.editor-panel__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-soft);
+  flex-shrink: 0;
 }
 .monaco-host {
-  height: 260px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: #fff;
+}
+/* 补全/悬浮浮层保险：确保浮层稳定可见（fixed 渲染，仍在 .monaco-editor 内）。 */
+.monaco-editor .suggest-widget,
+.monaco-editor .monaco-hover {
+  z-index: 1001;
 }
 .modal__error {
   color: var(--c-red);
@@ -727,4 +811,425 @@ input[type='checkbox'] {
   font-size: 12px;
   font-style: italic;
   border-bottom: 1px solid var(--border-row);
+}
+
+/* 列表级空态（无分组 / 无脚本） */
+.script-list__empty {
+  padding: 24px 14px;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ==========================================================
+   Theme: Dark
+   覆盖深色模式下的颜色（少量未走变量的硬编码颜色在此单独覆写）。
+   主要语义色通过变量切换：--bg-app/--bg-panel/--bg-soft/--text/--border 等。
+   ========================================================== */
+:root[data-theme='dark'] {
+  --bg-app: #1a1b1e;
+  --bg-panel: #25262a;
+  --bg-soft: #1f2024;
+  --bg-muted: #2a2b2f;
+  --border: #3a3b40;
+  --border-soft: #2e2f33;
+  --border-row: #2a2b2f;
+  --text: #e5e7eb;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+  --text-icon: #9ca3af;
+
+  /* 语义浅色背景调暗，使 pill/badge 在深色面板上仍可读 */
+  --c-blue-2: #1e3a8a;
+  --c-green-2: #14532d;
+  --c-purple-2: #4c1d95;
+}
+
+:root[data-theme='dark'] .pill--white {
+  background: #2a2b2f;
+  color: var(--text);
+  border-color: #3a3b40;
+}
+:root[data-theme='dark'] .pill--white:hover {
+  background: #33343a;
+}
+:root[data-theme='dark'] .pill--muted:not(.is-disabled):hover {
+  background: #2a2b2f;
+  color: var(--text);
+}
+:root[data-theme='dark'] .pill--muted.is-disabled {
+  color: #4b4c52;
+}
+:root[data-theme='dark'] .icon-btn:hover {
+  background: #2a2b2f;
+  color: var(--text);
+}
+:root[data-theme='dark'] .icon-btn.is-on {
+  color: #93c5fd;
+  background: #1e3a8a;
+}
+:root[data-theme='dark'] .v-splitter {
+  background: #3a3b40;
+}
+:root[data-theme='dark'] .modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+:root[data-theme='dark'] .modal,
+:root[data-theme='dark'] .editor-panel {
+  background: #25262a;
+  border-color: #3a3b40;
+}
+:root[data-theme='dark'] .modal__foot,
+:root[data-theme='dark'] .editor-panel__foot {
+  border-top-color: #3a3b40;
+}
+:root[data-theme='dark'] .monaco-host {
+  background: #1e1f23;
+  border-color: #3a3b40;
+}
+:root[data-theme='dark'] .field__input {
+  background: #1f2024;
+  color: var(--text);
+  border-color: #3a3b40;
+}
+:root[data-theme='dark'] .field__input::placeholder {
+  color: #6b7280;
+}
+:root[data-theme='dark'] .field__input:focus {
+  border-color: var(--c-blue);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+/* 状态徽章（teal/amber 在浅色下的硬编码背景） */
+:root[data-theme='dark'] .badge--3 {
+  background: #14532d;
+  color: #86efac;
+}
+:root[data-theme='dark'] .badge--4 {
+  background: #78350f;
+  color: #fcd34d;
+}
+/* 脚本列表行 hover (硬编码 #fbfcfd) */
+:root[data-theme='dark'] .script-row:hover {
+  background: #2a2b2f;
+}
+:root[data-theme='dark'] .script-row.is-running {
+  background: rgba(37, 99, 235, 0.12);
+}
+/* v-splitter 拖动中（硬编码 rgba） */
+:root[data-theme='dark'] .v-splitter:hover,
+:root[data-theme='dark'] .v-splitter.is-dragging {
+  background: var(--c-blue);
+}
+
+/* ------------ Settings (App Info) Modal ------------ */
+.modal--settings {
+  width: 560px;
+  max-height: 80vh;
+}
+.modal__body--settings {
+  padding: 14px 18px 6px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.modal__foot--settings {
+  justify-content: space-between;
+}
+.btn--sm {
+  height: 20px;
+  font-size: 11px;
+  padding: 0 8px;
+  min-width: 0;
+}
+
+.btn--sm.is-ok {
+  color: #166534;
+  border-color: rgba(22, 163, 74, 0.4);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-section__label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.settings-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-value {
+  font-family: 'SFMono-Regular', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.settings-link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  color: var(--c-blue);
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  word-break: break-all;
+}
+.settings-link:hover {
+  text-decoration: underline;
+}
+.settings-link-inline {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--c-blue);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+
+.settings-update {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+.settings-update--ok {
+  background: rgba(22, 163, 74, 0.08);
+  color: #166534;
+}
+.settings-update--new {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+.settings-update--err {
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+}
+
+.settings-current-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.settings-muted {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.settings-muted--pad {
+  padding: 8px 0;
+}
+
+.settings-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.settings-path {
+  flex: 1 1 auto;
+  font-family: 'SFMono-Regular', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-all;
+  user-select: text;
+}
+
+.settings-warning {
+  border: 1.5px dashed #f59e0b;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: rgba(245, 158, 11, 0.06);
+  color: #92400e;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+.settings-warning__hint {
+  margin: 0;
+  font-size: 12px;
+  color: #b45309;
+}
+
+.settings-shell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-shell-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-panel);
+  transition: border-color 0.15s, background 0.15s;
+}
+.settings-shell-card:hover {
+  border-color: var(--c-blue);
+}
+.settings-shell-card.is-active {
+  border-color: var(--c-blue);
+  background: rgba(37, 99, 235, 0.06);
+}
+.settings-shell-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-shell-card__version {
+  flex: 1 1 auto;
+}
+.settings-shell-card__path {
+  font-family: 'SFMono-Regular', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.settings-shell-card__remove {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.settings-shell-card__remove:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.settings-shell-card__remove:active {
+  background: rgba(220, 38, 38, 0.2);
+}
+
+:root[data-theme='dark'] .settings-shell-card__remove:hover {
+  background: rgba(248, 113, 113, 0.18);
+  color: #f87171;
+}
+.settings-active-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #166534;
+  background: rgba(22, 163, 74, 0.12);
+  border: 1px solid rgba(22, 163, 74, 0.35);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.settings-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.settings-add-row .field__input {
+  flex: 1 1 auto;
+}
+
+.settings-flash {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.settings-flash--ok {
+  background: rgba(22, 163, 74, 0.12);
+  color: #166534;
+}
+.settings-flash--err {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+.settings-flash--info {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+/* dark theme overrides for settings */
+:root[data-theme='dark'] .settings-warning {
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+}
+:root[data-theme='dark'] .settings-warning__hint {
+  color: #fbbf24;
+}
+:root[data-theme='dark'] .settings-update--ok {
+  background: rgba(22, 163, 74, 0.14);
+  color: #4ade80;
+}
+:root[data-theme='dark'] .settings-update--new {
+  background: rgba(37, 99, 235, 0.14);
+  color: #93c5fd;
+}
+:root[data-theme='dark'] .settings-update--err {
+  background: rgba(220, 38, 38, 0.14);
+  color: #fca5a5;
+}
+:root[data-theme='dark'] .settings-active-badge {
+  background: rgba(22, 163, 74, 0.18);
+  border-color: rgba(22, 163, 74, 0.5);
+  color: #4ade80;
+}
+:root[data-theme='dark'] .settings-shell-card.is-active {
+  background: rgba(37, 99, 235, 0.1);
 }

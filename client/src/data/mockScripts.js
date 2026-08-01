@@ -1,49 +1,9 @@
 /**
- * 客户端 Mock 数据
- * 仅用于 UI 设计阶段。后续接后端时由 server/index.js 暴露的 /api/scripts 替换。
+ * 脚本运行输出模拟器（仅前端阶段）。
+ *
+ * 真实 PTY 未接入前，runScript 用本函数生成与截图一致风格的模拟输出。
+ * 后续接后端时由 server/index.js 暴露的 /api/run 实时流替换。
  */
-
-// 后端脚本列表
-const BACKEND = [
-  'PMS-后端-DEV',
-  'PMS-后端-TEST',
-  'WMS-后端-DEV',
-  'WMS-后端-TEST',
-  'OMS-后端-DEV',
-  'OMS-后端-TEST',
-  'CORE-后端-DEV',
-  'CORE-后端-TEST',
-  'CORE-后端-刷新权限-DEV',
-  'CORE-后端-刷新权限-TEST',
-  'INFRA-后端-DEV',
-  'INFRA-后端-TEST',
-  'AUDIT-后端-DEV',
-  'AUDIT-后端-TEST',
-  'NOTIFY-后端-DEV',
-];
-
-const FRONTEND = [
-  'PMS-前端-TEST',
-  'WMS-前端-DEV',
-  'WMS-前端-TEST',
-  'OMS-前端-TEST',
-  'CORE-前端-TEST',
-  'PORTAL-前端-DEV',
-];
-
-const buildGroup = (group, items) =>
-  items.map((name, i) => ({
-    id: `${group.toLowerCase()}-${i}`,
-    group,
-    name,
-    content: '', // 脚本正文，新增脚本时由用户填写；mock 数据留空
-    status: 'idle', // idle | running | exited
-  }));
-
-export const initialScripts = [
-  ...buildGroup('BACKEND SCRIPTS', BACKEND),
-  ...buildGroup('FRONTEND SCRIPTS', FRONTEND),
-];
 
 // 根据脚本名生成模拟输出（与截图一致风格）
 export function mockOutputFor(name) {
@@ -69,15 +29,15 @@ export function mockOutputFor(name) {
 
   return [
     `======== ${repo} ========`,
-    '当前分支: master',
-    '开始拉取最新代码......',
+    'Current branch: master',
+    'Pulling latest code......',
     'Already up to date.',
     '',
     `> npm run build --workspace ${repo}`,
-    '构建产物已上传，跳过',
+    'Build artifacts uploaded, skipped',
     '',
     '> ./deploy.sh --env ' + (isDev ? 'dev' : 'test'),
-    '部署完成。',
+    'Deployment complete.',
     '',
     `Process exited with code 0 (${700 + Math.floor(Math.random() * 900)}ms)`,
   ];

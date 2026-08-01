@@ -72,3 +72,52 @@ export const IconDrag = (p) => (
     <circle cx="15" cy="18" r="1" />
   </svg>
 );
+
+// 主题切换图标：sun=light, moon=dark, contrast=follow system
+export const IconSun = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2" />
+    <path d="M12 20v2" />
+    <path d="M4.93 4.93l1.41 1.41" />
+    <path d="M17.66 17.66l1.41 1.41" />
+    <path d="M2 12h2" />
+    <path d="M20 12h2" />
+    <path d="M4.93 19.07l1.41-1.41" />
+    <path d="M17.66 6.34l1.41-1.41" />
+  </svg>
+);
+
+export const IconMoon = (p) => (
+  <svg {...base} {...p}>
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+);
+
+// contrast：圆+半填充（用于"跟随系统"）
+export const IconContrast = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const IconCheck = (p) => (
+  <svg {...base} {...p}>
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
+
+export const IconExternal = (p) => (
+  <svg {...base} {...p}>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <path d="M15 3h6v6" />
+    <path d="M10 14L21 3" />
+  </svg>
+);
+
+export const IconFolder = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </svg>
+);

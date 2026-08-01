@@ -21,6 +21,16 @@ export default function AddGroupModal({ open, existing = [], onClose, onSave }) 
     return () => clearTimeout(t);
   }, [open]);
 
+  // 仅允许 ESC 与 Close 按钮关闭：全局监听 Escape
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const trimmed = name.trim();
@@ -35,13 +45,8 @@ export default function AddGroupModal({ open, existing = [], onClose, onSave }) 
     onSave(trimmed);
   };
 
-  // 点击遮罩关闭（仅当点在遮罩本身）
-  const handleOverlay = (e) => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
   return (
-    <div className="modal-overlay" onMouseDown={handleOverlay}>
+    <div className="modal-overlay">
       <div className="modal" role="dialog" aria-modal="true" aria-label="Add Group">
         <div className="modal__head">
           <span className="modal__title">Add Group</span>
@@ -84,7 +89,7 @@ export default function AddGroupModal({ open, existing = [], onClose, onSave }) 
 
         <div className="modal__foot">
           <button className="btn btn--ghost" onClick={onClose}>
-            Cancel
+            Close
           </button>
           <button className="btn btn--blue" disabled={!valid} onClick={handleSave}>
             Save

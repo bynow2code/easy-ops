@@ -3,25 +3,67 @@ import TopBar from './components/TopBar.jsx';
 import ScriptList from './components/ScriptList.jsx';
 import ExecutionPanel from './components/ExecutionPanel.jsx';
 import AddGroupModal from './components/AddGroupModal.jsx';
-import AddScriptModal from './components/AddScriptModal.jsx';
-import { initialScripts, mockOutputFor } from './data/mockScripts.js';
+import AddScriptPanel from './components/AddScriptPanel.jsx';
+import SettingsModal from './components/SettingsModal.jsx';
+import { useTheme } from './hooks/useTheme.js';
+import { mockOutputFor } from './data/mockScripts.js';
+import { readFrontendShells } from './shellStore.js';
 
 /**
  * 应用根组件：管理三个顶层状态
- *  - scripts:     脚本列表（来自 mock，后续接 /api/scripts）
+ *  - scripts:     脚本列表（初始为空，由用户在 UI 中添加；后续接 /api/scripts）
  *  - selectedSet: 已勾选脚本 id 集合
- *  - executions:  当前运行/已完成的输出卡
+ *  - executions:  当前运行/已完成的输出卡（模拟输出，后续接真实 PTY）
  *
  * 纯函数式业务：派生 selectedCount / 分组结果等。
  */
 export default function App() {
-  const [scripts, setScripts] = useState(initialScripts);
+  const [scripts, setScripts] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
   const [executions, setExecutions] = useState([]);
-  // 分组列表（静态：仅本地 state，后续接后端时由 /api/groups 替换）
-  const [groups, setGroups] = useState(['BACKEND SCRIPTS', 'FRONTEND SCRIPTS']);
+  // 分组列表（初始为空，由"Add Group"创建；后续接后端时由 /api/groups 替换）
+  const [groups, setGroups] = useState([]);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [addScriptOpen, setAddScriptOpen] = useState(false);
+  const [editingScript, setEditingScript] = useState(null); // null = 新增模式
+  const [settingsOpen, setSettingsOpen] = useState(false); // 设置（App Info）面板
+
+  // Shell 列表（检测到的 + 自定义的）与全局 shell 路径，供"添加/编辑脚本"选择解释器，
+  // 以及执行时把 'global' 解析成实际路径。未挂载 Electron 时保持为空/默认，UI 优雅退化。
+  const [shells, setShells] = useState([]);
+  const [globalShellPath, setGlobalShellPath] = useState(null);
+
+  // 拉取 shell 列表（检测到的 + 自定义的）与全局 shell 路径；供"添加/编辑脚本"的
+  // 解释器下拉、以及执行时把 'global' 解析成实际路径。未挂载 Electron 时为无操作。
+  // 抽成独立函数：挂载时调一次，Settings 关闭时也调一次，确保设置里新增/移除的
+  // 自定义 shell 能实时反映到 Add/Edit Script 的下拉（否则会停留在挂载时的快照）。
+  const reloadShells = () => {
+    const api = typeof window !== 'undefined' ? window.easyOps : null;
+    if (api?.shell?.list) {
+      api.shell
+        .list()
+        .then((st) => {
+          setShells(Array.isArray(st.shells) ? st.shells : []);
+          setGlobalShellPath(st.activeShellPath || st.shells?.[0]?.path || null);
+        })
+        .catch(() => {
+          /* 忽略：保留默认值 */
+        });
+      return;
+    }
+    // 无 Electron 后端：从 localStorage 读取前端态自定义 shell，
+    // 否则关闭 Settings 后 Add/Edit Script 的 Shell 下拉仍是空快照
+    const fe = readFrontendShells();
+    setShells(fe);
+    setGlobalShellPath(fe[0]?.path || null);
+  };
+
+  useEffect(() => {
+    reloadShells();
+  }, []);
+
+  // 主题：三态循环（system → dark → light → system），通过 <html data-theme> 切换
+  const { theme, cycleTheme } = useTheme();
 
   // 左右分栏比例（脚本列表宽度占比 %），支持拖动中线调节
   const [split, setSplit] = useState(50);
@@ -69,6 +111,9 @@ export default function App() {
     const id = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const lines = mockOutputFor(script.name);
     const startedAt = Date.now();
+    // 'global' 解析为当前应用全局 shell 路径；否则用脚本指定的解释器路径
+    const shellChoice = script.shell || 'global';
+    const shellPath = shellChoice === 'global' ? globalShellPath : shellChoice;
     const exec = {
       id,
       scriptId: script.id,
@@ -78,9 +123,11 @@ export default function App() {
       duration: 0,
       status: 'running',
       exit: null,
+      shell: shellChoice,
+      shellPath,
       lines: [lines[0]], // 先输出一行，模拟流式
-      stickToBottom: true,
       maximized: false,
+      stickToBottom: true,
     };
     setExecutions((prev) => [exec, ...prev]);
     // 脚本侧状态切到 running
@@ -119,15 +166,69 @@ export default function App() {
     setSelected(new Set());
   };
 
-  const handleAddScript = () => setAddScriptOpen(true);
+  const handleAddScript = () => {
+    setEditingScript(null);
+    setAddScriptOpen(true);
+  };
 
-  const handleSaveScript = ({ name, group, content }) => {
-    const id = `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setScripts((prev) => [...prev, { id, name, group, content: content || '', status: 'idle' }]);
+  // 关闭编辑器面板：同时清掉编辑态，确保下次打开是干净的新增模式
+  const handleCloseScriptPanel = () => {
     setAddScriptOpen(false);
+    setEditingScript(null);
+  };
+
+  const handleSaveScript = ({ id, name, group, content, shell }) => {
+    if (id) {
+      // 编辑模式：原地更新
+      setScripts((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, name, group, content: content || '', shell } : s)),
+      );
+    } else {
+      // 新增模式
+      const newId = `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setScripts((prev) => [
+        ...prev,
+        { id: newId, name, group, content: content || '', shell, status: 'idle' },
+      ]);
+    }
+    setAddScriptOpen(false);
+    setEditingScript(null);
   };
 
   const handleAddGroup = () => setAddGroupOpen(true);
+  const handleOpenSettings = () => setSettingsOpen(true);
+  const handleCloseSettings = () => {
+    setSettingsOpen(false);
+    // 把设置里新增/移除的自定义 shell 同步到 Add/Edit Script 的下拉
+    reloadShells();
+  };
+
+  // 拖拽排序 / 换组：把 dragId 的脚本移动到 targetGroup，
+  //  beforeId 为 null → 追加到该组末尾；否则插入到 beforeId 之前。
+  const handleMoveScript = (dragId, targetGroup, beforeId) => {
+    setScripts((prev) => {
+      const dragged = prev.find((s) => s.id === dragId);
+      if (!dragged) return prev;
+      if (beforeId === dragId) return prev;
+      const without = prev.filter((s) => s.id !== dragId);
+      const moved = { ...dragged, group: targetGroup };
+      if (beforeId == null) {
+        // 追加到目标组最后一条之后（目标组为空则放到数组末尾）
+        let insertAt = without.length;
+        for (let i = without.length - 1; i >= 0; i--) {
+          if (without[i].group === targetGroup) {
+            insertAt = i + 1;
+            break;
+          }
+        }
+        without.splice(insertAt, 0, moved);
+      } else {
+        const idx = without.findIndex((s) => s.id === beforeId);
+        without.splice(idx === -1 ? without.length : idx, 0, moved);
+      }
+      return without;
+    });
+  };
 
   const handleSaveGroup = (name) => {
     // 静态：仅写入本地分组列表（空分组，不接后端）
@@ -136,17 +237,23 @@ export default function App() {
   };
 
   const handleEdit = (script) => {
-    window.alert(`TODO: 编辑脚本 ${script.name}（下一步接入）`);
+    setEditingScript(script);
+    setAddScriptOpen(true);
   };
 
   const handleRemove = (script) => {
-    if (!window.confirm(`删除脚本 ${script.name} ?`)) return;
+    if (!window.confirm(`Delete script ${script.name}?`)) return;
     setScripts((prev) => prev.filter((s) => s.id !== script.id));
   };
 
   const handleClose = (execId) => setExecutions((prev) => prev.filter((e) => e.id !== execId));
 
   const handleCloseAll = () => setExecutions([]);
+
+  const handleToggleStick = (execId) =>
+    setExecutions((prev) =>
+      prev.map((e) => (e.id === execId ? { ...e, stickToBottom: !e.stickToBottom } : e)),
+    );
 
   const handleRerun = (execId, mode) => {
     if (mode === 'max') {
@@ -160,20 +267,6 @@ export default function App() {
     if (script) runScript(script);
   };
 
-  const handleToggleStick = (execId) =>
-    setExecutions((prev) =>
-      prev.map((e) => (e.id === execId ? { ...e, stickToBottom: !e.stickToBottom } : e)),
-    );
-
-  // 演示用：进入应用时自动跑两个脚本，复现截图中的运行态
-  useEffect(() => {
-    const be = scripts.find((s) => s.name === 'PMS-后端-TEST');
-    const fe = scripts.find((s) => s.name === 'PMS-后端-DEV');
-    if (be) setTimeout(() => runScript(be), 200);
-    if (fe) setTimeout(() => runScript(fe), 600);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return (
     <div className="app">
       <TopBar
@@ -182,6 +275,9 @@ export default function App() {
         onAddScript={handleAddScript}
         onAddGroup={handleAddGroup}
         onDeleteSelected={handleDeleteSelected}
+        theme={theme}
+        onCycleTheme={cycleTheme}
+        onOpenSettings={handleOpenSettings}
       />
       <main className={`main ${dragging ? 'is-dragging' : ''}`} ref={mainRef}>
         <ScriptList
@@ -194,6 +290,7 @@ export default function App() {
           onExecute={handleExecute}
           onEdit={handleEdit}
           onRemove={handleRemove}
+          onMoveScript={handleMoveScript}
         />
         <div
           className="v-splitter"
@@ -202,13 +299,27 @@ export default function App() {
           aria-orientation="vertical"
           title="Drag to resize"
         />
-        <ExecutionPanel
-          executions={executions}
-          onClose={handleClose}
-          onCloseAll={handleCloseAll}
-          onRerun={handleRerun}
-          onToggleStick={handleToggleStick}
-        />
+        {addScriptOpen ? (
+          <AddScriptPanel
+            open={addScriptOpen}
+            groups={groups}
+            script={editingScript}
+            shells={shells}
+            globalShellPath={globalShellPath}
+            onClose={handleCloseScriptPanel}
+            onSave={handleSaveScript}
+          />
+        ) : (
+          <ExecutionPanel
+            executions={executions}
+            globalShellPath={globalShellPath}
+            shells={shells}
+            onClose={handleClose}
+            onCloseAll={handleCloseAll}
+            onRerun={handleRerun}
+            onToggleStick={handleToggleStick}
+          />
+        )}
       </main>
 
       <AddGroupModal
@@ -218,12 +329,7 @@ export default function App() {
         onSave={handleSaveGroup}
       />
 
-      <AddScriptModal
-        open={addScriptOpen}
-        groups={groups}
-        onClose={() => setAddScriptOpen(false)}
-        onSave={handleSaveScript}
-      />
+      <SettingsModal open={settingsOpen} onClose={handleCloseSettings} />
     </div>
   );
 }

@@ -1,13 +1,50 @@
+import { useState } from 'react';
 import { IconDrag } from './Icons.jsx';
 
 /**
- * 单个脚本行（按截图：拖拽柄 · 勾选 · 名称 · 状态 · 操作四件套）
+ * 单个脚本行（拖拽柄 · 勾选 · 名称 · 状态 · 操作四件套）
+ * 拖动行为：
+ *  - 仅在按下左侧拖拽柄（script-row__drag）后才允许拖动整行（armed 模式），
+ *    避免与勾选/按钮的点击冲突；
+ *  - 拖动整行作为拖拽影像，拖到同组其他行前 → 重排；拖到其他分组 → 换组。
  */
-export default function ScriptItem({ script, selected, onToggle, onExecute, onEdit, onRemove }) {
+export default function ScriptItem({
+  script,
+  selected,
+  dragging,
+  onToggle,
+  onExecute,
+  onEdit,
+  onRemove,
+  onReorderStart,
+  onReorderEnd,
+  onReorderOver,
+  onReorderDrop,
+}) {
   const status = script.status;
+  const [armed, setArmed] = useState(false);
+
   return (
-    <div className="script-row">
-      <div className="script-row__drag" title="Drag to reorder">
+    <div
+      className={`script-row ${dragging ? 'is-dragging' : ''}`}
+      draggable={armed}
+      onDragStart={(e) => {
+        onReorderStart(script, e);
+      }}
+      onDragEnd={() => {
+        setArmed(false);
+        onReorderEnd();
+      }}
+      onMouseUp={() => setArmed(false)}
+      onDragOver={(e) => onReorderOver(script, e)}
+      onDrop={(e) => onReorderDrop(script, e)}
+    >
+      <div
+        className="script-row__drag"
+        title="Drag to reorder, or drop onto another group to move"
+        onMouseDown={() => setArmed(true)}
+        onMouseUp={() => setArmed(false)}
+      >
         <IconDrag />
       </div>
       <div className="script-row__check">

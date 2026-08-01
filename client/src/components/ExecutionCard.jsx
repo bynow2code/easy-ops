@@ -8,7 +8,14 @@ import { IconArrowDown, IconRefresh, IconExpand } from './Icons.jsx';
  *    右：Exit: 0  贴底↓  重新执行↻  最大化⤢  Close
  *  体：输出文本区，超出高度出现自定义滚动条；底部状态条
  */
-export default function ExecutionCard({ exec, onClose, onRerun, onToggleStick }) {
+export default function ExecutionCard({
+  exec,
+  globalShellPath,
+  shells,
+  onClose,
+  onRerun,
+  onToggleStick,
+}) {
   const [now, setNow] = useState(Date.now());
   const outRef = useRef(null);
 
@@ -26,14 +33,25 @@ export default function ExecutionCard({ exec, onClose, onRerun, onToggleStick })
   }, [exec.lines.length, exec.stickToBottom]);
 
   const ago = formatAgo(now - exec.startedAt);
-  const groupBadge = exec.group.startsWith('BACKEND') ? 'BE' : 'FE';
+  const groupLabel = exec.group || 'Ungrouped';
+
+  // 解析该次执行实际使用的解释器：'global' 取应用全局路径，否则用脚本指定路径
+  const effectivePath = exec.shell === 'global' || !exec.shell ? globalShellPath : exec.shell;
+  const matchedShell = effectivePath ? shells.find((s) => s.path === effectivePath) : null;
+  const shellName = matchedShell?.name || effectivePath || 'system default';
 
   return (
     <article className={`exec-card ${exec.maximized ? 'is-max' : ''}`}>
       <header className="exec-card__head">
         <div className="exec-card__head-left">
-          <span className={`badge badge--${groupBadge.toLowerCase()}`}>{groupBadge}</span>
+          <span className={`badge badge--${badgeVariant(groupLabel)}`}>{groupLabel}</span>
           <span className="exec-card__name">{exec.name}</span>
+          <span
+            className="exec-card__meta exec-card__meta--shell"
+            title={effectivePath || 'system default'}
+          >
+            {exec.shell === 'global' ? 'Global' : 'Shell'}: {shellName}
+          </span>
           <span className="exec-card__meta">{formatDuration(exec.duration)}</span>
           <span className="exec-card__meta">{ago}</span>
         </div>
@@ -91,4 +109,14 @@ function formatAgo(ms) {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   return `${h}h ago`;
+}
+
+// 由分组名确定性地映射到一组配色变体，使同一分组视觉一致、不同分组可区分。
+function badgeVariant(group) {
+  const palette = ['1', '2', '3', '4'];
+  let h = 0;
+  for (let i = 0; i < group.length; i++) {
+    h = (h * 31 + group.charCodeAt(i)) >>> 0;
+  }
+  return palette[h % palette.length];
 }
