@@ -10,6 +10,7 @@ export default [
   {
     ignores: [
       'dist',
+      '**/dist',
       'release',
       'node_modules',
       'client/public',

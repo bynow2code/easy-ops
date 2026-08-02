@@ -28,9 +28,12 @@ app.use(express.json());
 // GET  /api/scripts  -> 读取 scripts.json
 // POST /api/scripts  -> 写入 scripts.json
 
-const PORT = process.env.PORT || 4521;
-app.listen(PORT, () => {
-  logger.info('后端服务已启动', { port: PORT, scriptsFile: config.scriptsFile });
-  // 将端口写入 port.txt，供主进程读取建立通道
-  fs.writeFileSync(config.portFile, String(PORT), 'utf8');
+// 端口：默认 0 → 由操作系统分配空闲端口（避免与其他程序抢 4521）；
+// 仍可用环境变量 PORT 强制指定（兼容测试 / 调试）。
+const PORT = process.env.PORT ? Number(process.env.PORT) : 0;
+const server = app.listen(PORT, () => {
+  const actualPort = server.address().port;
+  logger.info('后端服务已启动', { port: actualPort, scriptsFile: config.scriptsFile });
+  // 将实际端口写入 port.txt，供主进程读取建立通道
+  fs.writeFileSync(config.portFile, String(actualPort), 'utf8');
 });

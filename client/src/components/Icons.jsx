@@ -62,6 +62,13 @@ export const IconArrowDown = (p) => (
   </svg>
 );
 
+// 停止：实心方块（通用"停止"语义）
+export const IconStop = (p) => (
+  <svg {...base} {...p}>
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+  </svg>
+);
+
 export const IconDrag = (p) => (
   <svg {...base} {...p} strokeWidth="1.5">
     <circle cx="9" cy="6" r="1" />

@@ -278,6 +278,7 @@ export default function SettingsModal({ open, onClose }) {
                 <div className="settings-current-shell">
                   <span className="settings-pill">{currentShell.name?.toUpperCase()}</span>
                   <span className="settings-muted">{currentShell.version || ''}</span>
+                  <ShellTags shell={currentShell} />
                 </div>
                 <div className="settings-path-row">
                   <code className="settings-path">{currentShell.path}</code>
@@ -332,6 +333,7 @@ export default function SettingsModal({ open, onClose }) {
                         <span className="settings-muted settings-shell-card__version">
                           {s.version || ''}
                         </span>
+                        <ShellTags shell={s} />
                         {active && (
                           <span className="settings-active-badge">
                             <IconCheck /> Active
@@ -425,6 +427,30 @@ function Section({ label, children }) {
       <h3 className="settings-section__label">{label}</h3>
       <div className="settings-section__body">{children}</div>
     </section>
+  );
+}
+
+// 平台 + POSIX 标签：平台显示 macOS/Windows/Linux；posix 标记该壳能否跑 .sh
+function platformLabel(p) {
+  if (p === 'darwin') return 'macOS';
+  if (p === 'win32') return 'Windows';
+  if (p === 'linux') return 'Linux';
+  return p || '—';
+}
+
+function ShellTags({ shell }) {
+  const platform = shell?.platform;
+  const posix = shell?.posix;
+  return (
+    <span className="settings-shell-tags">
+      {platform && <span className="settings-tag">{platformLabel(platform)}</span>}
+      <span
+        className={`settings-tag ${posix ? 'settings-tag--posix' : 'settings-tag--native'}`}
+        title={posix ? 'Runs .sh scripts' : 'Native shell — cannot run .sh'}
+      >
+        {posix ? 'runs .sh' : 'native'}
+      </span>
+    </span>
   );
 }
 

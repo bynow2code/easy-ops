@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "electron:dev": "electron .",
+    "rebuild:pty": "npx --yes electron-rebuild -f -w node-pty",
     "build": "vite build",
     "dist": "electron-builder",
     "verify:logger": "node scripts/verify-logger.js",

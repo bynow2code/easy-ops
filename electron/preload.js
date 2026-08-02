@@ -23,4 +23,17 @@ contextBridge.exposeInMainWorld('easyOps', {
     getNoShellMode: () => ipcRenderer.invoke('shell:getNoShellMode'),
     setNoShellMode: (v) => ipcRenderer.invoke('shell:setNoShellMode', v),
   },
+  backend: {
+    getPort: () => ipcRenderer.invoke('backend:getPort'),
+  },
+  pty: {
+    open: (opts) => ipcRenderer.invoke('pty:open', opts),
+    write: (sessionId, data) => ipcRenderer.invoke('pty:write', { sessionId, data }),
+    resize: (sessionId, cols, rows) =>
+      ipcRenderer.invoke('pty:resize', { sessionId, cols, rows }),
+    kill: (execId) => ipcRenderer.invoke('pty:kill', { execId }),
+    // 渲染层订阅来自主进程的流式输出 / 退出事件
+    onData: (cb) => ipcRenderer.on('pty:data', (_e, p) => cb(p)),
+    onExit: (cb) => ipcRenderer.on('pty:exit', (_e, p) => cb(p)),
+  },
 });

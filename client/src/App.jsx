@@ -9,6 +9,7 @@ import { useTheme } from './hooks/useTheme.js';
 import { mockOutputFor } from './data/mockScripts.js';
 import { readFrontendShells } from './shellStore.js';
 import { resolveShellPath } from './shellUtils.js';
+import { ptyClient } from './ptyClient.js';
 
 /**
  * 应用根组件：管理三个顶层状态
@@ -33,6 +34,10 @@ export default function App() {
   // 以及执行时把 'global' 解析成实际路径。未挂载 Electron 时保持为空/默认，UI 优雅退化。
   const [shells, setShells] = useState([]);
   const [globalShellPath, setGlobalShellPath] = useState(null);
+
+  // 仅真实 PTY 模式需要：记录每次执行的启动时刻（用于算耗时）、mock 模式的终止令牌
+  const startedAtRef = useRef(new Map());
+  const abortRef = useRef(new Set());
 
   // 拉取 shell 列表（检测到的 + 自定义的）与全局 shell 路径；供"添加/编辑脚本"的
   // 解释器下拉、以及执行时把 'global' 解析成实际路径。未挂载 Electron 时为无操作。
@@ -61,6 +66,27 @@ export default function App() {
 
   useEffect(() => {
     reloadShells();
+  }, []);
+
+  // 真实 PTY 模式：订阅主进程抛来的"执行结束"事件，把对应输出卡翻成 exited
+  // 并回填退出码与耗时；同时同步脚本级状态。平台差异已在主进程封死，这里零分支。
+  useEffect(() => {
+    if (!ptyClient.available) return undefined;
+    return ptyClient.onExit(({ execId, scriptId, exitCode }) => {
+      const start = startedAtRef.current.get(execId);
+      const duration = start ? Date.now() - start : 0;
+      startedAtRef.current.delete(execId);
+      setExecutions((prev) =>
+        prev.map((e) =>
+          e.id === execId ? { ...e, status: 'exited', exit: exitCode ?? null, duration } : e,
+        ),
+      );
+      if (scriptId) {
+        setScripts((prev) =>
+          prev.map((s) => (s.id === scriptId ? { ...s, status: 'exited' } : s)),
+        );
+      }
+    });
   }, []);
 
   // 主题：三态循环（system → dark → light → system），通过 <html data-theme> 切换
@@ -112,13 +138,59 @@ export default function App() {
     setScripts((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
 
   // 执行入口（单脚本/批量）
+  //  - Electron 内：开真实 PTY 会话，脚本内容直接喂给解释器（无临时文件），
+  //    输出经 IPC 流式回到 ExecutionCard 的 xterm。
+  //  - 非 Electron（浏览器 dev / 单测）：回退到 mock 流式输出，保证 UI 可用。
   const runScript = (script) => {
     const id = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const lines = mockOutputFor(script.name);
     const startedAt = Date.now();
     // 'global' 解析为当前应用全局 shell 路径；否则用脚本指定的解释器路径
     const shellChoice = script.shell || 'global';
     const shellPath = resolveShellPath(shellChoice, globalShellPath);
+
+    if (ptyClient.available) {
+      const exec = {
+        id,
+        scriptId: script.id,
+        group: script.group,
+        name: script.name,
+        startedAt,
+        duration: 0,
+        status: 'running',
+        exit: null,
+        shell: shellChoice,
+        shellPath,
+        sessionId: null,
+        lines: [],
+        maximized: false,
+        stickToBottom: true,
+        mode: 'pty',
+      };
+      startedAtRef.current.set(id, startedAt);
+      setExecutions((prev) => [exec, ...prev]);
+      patchScript(script.id, { status: 'running' });
+      ptyClient
+        .open({ execId: id, scriptId: script.id, content: script.content || '', shell: shellPath })
+        .then((res) => {
+          setExecutions((prev) =>
+            prev.map((e) => (e.id === id ? { ...e, sessionId: res?.sessionId || null } : e)),
+          );
+        })
+        .catch((err) => {
+          startedAtRef.current.delete(id);
+          const msg = String((err && err.message) || err);
+          setExecutions((prev) =>
+            prev.map((e) =>
+              e.id === id ? { ...e, status: 'exited', exit: 1, lines: [msg] } : e,
+            ),
+          );
+          patchScript(script.id, { status: 'exited' });
+        });
+      return;
+    }
+
+    // 回退：mock 流式输出
+    const lines = mockOutputFor(script.name);
     const exec = {
       id,
       scriptId: script.id,
@@ -130,15 +202,16 @@ export default function App() {
       exit: null,
       shell: shellChoice,
       shellPath,
-      lines: [lines[0]], // 先输出一行，模拟流式
+      lines: [lines[0]],
       maximized: false,
       stickToBottom: true,
+      mode: 'mock',
     };
     setExecutions((prev) => [exec, ...prev]);
     patchScript(script.id, { status: 'running' });
 
-    // 模拟流式输出 + 完成
     const tick = (i) => {
+      if (abortRef.current.has(id)) return; // 被停止则中断
       if (i >= lines.length) {
         const duration = Date.now() - startedAt;
         setExecutions((prev) =>
@@ -244,7 +317,16 @@ export default function App() {
     setScripts((prev) => prev.filter((s) => s.id !== script.id));
   };
 
-  const handleClose = (execId) => setExecutions((prev) => prev.filter((e) => e.id !== execId));
+  const handleClose = (execId) => {
+    const exec = executions.find((e) => e.id === execId);
+    // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程
+    if (exec?.mode === 'pty' && exec.status === 'running' && exec.sessionId) {
+      ptyClient.kill(execId);
+    }
+    abortRef.current.delete(execId);
+    startedAtRef.current.delete(execId);
+    setExecutions((prev) => prev.filter((e) => e.id !== execId));
+  };
 
   const handleCloseAll = () => setExecutions([]);
 
@@ -253,6 +335,21 @@ export default function App() {
       prev.map((e) => (e.id === execId ? { ...e, stickToBottom: !e.stickToBottom } : e)),
     );
 
+  // 停止某次执行：PTY 模式通过 execId 让主进程精准 kill（跨平台一致）；
+  // mock 模式标记中断令牌。kill 后 onExit 会再回填退出码。
+  const handleStop = (execId) => {
+    const exec = executions.find((e) => e.id === execId);
+    if (!exec) return;
+    if (exec.mode === 'pty' && exec.sessionId) {
+      ptyClient.kill(execId);
+    } else if (exec.mode === 'mock') {
+      abortRef.current.add(execId);
+    }
+    setExecutions((prev) =>
+      prev.map((e) => (e.id === execId ? { ...e, status: 'exited' } : e)),
+    );
+  };
+
   const handleRerun = (execId, mode) => {
     if (mode === 'max') {
       setExecutions((prev) =>
@@ -260,7 +357,13 @@ export default function App() {
       );
       return;
     }
+    // 重新执行前：先终止正在运行的旧会话，避免孤儿进程 / 重复运行
     const exec = executions.find((e) => e.id === execId);
+    if (exec?.mode === 'pty' && exec.status === 'running' && exec.sessionId) {
+      ptyClient.kill(execId);
+    } else if (exec?.mode === 'mock') {
+      abortRef.current.add(execId);
+    }
     const script = scripts.find((s) => s.id === exec?.scriptId);
     if (script) runScript(script);
   };
@@ -315,6 +418,7 @@ export default function App() {
             onClose={handleClose}
             onCloseAll={handleCloseAll}
             onRerun={handleRerun}
+            onStop={handleStop}
             onToggleStick={handleToggleStick}
           />
         )}

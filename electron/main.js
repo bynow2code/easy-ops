@@ -13,6 +13,22 @@ const { createLogger, installProcessHandlers } = require('../shared/logger');
 const config = require('../server/config');
 const shellCfg = require('../server/shell-config');
 const shellDetect = require('../server/shell-detect');
+const ptyHost = require('./pty-host');
+
+// 把 PTY Host 的输出 / 退出事件转发到所有渲染窗口（单窗口应用下即当前窗口）。
+// 事件名与渲染层约定一致：pty:data / pty:exit。
+ptyHost.on('data', ({ execId, data }) => {
+  broadcast('pty:data', { execId, data });
+});
+ptyHost.on('exit', ({ execId, scriptId, exitCode, signal }) => {
+  broadcast('pty:exit', { execId, scriptId, exitCode, signal });
+});
+
+function broadcast(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
 
 const GITHUB_REPO_URL = 'https://github.com/bynow2code/easy-ops';
 const GITHUB_API_LATEST = 'https://api.github.com/repos/bynow2code/easy-ops/releases/latest';
@@ -43,7 +59,13 @@ function loadShells() {
   const cfg = shellCfg.read(app.getPath('userData'));
   if (cfg.noShellMode) return { noShellMode: true, shells: [], activeShellPath: null };
   const detected = shellDetect.detect();
-  const custom = cfg.shells.map((s) => ({ ...s, custom: true }));
+  // 自定义 shell 补 platform / posix 标记，使设置页标签与探测项一致
+  const custom = cfg.shells.map((s) => ({
+    ...s,
+    custom: true,
+    platform: process.platform,
+    posix: /(bash|zsh|sh|fish|wsl)/i.test(s.path || ''),
+  }));
   // 合并去重（按 path）
   const map = new Map();
   [...detected, ...custom].forEach((s) => {
@@ -107,6 +129,22 @@ ipcMain.handle('app:copyToClipboard', async (_evt, text) => {
   clipboard.writeText(String(text ?? ''));
   return true;
 });
+
+// 读取后端实际监听端口（由 server/index.js 写入 port.txt，OS 分配时为随机端口）
+ipcMain.handle('backend:getPort', () => readBackendPort());
+
+// ---------- IPC: PTY ----------
+// 渲染层通过以下接口驱动真实终端会话；会话生命周期与平台差异全部封装在 pty-host。
+ipcMain.handle('pty:open', (_evt, opts) => ptyHost.openSession(opts));
+ipcMain.handle('pty:write', (_evt, { sessionId, data }) => {
+  ptyHost.write(sessionId, data);
+  return true;
+});
+ipcMain.handle('pty:resize', (_evt, { sessionId, cols, rows }) => {
+  ptyHost.resize(sessionId, cols, rows);
+  return true;
+});
+ipcMain.handle('pty:kill', (_evt, { execId }) => ptyHost.killByExec(execId));
 
 // ---------- IPC: Shell ----------
 ipcMain.handle('shell:list', () => loadShells());
@@ -184,6 +222,17 @@ ipcMain.handle('shell:remove', (_evt, filePath) => {
 });
 
 // ---------- helpers ----------
+// 读取后端实际端口：server 启动后写入 port.txt；读不到 / 非法返回 null
+function readBackendPort() {
+  try {
+    const raw = fs.readFileSync(config.portFile, 'utf8').trim();
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 // 校验 IPC 传入的 shell 路径参数：非非空字符串返回错误对象，否则返回 null
 function validateShellArg(filePath) {
   if (typeof filePath !== 'string' || !filePath) return { ok: false, error: 'Empty path' };
