@@ -11,7 +11,16 @@ import { resolveShellPath } from './shellUtils.js';
 import { ptyClient } from './ptyClient.js';
 import { shellApi } from './shellApi.js';
 import { scriptsApi } from './scriptsApi.js';
-import { readFrontendScripts, writeFrontendScripts } from './scriptsStore.js';
+import {
+  readFrontendScripts,
+  writeFrontendScripts,
+  removeGroupFromRepo,
+  renameGroupInRepo,
+  importIntoRepo,
+} from './scriptsStore.js';
+import { DEFAULT_GROUP } from './constants.js';
+import DeleteGroupModal from './components/DeleteGroupModal.jsx';
+import RenameGroupModal from './components/RenameGroupModal.jsx';
 
 /**
  * 应用根组件：管理三个顶层状态
@@ -28,7 +37,14 @@ export default function App() {
   const [executions, setExecutions] = useState([]);
   // 分组列表（初始为空；挂载时由后端 /api/scripts 拉取，新增/移除经 /api/groups 持久化）
   const [groups, setGroups] = useState([]);
+  // 系统内置默认分组名（脚本无分组时归入此处；不可删除，可重命名）
+  const [defaultGroup, setDefaultGroup] = useState(DEFAULT_GROUP);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  // 删除 / 重命名分组的模态框状态
+  const [deleteGroupOpen, setDeleteGroupOpen] = useState(false);
+  const [deletingGroup, setDeletingGroup] = useState(null);
+  const [renameGroupOpen, setRenameGroupOpen] = useState(false);
+  const [renamingGroup, setRenamingGroup] = useState(null);
   const [addScriptOpen, setAddScriptOpen] = useState(false);
   const [editingScript, setEditingScript] = useState(null); // null = 新增模式
   const [settingsOpen, setSettingsOpen] = useState(false); // 设置（Settings）面板
@@ -40,7 +56,6 @@ export default function App() {
   // No Shell Mode：模拟"无可用解释器"。开启时执行/重跑脚本直接给出明确失败，
   // 而非用 null 路径假装运行（mock 模式下甚至会照常跑出模拟输出 → 模式"未生效"）。
   const [noShellMode, setNoShellMode] = useState(false);
-
 
   // 拉取 shell 列表（检测到的 + 自定义的）与全局 shell 路径；供"添加/编辑脚本"的
   // 解释器下拉、以及执行时把 'global' 解析成实际路径。未挂载 Electron 时为无操作。
@@ -77,14 +92,15 @@ export default function App() {
       .then((repo) => {
         setScripts(Array.isArray(repo.scripts) ? repo.scripts : []);
         setGroups(Array.isArray(repo.groups) ? repo.groups : []);
+        setDefaultGroup(repo.defaultGroup || DEFAULT_GROUP);
       })
       .catch(() => {
         const fe = readFrontendScripts();
         setScripts(fe.scripts);
         setGroups(fe.groups);
+        setDefaultGroup(fe.defaultGroup || DEFAULT_GROUP);
       });
   };
-
 
   // 主题：三态循环（system → dark → light → system），通过 <html data-theme> 切换
   const { theme, cycleTheme } = useTheme();
@@ -193,9 +209,7 @@ export default function App() {
           // 否则 ExecutionCard 仍按 pty 渲染 xterm 黑屏，错误信息会被吞掉。
           setExecutions((prev) =>
             prev.map((e) =>
-              e.id === id
-                ? { ...e, mode: 'mock', sessionId: `mock-${id}`, bootError: msg }
-                : e,
+              e.id === id ? { ...e, mode: 'mock', sessionId: `mock-${id}`, bootError: msg } : e,
             ),
           );
         });
@@ -243,8 +257,7 @@ export default function App() {
 
   const handleSaveScript = ({ id, name, group, content, shell }) => {
     // 规整后的数据记录（仅持久化字段，不含运行期 status）
-    const finalId =
-      id || `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const finalId = id || `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const record = {
       id: finalId,
       name,
@@ -262,16 +275,14 @@ export default function App() {
     }
 
     // 持久化：优先后端 /api/scripts；失败回退 localStorage
-    scriptsApi
-      .save(record)
-      .catch(() => {
-        const fe = readFrontendScripts();
-        const exists = fe.scripts.some((s) => s.id === finalId);
-        fe.scripts = exists
-          ? fe.scripts.map((s) => (s.id === finalId ? record : s))
-          : [...fe.scripts, record];
-        writeFrontendScripts(fe);
-      });
+    scriptsApi.save(record).catch(() => {
+      const fe = readFrontendScripts();
+      const exists = fe.scripts.some((s) => s.id === finalId);
+      fe.scripts = exists
+        ? fe.scripts.map((s) => (s.id === finalId ? record : s))
+        : [...fe.scripts, record];
+      writeFrontendScripts(fe);
+    });
 
     setAddScriptOpen(false);
     setEditingScript(null);
@@ -320,13 +331,11 @@ export default function App() {
     });
     // 持久化换组结果（移动只改 group）：优先后端，失败回退 localStorage
     if (movedRecord) {
-      scriptsApi
-        .save(movedRecord)
-        .catch(() => {
-          const fe = readFrontendScripts();
-          fe.scripts = fe.scripts.map((s) => (s.id === movedRecord.id ? movedRecord : s));
-          writeFrontendScripts(fe);
-        });
+      scriptsApi.save(movedRecord).catch(() => {
+        const fe = readFrontendScripts();
+        fe.scripts = fe.scripts.map((s) => (s.id === movedRecord.id ? movedRecord : s));
+        writeFrontendScripts(fe);
+      });
     }
   };
 
@@ -347,6 +356,132 @@ export default function App() {
     setAddGroupOpen(false);
   };
 
+  // 删除分组：默认分组不可删；打开确认框（含「一并删除脚本」勾选，默认不勾选）。
+  const handleDeleteGroup = (name) => {
+    if (name === defaultGroup) return;
+    setDeletingGroup(name);
+    setDeleteGroupOpen(true);
+  };
+
+  const handleConfirmDeleteGroup = (deleteScripts) => {
+    const name = deletingGroup;
+    setDeleteGroupOpen(false);
+    setDeletingGroup(null);
+    if (!name) return;
+    // 优先后端；失败回退 localStorage（本地复刻后端变换）
+    scriptsApi
+      .removeGroup(name, deleteScripts)
+      .then((res) => {
+        if (res) {
+          setScripts(res.scripts);
+          setGroups(res.groups);
+          setDefaultGroup(res.defaultGroup || DEFAULT_GROUP);
+        }
+      })
+      .catch(() => {
+        const fe = readFrontendScripts();
+        const updated = removeGroupFromRepo(fe, name, deleteScripts);
+        writeFrontendScripts(updated);
+        setScripts(updated.scripts);
+        setGroups(updated.groups);
+        setDefaultGroup(updated.defaultGroup || DEFAULT_GROUP);
+      });
+  };
+
+  // 重命名分组（默认分组与普通分组都允许；默认分组重命名会同步更新 defaultGroup）。
+  const handleRenameGroup = (name) => {
+    setRenamingGroup(name);
+    setRenameGroupOpen(true);
+  };
+
+  const handleConfirmRenameGroup = (newName) => {
+    const oldName = renamingGroup;
+    setRenameGroupOpen(false);
+    setRenamingGroup(null);
+    if (!oldName || !newName || newName === oldName) return;
+    scriptsApi
+      .renameGroup(oldName, newName)
+      .then((res) => {
+        if (res) {
+          setGroups(res.groups);
+          setDefaultGroup(res.defaultGroup || DEFAULT_GROUP);
+        }
+      })
+      .catch(() => {
+        const fe = readFrontendScripts();
+        const updated = renameGroupInRepo(fe, oldName, newName);
+        writeFrontendScripts(updated);
+        setGroups(updated.groups);
+        setDefaultGroup(updated.defaultGroup || DEFAULT_GROUP);
+      });
+  };
+
+  // 导出脚本：以「新版本为主」，文件只需 name + content（兼容旧导入/导出格式）。
+  const handleExport = () => {
+    const payload = {
+      type: 'easyops-scripts-config',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      scripts: scripts.map((s) => ({ id: s.id, name: s.name, content: s.content || '' })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `easyops-scripts-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // 导入脚本：兼容旧裸数组与包装格式，只需 name + content（其他字段不强行兼容）。
+  const handleImport = async (file) => {
+    try {
+      const parsed = JSON.parse(await file.text());
+      const incoming = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.scripts)
+          ? parsed.scripts
+          : null;
+      if (!incoming) {
+        window.alert('Invalid file: expected an easyops-scripts-config export or a scripts array.');
+        return;
+      }
+      const records = incoming
+        .filter((it) => it && typeof it.name === 'string' && it.name.trim())
+        .map((it) => ({
+          id: it.id,
+          name: it.name.trim(),
+          content: typeof it.content === 'string' ? it.content : '',
+        }));
+      if (records.length === 0) {
+        window.alert('No valid scripts found in the file.');
+        return;
+      }
+      // 优先后端批量导入；失败回退 localStorage（本地复刻后端变换）
+      scriptsApi
+        .importScripts(records)
+        .then((res) => {
+          if (res) {
+            setScripts(res.scripts);
+            setGroups(res.groups);
+            setDefaultGroup(res.defaultGroup || DEFAULT_GROUP);
+          }
+        })
+        .catch(() => {
+          const fe = readFrontendScripts();
+          const updated = importIntoRepo(fe, records);
+          writeFrontendScripts(updated);
+          setScripts(updated.scripts);
+          setGroups(updated.groups);
+          setDefaultGroup(updated.defaultGroup || DEFAULT_GROUP);
+        });
+    } catch {
+      window.alert('Failed to read file: not valid JSON.');
+    }
+  };
+
   const handleEdit = (script) => {
     setEditingScript(script);
     setAddScriptOpen(true);
@@ -357,20 +492,21 @@ export default function App() {
     // 乐观更新内存
     setScripts((prev) => prev.filter((s) => s.id !== script.id));
     // 持久化：优先后端 DELETE /api/scripts；失败回退 localStorage
-    scriptsApi
-      .remove(script.id)
-      .catch(() => {
-        const fe = readFrontendScripts();
-        fe.scripts = fe.scripts.filter((s) => s.id !== script.id);
-        writeFrontendScripts(fe);
-      });
+    scriptsApi.remove(script.id).catch(() => {
+      const fe = readFrontendScripts();
+      fe.scripts = fe.scripts.filter((s) => s.id !== script.id);
+      writeFrontendScripts(fe);
+    });
   };
 
   const handleClose = (execId) => {
     const exec = executions.find((e) => e.id === execId);
     if (!exec) return;
     // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程（mock 卡由各自卡片卸载时停定时器）
-    if (exec.mode === 'pty' && exec.sessionId) {
+    // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
+    // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
+    // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
+    if (exec.mode === 'pty') {
       ptyClient.kill(execId);
     }
     setExecutions(executions.filter((e) => e.id !== execId));
@@ -379,7 +515,10 @@ export default function App() {
   const handleCloseAll = () => {
     executions.forEach((exec) => {
       // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程（mock 卡由各自卡片卸载时停定时器）
-      if (exec.mode === 'pty' && exec.sessionId) {
+      // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
+      // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
+      // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
+      if (exec.mode === 'pty') {
         ptyClient.kill(exec.id);
       }
     });
@@ -391,7 +530,10 @@ export default function App() {
   const handleStop = (execId) => {
     const exec = executions.find((e) => e.id === execId);
     if (!exec) return;
-    if (exec.mode === 'pty' && exec.sessionId) {
+    // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
+    // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
+    // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
+    if (exec.mode === 'pty') {
       ptyClient.kill(execId);
     }
     // mock 模式无需 App 介入：ExecutionCard 的 Stop 处理会本地终止自身流并翻 exited。
@@ -433,7 +575,10 @@ export default function App() {
 
     // 1) 终止正在运行的旧 PTY 会话，避免孤儿进程 / 输出串台
     //    （mock 旧流无需单独停：下方改 sessionId 会让卡片 effect cleanup 清掉旧定时器）
-    if (exec.mode === 'pty' && exec.sessionId) {
+    // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
+    // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
+    // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
+    if (exec.mode === 'pty') {
       ptyClient.kill(execId);
     }
 
@@ -491,6 +636,8 @@ export default function App() {
         theme={theme}
         onCycleTheme={cycleTheme}
         onOpenSettings={handleOpenSettings}
+        onExport={handleExport}
+        onImport={handleImport}
       />
       <main className={`main ${dragging ? 'is-dragging' : ''}`} ref={mainRef}>
         <ScriptList
@@ -498,12 +645,15 @@ export default function App() {
           groups={groups}
           scripts={scripts}
           selectedSet={selected}
+          defaultGroup={defaultGroup}
           onToggle={toggle}
           onSelectGroup={selectGroup}
           onExecute={runScript}
           onEdit={handleEdit}
           onRemove={handleRemove}
           onMoveScript={handleMoveScript}
+          onRenameGroup={handleRenameGroup}
+          onDeleteGroup={handleDeleteGroup}
         />
         <div
           className="v-splitter"
@@ -540,6 +690,28 @@ export default function App() {
         existing={groups}
         onClose={() => setAddGroupOpen(false)}
         onSave={handleSaveGroup}
+      />
+
+      <DeleteGroupModal
+        open={deleteGroupOpen}
+        groupName={deletingGroup}
+        scriptCount={deletingGroup ? scripts.filter((s) => s.group === deletingGroup).length : 0}
+        onClose={() => {
+          setDeleteGroupOpen(false);
+          setDeletingGroup(null);
+        }}
+        onConfirm={handleConfirmDeleteGroup}
+      />
+
+      <RenameGroupModal
+        open={renameGroupOpen}
+        oldName={renamingGroup}
+        existing={groups}
+        onClose={() => {
+          setRenameGroupOpen(false);
+          setRenamingGroup(null);
+        }}
+        onConfirm={handleConfirmRenameGroup}
       />
 
       <SettingsModal open={settingsOpen} onClose={handleCloseSettings} />

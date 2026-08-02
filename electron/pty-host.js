@@ -24,6 +24,7 @@ const { EventEmitter } = require('events');
 const pty = require('node-pty');
 const { createLogger } = require('../shared/logger');
 const config = require('../server/config');
+const shellDetect = require('../server/shell-detect');
 
 const logger = createLogger({
   isDev: process.env.NODE_ENV !== 'production',
@@ -95,6 +96,22 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
   const interpreter = shell || getDefaultShell();
   const ctxLogger = logger.child({ scriptId, execId });
 
+  // 预检：解释器必须存在且可执行。否则给出清晰、可操作的报错，而不是把
+  // node-pty 的底层 ENOENT/UNKNOWN 透传给前端（那条信息对用户晦涩）。
+  // 覆盖两处：显式传入的 shell，以及"跟随系统默认"兜底解析出的路径
+  // （Windows 没装 Git Bash/WSL 时 getDefaultShell 会返回未必存在的常量路径）。
+  if (typeof interpreter !== 'string' || !interpreter.trim()) {
+    throw new Error(
+      'No usable shell interpreter: none resolved. Set one in Settings (Settings → Shell) or enable No Shell Mode for demo output.',
+    );
+  }
+  if (!shellDetect.isUsableInterpreter(interpreter)) {
+    throw new Error(
+      `No usable shell interpreter: "${interpreter}" was not found or is not executable. ` +
+        'Set a valid shell in Settings (Settings → Shell) or enable No Shell Mode for demo output.',
+    );
+  }
+
   let term;
   try {
     // 交互式：不传 -c 等参数，直接起一个读 pty 的活 shell
@@ -107,7 +124,11 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
     });
   } catch (err) {
     ctxLogger.error('PTY 会话创建失败', { interpreter }, err);
-    throw err;
+    // 即便预检通过（如竞态/瞬时权限变化），仍给出可读错误而非底层堆栈
+    throw new Error(
+      `Failed to start shell interpreter "${interpreter}": ${String(err && err.message ? err.message : err)}. ` +
+        'Check Settings → Shell or enable No Shell Mode.',
+    );
   }
 
   const sessionId = `${scriptId}@${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -204,6 +225,21 @@ function killByExec(execId) {
   return true;
 }
 
+// 终止所有仍在运行的会话（退出程序 / 关闭窗口前清场用）。
+// 避免 shell 子进程及其拉起的脚本 / ssh / tail 等在主进程退出后沦为孤儿进程
+// 继续后台运行（Unix 下会被 reparent 到 init，Windows 下 ConPTY 进程树残留）。
+// 复用 killSession 保证跨平台一致（Unix 进程组 SIGTERM→SIGKILL，Windows 杀整棵树）。
+function killAll() {
+  const ids = Array.from(sessions.keys());
+  for (const sessionId of ids) {
+    const s = sessions.get(sessionId);
+    if (s) killSession(s.term);
+    sessions.delete(sessionId);
+  }
+  execToSession.clear();
+  return ids.length;
+}
+
 module.exports = {
   on,
   openSession,
@@ -211,6 +247,7 @@ module.exports = {
   resize,
   kill: killByExec,
   killByExec,
+  killAll,
   getSessionIdForExec: (id) => execToSession.get(id) || null,
   getDefaultShell,
   sessions,

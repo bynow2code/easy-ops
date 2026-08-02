@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ScriptItem from './ScriptItem.jsx';
+import { IconEdit, IconTrash } from './Icons.jsx';
 
 /**
  * 左侧脚本列表：按 groups（显式分组列表）渲染；每组含标题、计数与表头。
@@ -17,12 +18,15 @@ export default function ScriptList({
   groups,
   scripts,
   selectedSet,
+  defaultGroup,
   onToggle,
   onSelectGroup,
   onExecute,
   onEdit,
   onRemove,
   onMoveScript,
+  onRenameGroup,
+  onDeleteGroup,
 }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [dragId, setDragId] = useState(null);
@@ -132,6 +136,29 @@ export default function ScriptList({
                 <span>{group}</span>
               </div>
               <div className="script-group__count">{items.length}</div>
+              <div className="script-group__actions">
+                <button
+                  type="button"
+                  className="script-group__action"
+                  title="Rename group"
+                  aria-label={`Rename group ${group}`}
+                  onClick={() => onRenameGroup(group)}
+                >
+                  <IconEdit />
+                </button>
+                <button
+                  type="button"
+                  className="script-group__action"
+                  title={
+                    group === defaultGroup ? 'Default group cannot be deleted' : 'Delete group'
+                  }
+                  aria-label={`Delete group ${group}`}
+                  disabled={group === defaultGroup}
+                  onClick={() => onDeleteGroup(group)}
+                >
+                  <IconTrash />
+                </button>
+              </div>
             </div>
             {!isCollapsed && (
               <>

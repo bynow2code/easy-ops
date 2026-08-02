@@ -53,10 +53,8 @@ async function request(path, options = {}) {
 
 export const shellApi = {
   list: () => request('/shells', { method: 'GET' }),
-  add: (path) =>
-    request('/shells', { method: 'POST', body: JSON.stringify({ path }) }),
-  remove: (path) =>
-    request('/shells', { method: 'DELETE', body: JSON.stringify({ path }) }),
+  add: (path) => request('/shells', { method: 'POST', body: JSON.stringify({ path }) }),
+  remove: (path) => request('/shells', { method: 'DELETE', body: JSON.stringify({ path }) }),
   setActive: (path) =>
     request('/shells/active', {
       method: 'POST',

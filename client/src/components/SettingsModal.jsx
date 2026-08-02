@@ -159,6 +159,15 @@ export default function SettingsModal({ open, onClose }) {
     }
   };
 
+  const onInstallUpdate = async () => {
+    if (!api?.updater?.install) return;
+    try {
+      await api.updater.install();
+    } catch {
+      showFlash('err', 'Failed to restart for update');
+    }
+  };
+
   const onToggleNoShell = async (e) => {
     const next = e.target.checked;
     try {
@@ -318,7 +327,9 @@ export default function SettingsModal({ open, onClose }) {
                 {busy ? 'Checking…' : 'Check Updates'}
               </button>
             </div>
-            {updateResult && <UpdateBanner result={updateResult} onOpen={openLink} />}
+            {updateResult && (
+              <UpdateBanner result={updateResult} onOpen={openLink} onInstall={onInstallUpdate} />
+            )}
           </Section>
 
           <Section label="GitHub">
@@ -460,9 +471,7 @@ export default function SettingsModal({ open, onClose }) {
           <Section label="Backend">
             <div className="settings-row">
               <span className="settings-value">{backendPort ?? '—'}</span>
-              {backendPort ? (
-                <CopyButton text={String(backendPort)} onCopy={copy} />
-              ) : null}
+              {backendPort ? <CopyButton text={String(backendPort)} onCopy={copy} /> : null}
             </div>
           </Section>
 
@@ -538,7 +547,7 @@ function CopyButton({ text, onCopy, label = 'Copy' }) {
   );
 }
 
-function UpdateBanner({ result, onOpen }) {
+function UpdateBanner({ result, onOpen, onInstall }) {
   if (result.error) {
     return (
       <div className="settings-update settings-update--err">
@@ -547,6 +556,20 @@ function UpdateBanner({ result, onOpen }) {
     );
   }
   if (result.hasUpdate === true) {
+    if (result.downloaded) {
+      return (
+        <div className="settings-update settings-update--new">
+          Update <strong>v{result.latest}</strong> downloaded.{' '}
+          <button
+            type="button"
+            className="settings-link-inline"
+            onClick={() => onInstall && onInstall()}
+          >
+            Restart to update
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="settings-update settings-update--new">
         New version <strong>v{result.latest}</strong> available.{' '}

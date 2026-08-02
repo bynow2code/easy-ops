@@ -1,0 +1,42 @@
+# electron-builder 打包配置
+# 与 .github/workflows/release.yml 配合：CI 分平台构建并把产物上传到 GitHub Releases。
+# 发布源走 GitHub（provider: github），owner/repo 在 CI 中由 GITHUB_REPOSITORY 自动识别，
+# 本地打包回退到 package.json 的 repository 字段或 git remote。
+
+appId: com.easyops.app
+productName: EasyOps
+
+directories:
+  # 输出到 dist-electron，避免与 Vite 前端产物根目录 dist/ 互相覆盖
+  output: dist-electron
+
+# 仅打包运行所需文件；node_modules 中的生产依赖由 electron-builder 自动裁剪纳入
+files:
+  - package.json
+  - dist/**/*
+  - electron/**/*
+  - server/**/*
+  - shared/**/*
+
+# node-pty 为原生模块，必须置于 asar 之外才能被 require 加载
+asarUnpack:
+  - '**/node-pty/**'
+  - '**/*.node'
+
+win:
+  target: nsis
+  artifactName: ${productName}-Setup-${version}.${ext}
+  # 默认即 oneClick（per-user 静默安装）；不弹安装向导。仅在想恢复向导时才显式设 oneClick:false。
+  # 无签名也能自动升级：靠 latest.yml 的 SHA512 校验（不验 Authenticode），仅首次安装可能被 SmartScreen 拦。
+
+mac:
+  target:
+    - dmg
+    - zip # mac 自动升级依赖 zip（electron-updater 下载并替换 .app）
+  category: public.app-category.developer-tools
+  # 无签名发布：关闭 Gatekeeper 评估与强化运行时（本项目当前不签名、不公证）
+  gatekeeperAssess: false
+  hardenedRuntime: false
+
+publish:
+  - provider: github

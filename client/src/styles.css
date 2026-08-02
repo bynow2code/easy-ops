@@ -243,6 +243,38 @@ body {
   font-weight: 500;
 }
 
+.script-group__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.script-group__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.script-group__action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.script-group__action:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.script-group__action svg {
+  width: 13px;
+  height: 13px;
+}
+
 .script-group__cols {
   display: grid;
   grid-template-columns: 22px 22px minmax(0, 1fr) 180px;
@@ -510,8 +542,13 @@ body {
   background: #dc2626;
 }
 @keyframes exec-status-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
 }
 
 .exec-card__close {
@@ -628,6 +665,8 @@ input[type='checkbox'] {
   color: var(--text);
 }
 .modal__close {
+  /* 双保险：即使 header 里日后插入第三个元素打乱 space-between，close 也始终贴右 */
+  margin-left: auto;
   width: 24px;
   height: 24px;
   display: inline-flex;
@@ -659,6 +698,44 @@ input[type='checkbox'] {
   gap: 8px;
   padding: 12px 14px;
   border-top: 1px solid var(--border-soft);
+}
+
+.modal__text {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+.modal__hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.checkbox-row input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--c-blue);
+  cursor: pointer;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .field {

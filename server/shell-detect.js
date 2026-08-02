@@ -33,11 +33,7 @@ const BASE_CANDIDATES = [
   '/usr/local/bin/fish',
 ];
 
-const DARWIN_EXTRA = [
-  '/opt/homebrew/bin/bash',
-  '/opt/homebrew/bin/zsh',
-  '/opt/homebrew/bin/fish',
-];
+const DARWIN_EXTRA = ['/opt/homebrew/bin/bash', '/opt/homebrew/bin/zsh', '/opt/homebrew/bin/fish'];
 
 // Windows 候选：能跑 .sh 的放前面作为默认（Git Bash 优先于 wsl）
 const WIN32_CANDIDATES = [
@@ -78,6 +74,15 @@ function isExecutable(p) {
   } catch {
     return false;
   }
+}
+
+// 解释器可用性预检：路径非空、存在且可执行。供 pty-host 在开会话前调用，
+// 把晦涩的底层 ENOENT / UNKNOWN 提前转成可读、可操作的报错，避免黑屏或吞错。
+// 既校验显式传入的 shell，也校验"跟随系统默认"兜底解析出的路径（Windows 上
+// 没装 Git Bash/WSL 时 getDefaultShellPath 会返回常量路径，未必真实存在）。
+function isUsableInterpreter(p) {
+  if (typeof p !== 'string' || !p.trim()) return false;
+  return isExecutable(p);
 }
 
 // 自定义 shell 路径校验：确保加入的是"真实存在、可执行、且本软件能用"的解释器。
@@ -168,4 +173,10 @@ function getDefaultShellPath() {
   return process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash';
 }
 
-module.exports = { detect, probeVersion, getDefaultShellPath, validateCustomShellPath };
+module.exports = {
+  detect,
+  probeVersion,
+  getDefaultShellPath,
+  validateCustomShellPath,
+  isUsableInterpreter,
+};

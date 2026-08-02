@@ -13,6 +13,7 @@ const { createLogger, installProcessHandlers } = require('../shared/logger');
 const config = require('../server/config');
 const shellDetect = require('../server/shell-detect');
 const ptyHost = require('./pty-host');
+const updater = require('./updater');
 
 // 把 PTY Host 的输出 / 退出事件转发到所有渲染窗口（单窗口应用下即当前窗口）。
 // 事件名与渲染层约定一致：pty:data / pty:exit。
@@ -30,7 +31,6 @@ function broadcast(channel, payload) {
 }
 
 const GITHUB_REPO_URL = 'https://github.com/bynow2code/easy-ops';
-const GITHUB_API_LATEST = 'https://api.github.com/repos/bynow2code/easy-ops/releases/latest';
 
 // 初始化日志：生产模式写文件，目录由后端配置提供；开发模式打印终端
 const logger = createLogger({
@@ -67,26 +67,12 @@ ipcMain.handle('app:getInfo', () => {
   };
 });
 
-ipcMain.handle('app:checkUpdates', async () => {
-  // 优先走 GitHub releases API；不可达时返回 { hasUpdate: null, error }
-  try {
-    const res = await fetch(GITHUB_API_LATEST, {
-      headers: { Accept: 'application/vnd.github+json' },
-    });
-    if (!res.ok) return { hasUpdate: null, error: `HTTP ${res.status}` };
-    const data = await res.json();
-    const latest = (data.tag_name || '').replace(/^v/, '');
-    const current = app.getVersion();
-    const hasUpdate = compareSemver(latest, current) > 0;
-    return {
-      hasUpdate,
-      latest,
-      current,
-      releaseUrl: data.html_url || GITHUB_REPO_URL + '/releases',
-    };
-  } catch (err) {
-    return { hasUpdate: null, error: String(err && err.message || err) };
-  }
+ipcMain.handle('app:checkUpdates', () => updater.checkNow());
+
+// 若已下载更新，立即重启安装（由 Settings 的「Restart to update」触发）
+ipcMain.handle('updater:install', () => {
+  updater.quitInstall();
+  return true;
 });
 
 ipcMain.handle('app:openExternal', async (_evt, url) => {
@@ -136,7 +122,13 @@ ipcMain.handle('shell:choose', async () => {
   const filePath = res.filePaths[0];
   // 顺手探测版本（复用探测模块，失败也可保存）
   const version = shellDetect.probeVersion(filePath);
-  return { path: filePath, name: path.basename(filePath), version, custom: true, probeFailed: !version };
+  return {
+    path: filePath,
+    name: path.basename(filePath),
+    version,
+    custom: true,
+    probeFailed: !version,
+  };
 });
 
 // ---------- helpers ----------
@@ -151,40 +143,26 @@ function readBackendPort() {
   }
 }
 
-function compareSemver(a, b) {
-  const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const da = pa[i] || 0;
-    const db = pb[i] || 0;
-    if (da > db) return 1;
-    if (da < db) return -1;
-  }
-  return 0;
-}
-
 // 开发模式下加载 Vite dev server（http://localhost:5173）。
 // 若 Vite 尚未就绪（连接被拒），做有限次重试，避免直接报 ERR_CONNECTION_REFUSED；
 // 超过上限后明确报错，不静默吞掉。生产模式直接加载打包产物。
 const DEV_URL = 'http://localhost:5173';
 const DEV_LOAD_MAX_RETRY = 20; // 20 * 500ms ≈ 10s（dev:all 已先等 Vite 就绪，此为兜底）
 function loadDevWithRetry(win, attempt = 1) {
-  win
-    .loadURL(DEV_URL)
-    .catch((err) => {
-      if (attempt >= DEV_LOAD_MAX_RETRY) {
-        logger.error('Vite dev server 未就绪，已停止重试', {
-          err: String(err),
-          attempts: DEV_LOAD_MAX_RETRY,
-        });
-        return;
-      }
-      logger.warn('Vite 尚未就绪，稍后重试加载', {
-        attempt,
+  win.loadURL(DEV_URL).catch((err) => {
+    if (attempt >= DEV_LOAD_MAX_RETRY) {
+      logger.error('Vite dev server 未就绪，已停止重试', {
         err: String(err),
+        attempts: DEV_LOAD_MAX_RETRY,
       });
-      setTimeout(() => loadDevWithRetry(win, attempt + 1), 500);
+      return;
+    }
+    logger.warn('Vite 尚未就绪，稍后重试加载', {
+      attempt,
+      err: String(err),
     });
+    setTimeout(() => loadDevWithRetry(win, attempt + 1), 500);
+  });
 }
 
 function createWindow() {
@@ -217,6 +195,9 @@ app.whenReady().then(() => {
 
   createWindow();
 
+  // 自动更新：仅打包后生效；启动静默检查 + 后台下载，下载完弹重启提示
+  updater.initUpdater({ logger });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -226,4 +207,12 @@ app.on('window-all-closed', () => {
   logger.info('所有窗口关闭，准备退出');
   logger.close();
   if (process.platform !== 'darwin') app.quit();
+});
+
+// 退出程序前：先终止所有仍在运行的 PTY 会话，避免 shell 子进程（及其拉起的
+// 脚本 / ssh / tail 等）在主进程退出后成为孤儿进程继续后台运行。
+// 覆盖所有退出路径：⌘Q / 菜单 Exit / window-all-closed → app.quit() / 直接 app.quit()。
+app.on('before-quit', () => {
+  const n = ptyHost.killAll();
+  if (n > 0) logger.info('退出前已终止运行中的会话', { count: n });
 });

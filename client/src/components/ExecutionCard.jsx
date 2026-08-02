@@ -82,14 +82,7 @@ function readDomTheme() {
  * 平台差异（Unix 进程组 / Windows 进程树）已封死在主进程 pty-host，
  * 本卡只负责"渲染 + 触发 onStop"，不感知任何平台分支。
  */
-export default function ExecutionCard({
-  exec,
-  globalShellPath,
-  shells,
-  onClose,
-  onRerun,
-  onStop,
-}) {
+export default function ExecutionCard({ exec, globalShellPath, shells, onClose, onRerun, onStop }) {
   const outRef = useRef(null); // 文本回退模式的滚动容器
   const termRef = useRef(null); // xterm 容器
   const termObj = useRef(null);
@@ -291,8 +284,7 @@ export default function ExecutionCard({
   const effectivePath = resolveShellPath(exec.shell, globalShellPath);
   const matchedShell = effectivePath ? shells.find((s) => s.path === effectivePath) : null;
   const shellName =
-    matchedShell?.name ||
-    (effectivePath ? effectivePath.split(/[\\/]/).pop() : 'system default');
+    matchedShell?.name || (effectivePath ? effectivePath.split(/[\\/]/).pop() : 'system default');
 
   // 标题栏状态指示：bootError 视为 Error，否则按 running/exited 显示。
   const statusInfo = exec.bootError
@@ -326,11 +318,7 @@ export default function ExecutionCard({
             <IconRefresh />
           </button>
           {status === 'running' && (
-            <button
-              className="icon-btn icon-btn--stop"
-              title="Stop"
-              onClick={handleStop}
-            >
+            <button className="icon-btn icon-btn--stop" title="Stop" onClick={handleStop}>
               <IconStop />
             </button>
           )}
@@ -354,8 +342,7 @@ export default function ExecutionCard({
           </div>
         )}
       </div>
-
-      </article>
+    </article>
   );
 }
 

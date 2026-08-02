@@ -28,6 +28,10 @@ module.exports = {
   // Shell 配置持久化目录解析（供 shell-routes 复用）
   getUserDataDir,
 
+  // 系统内置默认分组名（UI 用英文，遵循工程约定）。脚本无分组时归入此处；
+  // 默认分组不可删除，但可重命名（重命名后此常量仅作首次落盘的兜底值）。
+  DEFAULT_GROUP: 'Default',
+
   // 脚本持久化文件（脚本列表 / 新增脚本写入此处）。
   // 与 shell-config 一致落到 userData（Electron 内 = app.getPath('userData')），
   // 这样 Settings 面板显示的 "Scripts Config" 路径与实际落盘位置相同，避免两处不一致。

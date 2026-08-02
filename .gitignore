@@ -10,7 +10,7 @@ scripts.json
 
 # 构建产物
 dist/
-release/
+dist-electron/
 
 # 日志
 *.log
