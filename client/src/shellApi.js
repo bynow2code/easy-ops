@@ -5,24 +5,10 @@
 //  - 纯 Vite 开发（无 Electron）：相对路径 /api，由 vite.config 代理到后端，
 //    因此同一份代码在两种环境都能连上后端。
 // 任何请求失败都会抛出，由调用方决定是否退化到前端 localStorage 态。
-
-const api = typeof window !== 'undefined' ? window.easyOps : null;
-
-async function baseUrl() {
-  if (api?.backend?.getPort) {
-    // 后端可能尚未写完 port.txt，重试若干次
-    for (let i = 0; i < 20; i++) {
-      const port = await api.backend.getPort();
-      if (port) return `http://127.0.0.1:${port}`;
-      await new Promise((r) => setTimeout(r, 150));
-    }
-  }
-  // 无 Electron：相对路径，走 Vite dev 代理
-  return '';
-}
+import { resolveBaseUrl } from './backend.js';
 
 async function request(path, options = {}) {
-  const base = await baseUrl();
+  const base = await resolveBaseUrl();
   let res;
   try {
     res = await fetch(`${base}/api${path}`, {

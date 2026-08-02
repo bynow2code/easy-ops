@@ -32,6 +32,10 @@ import RenameGroupModal from './components/RenameGroupModal.jsx';
  * 纯函数式业务：派生 selectedCount / 分组结果等。脚本与分组的持久化统一走后端
  * scriptsApi（scripts.json 唯一写方），后端不可达时退化到 localStorage。
  */
+// No Shell Mode 下执行 / 重跑脚本时，给卡片的统一失败提示（复用同一条文案）
+const NO_SHELL_MESSAGE =
+  'No shell available — No Shell Mode is on. Turn it off in Settings to run scripts.';
+
 export default function App() {
   const [scripts, setScripts] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
@@ -123,6 +127,41 @@ export default function App() {
     writeFrontendScripts(fe);
   };
 
+  // 把 'global' / 脚本指定解释器解析成实际路径，统一 runScript / handleRerun 的解析逻辑
+  const resolveScriptShell = (script) => {
+    const shellChoice = script.shell || 'global';
+    return { shellChoice, shellPath: resolveShellPath(shellChoice, globalShellPath) };
+  };
+
+  // 开真实 PTY 会话并把 sessionId 同步回对应执行卡；创建失败则降级为 mock 错误卡
+  // （ExecutionCard 检测 bootError 显示并翻 exited，避免 xterm 黑屏吞错）。
+  const startPtySession = (execId, script, shellPath) => {
+    ptyClient
+      .open({ execId, scriptId: script.id, content: script.content || '', shell: shellPath })
+      .then((res) => {
+        setExecutions((prev) =>
+          prev.map((e) => (e.id === execId ? { ...e, sessionId: res?.sessionId || null } : e)),
+        );
+      })
+      .catch((err) => {
+        const msg = String((err && err.message) || err);
+        setExecutions((prev) =>
+          prev.map((e) =>
+            e.id === execId
+              ? { ...e, mode: 'mock', sessionId: `mock-${execId}`, bootError: msg }
+              : e,
+          ),
+        );
+      });
+  };
+
+  // 若是 pty 模式就按 execId 杀会话，避免孤儿进程（mock 卡由各自卡片卸载时停定时器）。
+  // 主进程在 openSession 里同步注册了 execId→sessionId，渲染层本地的 sessionId 在 IPC
+  // 返回前可能是 null（开会话中），不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
+  const killPty = (execId, mode) => {
+    if (mode === 'pty') ptyClient.kill(execId);
+  };
+
   // 主题：三态循环（system → dark → light → system），通过 <html data-theme> 切换
   const { theme, cycleTheme } = useTheme();
 
@@ -196,8 +235,7 @@ export default function App() {
           sessionId: `mock-${id}`,
           maximized: false,
           mode: 'mock',
-          bootError:
-            'No shell available — No Shell Mode is on. Turn it off in Settings to run scripts.',
+          bootError: NO_SHELL_MESSAGE,
         },
         ...prev,
       ]);
@@ -205,39 +243,24 @@ export default function App() {
     }
 
     // 'global' 解析为当前应用全局 shell 路径；否则用脚本指定的解释器路径
-    const shellChoice = script.shell || 'global';
-    const shellPath = resolveShellPath(shellChoice, globalShellPath);
+    const { shellChoice, shellPath } = resolveScriptShell(script);
 
     if (ptyClient.available) {
-      const exec = {
-        id,
-        scriptId: script.id,
-        group: script.group,
-        name: script.name,
-        shell: shellChoice,
-        shellPath,
-        sessionId: null,
-        maximized: false,
-        mode: 'pty',
-      };
-      setExecutions((prev) => [exec, ...prev]);
-      ptyClient
-        .open({ execId: id, scriptId: script.id, content: script.content || '', shell: shellPath })
-        .then((res) => {
-          setExecutions((prev) =>
-            prev.map((e) => (e.id === id ? { ...e, sessionId: res?.sessionId || null } : e)),
-          );
-        })
-        .catch((err) => {
-          const msg = String((err && err.message) || err);
-          // 真实 PTY 会话创建失败：降级为文本模式，把错误直接显示在卡片里，
-          // 否则 ExecutionCard 仍按 pty 渲染 xterm 黑屏，错误信息会被吞掉。
-          setExecutions((prev) =>
-            prev.map((e) =>
-              e.id === id ? { ...e, mode: 'mock', sessionId: `mock-${id}`, bootError: msg } : e,
-            ),
-          );
-        });
+      setExecutions((prev) => [
+        {
+          id,
+          scriptId: script.id,
+          group: script.group,
+          name: script.name,
+          shell: shellChoice,
+          shellPath,
+          sessionId: null,
+          maximized: false,
+          mode: 'pty',
+        },
+        ...prev,
+      ]);
+      startPtySession(id, script, shellPath);
       return;
     }
 
@@ -497,26 +520,12 @@ export default function App() {
   const handleClose = (execId) => {
     const exec = executions.find((e) => e.id === execId);
     if (!exec) return;
-    // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程（mock 卡由各自卡片卸载时停定时器）
-    // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
-    // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
-    // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
-    if (exec.mode === 'pty') {
-      ptyClient.kill(execId);
-    }
+    killPty(execId, exec.mode);
     setExecutions(executions.filter((e) => e.id !== execId));
   };
 
   const handleCloseAll = () => {
-    executions.forEach((exec) => {
-      // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程（mock 卡由各自卡片卸载时停定时器）
-      // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
-      // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
-      // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
-      if (exec.mode === 'pty') {
-        ptyClient.kill(exec.id);
-      }
-    });
+    executions.forEach((exec) => killPty(exec.id, exec.mode));
     setExecutions([]);
   };
 
@@ -525,12 +534,7 @@ export default function App() {
   const handleStop = (execId) => {
     const exec = executions.find((e) => e.id === execId);
     if (!exec) return;
-    // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
-    // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
-    // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
-    if (exec.mode === 'pty') {
-      ptyClient.kill(execId);
-    }
+    killPty(execId, exec.mode);
     // mock 模式无需 App 介入：ExecutionCard 的 Stop 处理会本地终止自身流并翻 exited。
   };
 
@@ -559,8 +563,7 @@ export default function App() {
                 shellPath: null,
                 sessionId: `mock-${execId}`,
                 mode: 'mock',
-                bootError:
-                  'No shell available — No Shell Mode is on. Turn it off in Settings to run scripts.',
+                bootError: NO_SHELL_MESSAGE,
               }
             : e,
         ),
@@ -570,15 +573,9 @@ export default function App() {
 
     // 1) 终止正在运行的旧 PTY 会话，避免孤儿进程 / 输出串台
     //    （mock 旧流无需单独停：下方改 sessionId 会让卡片 effect cleanup 清掉旧定时器）
-    // 只要是 pty 模式就按 execId 杀：主进程在 openSession 里同步注册了
-    // execId→sessionId，渲染层本地的 sessionId 在 IPC 返回前可能是 null（开会话中），
-    // 不能据此跳过；killByExec 找不到则说明已结束，是无害 no-op。
-    if (exec.mode === 'pty') {
-      ptyClient.kill(execId);
-    }
+    killPty(execId, exec.mode);
 
-    const shellChoice = script.shell || 'global';
-    const shellPath = resolveShellPath(shellChoice, globalShellPath);
+    const { shellChoice, shellPath } = resolveScriptShell(script);
 
     // 2) 重置为"新运行实例"：先把 sessionId 置空（使"杀旧会话"产生的残留 exit 事件
     //    不再匹配），ExecutionCard 靠 sessionId 变化判"重跑"并清屏/重启流；
@@ -598,24 +595,7 @@ export default function App() {
     );
 
     if (ptyClient.available) {
-      ptyClient
-        .open({ execId, scriptId: script.id, content: script.content || '', shell: shellPath })
-        .then((res) => {
-          setExecutions((prev) =>
-            prev.map((e) => (e.id === execId ? { ...e, sessionId: res?.sessionId || null } : e)),
-          );
-        })
-        .catch((err) => {
-          const msg = String((err && err.message) || err);
-          // PTY 创建失败：降级为 mock 错误卡（ExecutionCard 检测 bootError 显示并翻 exited）
-          setExecutions((prev) =>
-            prev.map((e) =>
-              e.id === execId
-                ? { ...e, mode: 'mock', sessionId: `mock-${execId}`, bootError: msg }
-                : e,
-            ),
-          );
-        });
+      startPtySession(execId, script, shellPath);
     }
     // mock 模式：sessionId 已在上方设为新值，ExecutionCard 的 mock effect 会自动重启流。
   };

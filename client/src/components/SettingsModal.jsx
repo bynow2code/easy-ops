@@ -7,6 +7,7 @@ import {
   writeFrontendNoShellMode,
 } from '../shellStore.js';
 import { shellApi } from '../shellApi.js';
+import { resolveBaseUrl } from '../backend.js';
 
 /**
  * 设置（Settings）模态框
@@ -65,15 +66,11 @@ export default function SettingsModal({ open, onClose }) {
           });
         }
       }
-      // 后端实际端口：Electron 内由 port.txt 读出（getPort 带重试等后端就绪）；
+      // 后端实际端口：Electron 内由 port.txt 读出（resolveBaseUrl 带重试等后端就绪）；
       // 纯 Vite dev 无此 IPC，保持 null → 界面显示 "—"。
       if (api?.backend?.getPort) {
-        let port = null;
-        for (let i = 0; i < 20; i++) {
-          port = await api.backend.getPort();
-          if (port) break;
-          await new Promise((r) => setTimeout(r, 150));
-        }
+        const base = await resolveBaseUrl();
+        const port = base ? Number(base.split(':').pop()) : null;
         if (!cancelled) setBackendPort(port);
       }
     })();
@@ -143,6 +140,15 @@ export default function SettingsModal({ open, onClose }) {
     } catch {
       /* 保留当前态 */
     }
+  };
+
+  // 把一次成功的 shell 接口响应同步到本地 shell 状态（noShellMode / shells / activeShellPath）。
+  const syncShellState = (res) => {
+    setShellState({
+      noShellMode: res.noShellMode,
+      shells: res.shells,
+      activeShellPath: res.activeShellPath,
+    });
   };
 
   const onCheckUpdates = async () => {
@@ -253,11 +259,7 @@ export default function SettingsModal({ open, onClose }) {
     try {
       const res = await shellApi.setActive(path || null);
       if (res?.ok) {
-        setShellState({
-          noShellMode: res.noShellMode,
-          shells: res.shells,
-          activeShellPath: res.activeShellPath,
-        });
+        syncShellState(res);
       } else if (res?.error) {
         showFlash('err', res.error);
       }
@@ -273,11 +275,7 @@ export default function SettingsModal({ open, onClose }) {
     try {
       const res = await shellApi.remove(p);
       if (res?.ok) {
-        setShellState({
-          noShellMode: res.noShellMode,
-          shells: res.shells,
-          activeShellPath: res.activeShellPath,
-        });
+        syncShellState(res);
         showFlash('ok', 'Removed');
         return;
       }

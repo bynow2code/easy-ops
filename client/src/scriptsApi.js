@@ -4,22 +4,10 @@
 //    走绝对 URL http://127.0.0.1:<port>/api，带重试等待后端就绪。
 //  - 纯 Vite 开发（无 Electron）：相对路径 /api，由 vite.config 代理到后端。
 // 任何请求失败都会抛出，由调用方决定是否退化到前端 localStorage 态。
-
-const api = typeof window !== 'undefined' ? window.easyOps : null;
-
-async function baseUrl() {
-  if (api?.backend?.getPort) {
-    for (let i = 0; i < 20; i++) {
-      const port = await api.backend.getPort();
-      if (port) return `http://127.0.0.1:${port}`;
-      await new Promise((r) => setTimeout(r, 150));
-    }
-  }
-  return '';
-}
+import { resolveBaseUrl } from './backend.js';
 
 async function request(path, options = {}) {
-  const base = await baseUrl();
+  const base = await resolveBaseUrl();
   const res = await fetch(`${base}/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
