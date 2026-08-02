@@ -104,7 +104,14 @@ function registerScriptsRoutes(app) {
     }
     const repo = store.renameGroup(oldName, newName.trim());
     if (!repo) return badRequest(res, 'Cannot rename group (invalid or duplicate name)');
-    res.json({ ok: true, groups: repo.groups, defaultGroup: repo.defaultGroup });
+    // 注意：renameGroup 会同步该分组下所有脚本的 group 字段，故需把 scripts
+    // 一并返回，否则前端拿不到更新后的脚本分组（重命名后脚本"消失"）。
+    res.json({
+      ok: true,
+      scripts: repo.scripts,
+      groups: repo.groups,
+      defaultGroup: repo.defaultGroup,
+    });
   });
 
   // 移除分组（默认分组不可删；脚本可一并删除或挪到默认分组）

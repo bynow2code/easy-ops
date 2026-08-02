@@ -12,20 +12,15 @@
  *  - 复用 shared/logger 输出日志，不引入 electron-log 等额外依赖。
  */
 
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { broadcast } = require('./ipcBroadcast');
 
 const GITHUB_RELEASES = 'https://github.com/bynow2code/easy-ops/releases';
 
 let log = console;
 let isChecking = false;
 let downloadedVersion = null;
-
-function broadcast(channel, payload) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(channel, payload);
-  }
-}
 
 function compareSemver(a, b) {
   const pa = String(a)

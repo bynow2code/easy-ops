@@ -18,7 +18,6 @@
  *    避免脚本拉起的子进程残留。平台差异全部封死在本文件内。
  */
 
-const fs = require('fs');
 const os = require('os');
 const { EventEmitter } = require('events');
 const pty = require('node-pty');
@@ -48,44 +47,17 @@ function on(evt, cb) {
 }
 
 // --------- 系统默认 shell 解析 ---------
-// Windows 默认：优先 Git Bash（直接吃 Windows 路径、跑 .sh 最省事），
-// 其次 wsl.exe（真·Linux），最后回退 PowerShell
-function windowsDefaultShell() {
-  const gitBashPaths = [
-    'C:\\Program Files\\Git\\bin\\bash.exe',
-    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-  ];
-  for (const p of gitBashPaths) {
-    try {
-      fs.accessSync(p, fs.constants.X_OK);
-      return p;
-    } catch {
-      // 继续尝试下一个候选
-    }
-  }
-  try {
-    fs.accessSync('C:\\Windows\\System32\\wsl.exe', fs.constants.X_OK);
-    return 'C:\\Windows\\System32\\wsl.exe';
-  } catch {
-    // 回退 PowerShell
-  }
-  return 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-}
-
-// 系统默认登录 shell：macOS / Linux 走 $SHELL → os.userInfo().shell → bash；
-// Windows 走 windowsDefaultShell()
+// 复用 server/shell-detect 的权威默认路径（getDefaultShellPath），消除与
+// pty-host 内重复的平台探测逻辑。仅在 Windows 上、且 shell-detect 解析出的
+// 候选项（Git Bash/WSL 均不存在时会回退到未必真实的 Git Bash 常量路径）
+// 实际不可用时，再回退 PowerShell，以保持与原行为一致（无 Git Bash/WSL 也能跑）。
 function getDefaultShell() {
-  if (process.platform === 'win32') return windowsDefaultShell();
-  const fromEnv = process.env.SHELL;
-  if (typeof fromEnv === 'string' && fromEnv.trim()) return fromEnv.trim();
-  try {
-    const info = os.userInfo();
-    if (info && typeof info.shell === 'string' && info.shell) return info.shell;
-  } catch {
-    // 个别环境（无 passwd 条目）os.userInfo 会抛错，忽略走回退
+  const candidate = shellDetect.getDefaultShellPath();
+  if (process.platform === 'win32' && !shellDetect.isUsableInterpreter(candidate)) {
+    const ps = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+    if (shellDetect.isUsableInterpreter(ps)) return ps;
   }
-  // 无默认 shell：macOS Catalina+ 默认 zsh；其余平台回退 bash
-  return process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash';
+  return candidate;
 }
 
 // --------- 打开会话（交互式常驻 shell）---------
@@ -99,7 +71,7 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
   // 预检：解释器必须存在且可执行。否则给出清晰、可操作的报错，而不是把
   // node-pty 的底层 ENOENT/UNKNOWN 透传给前端（那条信息对用户晦涩）。
   // 覆盖两处：显式传入的 shell，以及"跟随系统默认"兜底解析出的路径
-  // （Windows 没装 Git Bash/WSL 时 getDefaultShell 会返回未必存在的常量路径）。
+  // （Windows 上 shellDetect 解析出的默认路径未必存在时，getDefaultShell 会回退 PowerShell）。
   if (typeof interpreter !== 'string' || !interpreter.trim()) {
     throw new Error(
       'No usable shell interpreter: none resolved. Set one in Settings (Settings → Shell) or enable No Shell Mode for demo output.',
@@ -245,9 +217,6 @@ module.exports = {
   openSession,
   write,
   resize,
-  kill: killByExec,
   killByExec,
   killAll,
-  getDefaultShell,
-  sessions,
 };

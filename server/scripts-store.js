@@ -26,9 +26,6 @@ const config = require('./config');
 
 const DEFAULT_GROUP = config.DEFAULT_GROUP || 'Default';
 
-// 缺省空仓库（文件缺失 / 解析失败时回退）
-const EMPTY_REPO = Object.freeze({ scripts: [], groups: [], defaultGroup: DEFAULT_GROUP });
-
 function getPath() {
   return config.scriptsFile;
 }
@@ -252,7 +249,6 @@ function importScripts(incoming) {
 
 module.exports = {
   DEFAULT_GROUP,
-  EMPTY_REPO,
   getPath,
   newId,
   normalize,

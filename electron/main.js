@@ -14,6 +14,7 @@ const config = require('../server/config');
 const shellDetect = require('../server/shell-detect');
 const ptyHost = require('./pty-host');
 const updater = require('./updater');
+const { broadcast } = require('./ipcBroadcast');
 
 // 把 PTY Host 的输出 / 退出事件转发到所有渲染窗口（单窗口应用下即当前窗口）。
 // 事件名与渲染层约定一致：pty:data / pty:exit。
@@ -23,12 +24,6 @@ ptyHost.on('data', ({ execId, data }) => {
 ptyHost.on('exit', ({ execId, scriptId, exitCode, signal, sessionId }) => {
   broadcast('pty:exit', { execId, scriptId, exitCode, signal, sessionId });
 });
-
-function broadcast(channel, payload) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(channel, payload);
-  }
-}
 
 const GITHUB_REPO_URL = 'https://github.com/bynow2code/easy-ops';
 
@@ -50,7 +45,6 @@ function getPaths() {
     scriptsConfig: path.join(userData, 'scripts.json'),
     logFile: path.join(logDir, config.log.filename),
     shellConfig: path.join(userData, 'shell-config.json'),
-    logDir,
   };
 }
 

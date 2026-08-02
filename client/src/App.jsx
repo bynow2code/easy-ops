@@ -449,14 +449,12 @@ export default function App() {
     setRenameGroupOpen(false);
     setRenamingGroup(null);
     if (!oldName || !newName || newName === oldName) return;
-    // 重命名只动 groups + defaultGroup（不影响 scripts 列表）
+    // 重命名会同步该分组下所有脚本的 group 字段（后端返回含 scripts），
+    // 故用 applyRepo 按字段全量回填 scripts/groups/defaultGroup，保持与后端一致。
     persistWithFallback(
       scriptsApi.renameGroup(oldName, newName),
       (fe) => renameGroupInRepo(fe, oldName, newName),
-      (repo) => {
-        if (Array.isArray(repo.groups)) setGroups(repo.groups);
-        if (repo.defaultGroup) setDefaultGroup(repo.defaultGroup);
-      },
+      applyRepo,
     );
   };
 

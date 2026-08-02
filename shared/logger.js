@@ -211,8 +211,6 @@ function createLogger(userConfig = {}) {
     warn: (msg, ctx) => log('warn', msg, ctx),
     // error(message, context, error)：显式传入 Error
     error: (msg, ctx, err) => log('error', msg, ctx, err),
-    // errorErr(message, error, context)：把 Error 放第二参数，更符合直觉
-    errorErr: (msg, err, ctx) => log('error', msg, ctx, err),
     // 返回预置默认上下文的子日志器（上下文记录常用手段）
     child: (defaultContext) => wrapWithContext(api, defaultContext),
     // 优雅关闭文件流；返回 Promise，待底层流真正 finish（数据落盘）后 resolve
@@ -240,7 +238,6 @@ function wrapWithContext(parent, defaultContext) {
     info: (m, c) => parent.info(m, Object.assign({}, defaultContext, c)),
     warn: (m, c) => parent.warn(m, Object.assign({}, defaultContext, c)),
     error: (m, c, e) => parent.error(m, Object.assign({}, defaultContext, c), e),
-    errorErr: (m, e, c) => parent.error(m, Object.assign({}, defaultContext, c), e),
   };
 }
 

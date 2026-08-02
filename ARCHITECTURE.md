@@ -110,7 +110,7 @@
 
 - 工厂：`createLogger(config)` 返回带 `debug/info/warn/error` 的实例。
 - 上下文：`logger.child({scriptId})` 预置上下文，或每次调用传 `ctx`。
-- 错误：`error(msg, ctx, err)` / `errorErr(msg, err, ctx)`。
+- 错误：`error(msg, ctx, err)`。
 - 兜底：`installProcessHandlers(logger)` 捕获 `uncaughtException` / `unhandledRejection`。
 
 ## 5. 后续步骤（待逐项推进）

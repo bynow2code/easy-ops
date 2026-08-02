@@ -42,7 +42,7 @@ function write(repo) {
 
 export function removeGroupFromRepo(repo, name, deleteScripts = false) {
   const defaultGroup = repo?.defaultGroup || DEFAULT_GROUP;
-  if (!name || name === defaultGroup) return repo; // 默认分组不可删
+  if (!name || name === defaultGroup) return null; // 默认分组不可删（对齐后端 applyRemoveGroup 返回 null）
   const scripts = deleteScripts
     ? (repo.scripts || []).filter((s) => s.group !== name)
     : (repo.scripts || []).map((s) => (s.group === name ? { ...s, group: defaultGroup } : s));
@@ -54,13 +54,23 @@ export function renameGroupInRepo(repo, oldName, newName) {
   if (!oldName || !newName || !newName.trim()) return repo;
   newName = newName.trim();
   const defaultGroup = repo?.defaultGroup || DEFAULT_GROUP;
+  const groups = repo?.groups || [];
   const isDefault = oldName === defaultGroup;
-  if (!isDefault && (repo.groups || []).includes(newName)) return repo; // 普通分组重名拒绝
-  const groups = (repo.groups || []).map((g) => (g === oldName ? newName : g));
-  const scripts = (repo.scripts || []).map((s) =>
-    s.group === oldName ? { ...s, group: newName } : s,
+  if (!isDefault && groups.includes(newName)) return repo; // 普通分组重名拒绝
+  // 默认分组若撞名，强制唯一：自动追加后缀（与后端 applyRenameGroup 同源语义）
+  let finalName = newName;
+  if (isDefault && newName !== oldName && groups.includes(newName)) {
+    let i = 2;
+    while (groups.includes(`${newName} (${i})`)) i += 1;
+    finalName = `${newName} (${i})`;
+  }
+  const nextGroups = groups.map((g) => (g === oldName ? finalName : g));
+  // 默认分组重命名时确保新名在列（旧名可能因异常缺失）
+  if (isDefault && !nextGroups.includes(finalName)) nextGroups.push(finalName);
+  const scripts = (repo?.scripts || []).map((s) =>
+    s.group === oldName ? { ...s, group: finalName } : s,
   );
-  return { scripts, groups, defaultGroup: isDefault ? newName : defaultGroup };
+  return { scripts, groups: nextGroups, defaultGroup: isDefault ? finalName : defaultGroup };
 }
 
 export function importIntoRepo(repo, incoming) {
