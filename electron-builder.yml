@@ -10,9 +10,13 @@ directories:
   # 输出到 dist-electron，避免与 Vite 前端产物根目录 dist/ 互相覆盖
   output: dist-electron
 
+# 应用图标：mac 用 build/icon.icns、win 用 build/icon.ico、Linux/通用回退 build/icon.png
+icon: build/icon
+
 # 仅打包运行所需文件；node_modules 中的生产依赖由 electron-builder 自动裁剪纳入
 files:
   - package.json
+  - build/**/*
   - dist/**/*
   - electron/**/*
   - server/**/*

@@ -165,10 +165,27 @@ function loadDevWithRetry(win, attempt = 1) {
   });
 }
 
+function resolveAppIcon() {
+  const candidates = [
+    path.join(__dirname, '..', 'build', 'icon.png'),
+    process.resourcesPath && path.join(process.resourcesPath, 'build', 'icon.png'),
+  ].filter(Boolean);
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      /* ignore */
+    }
+  }
+  return undefined;
+}
+
 function createWindow() {
+  const appIcon = resolveAppIcon();
   const win = new BrowserWindow({
     width: 1400,
     height: 880,
+    ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
