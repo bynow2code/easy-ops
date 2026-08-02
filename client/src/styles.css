@@ -196,6 +196,19 @@ body {
   user-select: none;
 }
 
+/* 右栏容器：执行面板（普通流，始终挂载）与编辑器（absolute 浮层）同处此区域。
+   执行面板不被卸载，编辑脚本时 xterm 输出得以保留。 */
+.right-region {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+.right-region > .panel {
+  flex: 1 1 auto;
+}
+
 /* 左右分栏拖拽中线 */
 .v-splitter {
   flex: 0 0 6px;
@@ -866,7 +879,9 @@ input[type='checkbox'] {
 
 /* 添加脚本：条件替换右侧输出区的编辑器面板（与 .panel 同列弹性，占满右区） */
 .editor-panel {
-  flex: 1 1 50%;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);

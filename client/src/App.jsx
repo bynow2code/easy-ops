@@ -288,8 +288,22 @@ export default function App() {
   };
 
   const handleDeleteSelected = () => {
-    setScripts((prev) => prev.filter((s) => !selected.has(s.id)));
+    const ids = selected;
+    if (ids.size === 0) return;
+    const n = ids.size;
+    // 二次确认（与单删 handleRemove 同风格，用原生 confirm）；批量提示数量
+    if (!window.confirm(`Delete ${n} selected script${n > 1 ? 's' : ''}?`)) return;
+    // 乐观更新内存
+    setScripts((prev) => prev.filter((s) => !ids.has(s.id)));
     setSelected(new Set());
+    // 持久化：逐条 DELETE /api/scripts/:id；后端不可达时回退 localStorage（与单删一致）
+    ids.forEach((id) => {
+      scriptsApi.remove(id).catch(() =>
+        persistLocal((fe) => {
+          fe.scripts = fe.scripts.filter((s) => s.id !== id);
+        }),
+      );
+    });
   };
 
   const handleAddScript = () => {
@@ -637,17 +651,10 @@ export default function App() {
           aria-orientation="vertical"
           title="Drag to resize"
         />
-        {addScriptOpen ? (
-          <AddScriptPanel
-            open={addScriptOpen}
-            groups={groups}
-            script={editingScript}
-            shells={shells}
-            globalShellPath={globalShellPath}
-            onClose={handleCloseScriptPanel}
-            onSave={handleSaveScript}
-          />
-        ) : (
+        <div className="right-region">
+          {/* 执行面板始终挂载：编辑脚本时打开 AddScriptPanel 只覆盖其上、不卸载本面板，
+              从而保留各卡片 xterm 实例里已累积的输出（输出只在 term 实例内存中，
+              卸载即随 term.dispose() 丢失。AddScriptPanel 以 absolute 浮层覆盖本区域）。 */}
           <ExecutionPanel
             executions={executions}
             globalShellPath={globalShellPath}
@@ -657,7 +664,18 @@ export default function App() {
             onRerun={handleRerun}
             onStop={handleStop}
           />
-        )}
+          {addScriptOpen && (
+            <AddScriptPanel
+              open={addScriptOpen}
+              groups={groups}
+              script={editingScript}
+              shells={shells}
+              globalShellPath={globalShellPath}
+              onClose={handleCloseScriptPanel}
+              onSave={handleSaveScript}
+            />
+          )}
+        </div>
       </main>
 
       <AddGroupModal
