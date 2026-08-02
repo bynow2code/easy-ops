@@ -35,14 +35,11 @@ const BASE_CANDIDATES = [
 
 const DARWIN_EXTRA = ['/opt/homebrew/bin/bash', '/opt/homebrew/bin/zsh', '/opt/homebrew/bin/fish'];
 
-// Windows 候选：能跑 .sh 的放前面作为默认（Git Bash 优先于 wsl）
+// Windows 候选：仅 bash 系列（Git Bash / WSL）。cmd / powershell 不跑 .sh，不支持。
 const WIN32_CANDIDATES = [
   'C:\\Program Files\\Git\\bin\\bash.exe',
   'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
   'C:\\Windows\\System32\\wsl.exe',
-  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-  'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-  'C:\\Windows\\System32\\cmd.exe',
 ];
 
 // Windows 默认优先级：仅 POSIX 受支持项（Git Bash > WSL）。

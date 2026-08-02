@@ -11,7 +11,7 @@
  * 执行模型（对齐 VS Code 的终端/进程管理最佳实践）：
  *  - 脚本以"内容"直接喂给解释器：pty.spawn(interpreter, [])（交互式常驻 shell），脚本内容作为首条输入喂入，
  *    不写任何临时文件。这样天然跨平台（Windows 上无需 /mnt/c 路径翻译）。
- *  - 平台差异只在“默认 shell 选哪个”（getDefaultShell），feature / UI 代码零平台分支。
+ *  - 平台差异只在“默认 shell 选哪个”（shellDetect.getDefaultShellPath），feature / UI 代码零平台分支。
  *  - 停止跨平台一致：统一 killByExec(execId)。Windows 的 ConPTY 下
  *    term.kill() 已杀整棵进程树；Unix 下对整个进程组先发 SIGTERM，
  *    宽限 ~2s 仍存活再 SIGKILL（与 VS Code 的 TERMINATE_TIMEOUT 思路一致），
@@ -47,31 +47,23 @@ function on(evt, cb) {
 }
 
 // --------- 系统默认 shell 解析 ---------
-// 复用 server/shell-detect 的权威默认路径（getDefaultShellPath），消除与
-// pty-host 内重复的平台探测逻辑。仅在 Windows 上、且 shell-detect 解析出的
-// 候选项（Git Bash/WSL 均不存在时会回退到未必真实的 Git Bash 常量路径）
-// 实际不可用时，再回退 PowerShell，以保持与原行为一致（无 Git Bash/WSL 也能跑）。
-function getDefaultShell() {
-  const candidate = shellDetect.getDefaultShellPath();
-  if (process.platform === 'win32' && !shellDetect.isUsableInterpreter(candidate)) {
-    const ps = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-    if (shellDetect.isUsableInterpreter(ps)) return ps;
-  }
-  return candidate;
-}
+// 复用 server/shell-detect 的权威默认路径（getDefaultShellPath）；Windows 仅
+// 支持 Git Bash 与 WSL（bash 系列）。没装时 getDefaultShellPath 会返回常量路径，
+// 由 openSession 内的 isUsableInterpreter 预检转成可读报错（提示去设置里指定
+// shell / 开启无 shell 模式），不回退 PowerShell。
 
 // --------- 打开会话（交互式常驻 shell）---------
 // 脚本内容不作为 -c 参数，而是作为"首条输入"喂给一个常驻的交互式 shell：
 // 脚本跑完停在提示符，用户可继续手敲命令（read / REPL / ssh / vim 等皆可用）。
 // 不写任何临时文件，天然跨平台（Windows 上无需 /mnt/c 路径翻译）。
 function openSession({ execId, scriptId, content, shell, cwd, env }) {
-  const interpreter = shell || getDefaultShell();
+  const interpreter = shell || shellDetect.getDefaultShellPath();
   const ctxLogger = logger.child({ scriptId, execId });
 
   // 预检：解释器必须存在且可执行。否则给出清晰、可操作的报错，而不是把
   // node-pty 的底层 ENOENT/UNKNOWN 透传给前端（那条信息对用户晦涩）。
   // 覆盖两处：显式传入的 shell，以及"跟随系统默认"兜底解析出的路径
-  // （Windows 上 shellDetect 解析出的默认路径未必存在时，getDefaultShell 会回退 PowerShell）。
+  // （Windows 上 shellDetect 解析出的默认路径未必存在时，会由下方预检转成可读报错）。
   if (typeof interpreter !== 'string' || !interpreter.trim()) {
     throw new Error(
       'No usable shell interpreter: none resolved. Set one in Settings (Settings → Shell) or enable No Shell Mode for demo output.',
