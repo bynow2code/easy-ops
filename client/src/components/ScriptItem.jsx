@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { IconDrag } from './Icons.jsx';
 
 /**
- * 单个脚本行（拖拽柄 · 勾选 · 名称 · 状态 · 操作四件套）
+ * 单个脚本行（拖拽柄 · 勾选 · 名称 · 操作四件套）
  * 拖动行为：
  *  - 仅在按下左侧拖拽柄（script-row__drag）后才允许拖动整行（armed 模式），
  *    避免与勾选/按钮的点击冲突；
@@ -21,7 +21,6 @@ export default function ScriptItem({
   onReorderOver,
   onReorderDrop,
 }) {
-  const status = script.status;
   const [armed, setArmed] = useState(false);
 
   return (
@@ -58,9 +57,6 @@ export default function ScriptItem({
       <div className="script-row__name" title={script.name}>
         {script.name}
       </div>
-      <div className="script-row__status">
-        <StatusBadge status={status} />
-      </div>
       <div className="script-row__actions">
         <button className="btn btn--blue" onClick={() => onExecute(script)}>
           Execute
@@ -74,10 +70,4 @@ export default function ScriptItem({
       </div>
     </div>
   );
-}
-
-function StatusBadge({ status }) {
-  if (status === 'running') return <span className="status status--run">Running</span>;
-  if (status === 'exited') return <span className="status status--ok">Exited</span>;
-  return <span className="status status--idle">Idle</span>;
 }

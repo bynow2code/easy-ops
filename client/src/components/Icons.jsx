@@ -55,13 +55,6 @@ export const IconChevronDown = (p) => (
   </svg>
 );
 
-export const IconArrowDown = (p) => (
-  <svg {...base} {...p}>
-    <path d="M12 5v14" />
-    <path d="M6 13l6 6 6-6" />
-  </svg>
-);
-
 // 停止：实心方块（通用"停止"语义）
 export const IconStop = (p) => (
   <svg {...base} {...p}>

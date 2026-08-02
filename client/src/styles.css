@@ -245,7 +245,7 @@ body {
 
 .script-group__cols {
   display: grid;
-  grid-template-columns: 22px 22px minmax(0, 1fr) 70px 180px;
+  grid-template-columns: 22px 22px minmax(0, 1fr) 180px;
   gap: 8px;
   align-items: center;
   color: var(--text-faint);
@@ -269,7 +269,7 @@ body {
 
 .script-row {
   display: grid;
-  grid-template-columns: 22px 22px minmax(0, 1fr) 70px 180px;
+  grid-template-columns: 22px 22px minmax(0, 1fr) 180px;
   gap: 8px;
   align-items: center;
   padding: 6px 4px;
@@ -299,26 +299,6 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.script-row__status {
-  font-size: 12px;
-}
-
-/* Status badge text */
-.status {
-  font-size: 12px;
-}
-.status--idle {
-  color: var(--text-faint);
-}
-.status--run {
-  color: var(--c-blue);
-}
-.status--ok {
-  color: var(--c-green);
-}
-.status--err {
-  color: var(--c-red);
 }
 
 /* Action buttons */
@@ -1257,19 +1237,18 @@ input[type='checkbox'] {
   background-color: transparent !important; /* 跟随容器主题色（去掉 xterm 默认 #000 黑边） */
 }
 .exec-card__term .xterm-viewport {
-  overflow-y: auto; /* 仍允许滚回 scrollback，但不强制显示滚动条 */
-  /* 关键：关掉横向滚动。xterm 视口 overflow-y 非 visible 时 overflow-x 会被算成
-     auto；一旦纵向滚动条吃掉沟槽宽度、内容比可视区宽出几像素，就会冒出横向滚动条。
-     overflow-x:hidden 可彻底消除（代价：超宽的单行输出右端几像素被裁，内嵌终端可接受）。 */
+  /* 用 xterm 默认语义的 overflow-y: scroll（而非 auto）：常驻预留滚动条沟槽，
+     保证那根统一的 8px 原生细滚动条始终存在（尤其是单卡占满整窗、短输出不溢出时，
+     auto 会让滚动条彻底不渲染，看起来"没了"）。横向仍强制 hidden，避免冒出横向滚动条。 */
+  overflow-y: scroll;
   overflow-x: hidden;
 }
-/* xterm 自带基于 VS Code 的 .scrollbar（宽块、深色），会盖住原生窄滚动条；
-   直接隐藏它，改用我们已在通用规则里统一定制好的原生滚动条（8px 圆角灰条），
-   从而与页面其它滚动条完全一致。滚动仍由 .xterm-viewport 原生 overflow 驱动，不受影响。 */
-.exec-card__term .xterm .xterm-scrollable-element > .scrollbar {
-  display: none !important;
-}
-/* Firefox 下的细滚动条兜底（Webkit 走上面的 ::-webkit-scrollbar 规则） */
+/* xterm 的滚动条本质是自带的 .scrollbar 滑块元素（由 xterm JS 驱动、虚拟化滚动），
+   并非浏览器原生 ::-webkit-scrollbar（xterm 把内容高度控制在视口内，原生细滚动条因
+   "无真实溢出"而不显示）。故此处**不**隐藏它，恢复 xterm 默认滚动条；颜色由
+   ExecutionCard 的 XTERM_THEME.scrollbarSlider* 调成浅灰协调色，避免早期"深色宽块"刺眼。
+   横向仍强制 hidden（见下方 .xterm-viewport），纵向交给 xterm 自带滚动条处理。 */
+/* Firefox 下的细滚动条兜底（Webkit 走 xterm 自带 .scrollbar） */
 .exec-card__term .xterm-viewport {
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
@@ -1280,39 +1259,13 @@ input[type='checkbox'] {
   width: 100%;
   height: 100%;
 }
-/* 输出区相对定位容器：承载 xterm/文本与浮动的"回到底部"按钮 */
+/* 输出区相对定位容器：承载 xterm/文本。旧的"回到底部"浮钮已移除。 */
 .exec-card__view {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-/* 浮动"回到底部"按钮（VS Code 式）：仅当视口不在底部时渲染 */
-.exec-card__scroll-bottom {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  z-index: 5;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--text);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-  cursor: pointer;
-}
-.exec-card__scroll-bottom:hover {
-  background: var(--bg-muted);
-}
-.exec-card__scroll-bottom svg {
-  width: 14px;
-  height: 14px;
 }
 /* 最大化时让终端占满整卡 */
 .exec-card.is-max .exec-card__term {

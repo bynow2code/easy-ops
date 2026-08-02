@@ -139,7 +139,6 @@ export default function ScriptList({
                   <span />
                   <span />
                   <span className="col-name">Name</span>
-                  <span className="col-status">Status</span>
                   <span className="col-actions">Actions</span>
                 </div>
                 <div

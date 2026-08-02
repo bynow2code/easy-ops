@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { IconArrowDown, IconRefresh, IconExpand, IconStop } from './Icons.jsx';
+import { IconRefresh, IconExpand, IconStop } from './Icons.jsx';
 import { resolveShellPath } from '../shellUtils.js';
+import { mockOutputFor } from '../data/mockScripts.js';
 import { ptyClient } from '../ptyClient.js';
 
 // Xterm 配色：跟随应用主题（dark / light），采用 VS Code 风格 ANSI 色板，
@@ -75,8 +76,8 @@ function readDomTheme() {
  *    左：[分组徽章] [脚本名] [耗时] [相对时间]
  *    右：重新执行↻  停止■  最大化⤢  Close
  *  体：真实 PTY 模式下用 xterm 渲染流式输出；非 Electron 环境回退为文本 <pre>。
- *  贴底（scroll to bottom）：由 xterm 自然行为承担（视口在底部时新输出自动跟进，
- *    上翻看历史时停在原处）；视口不在底部时浮出"回到底部"按钮（监听 scroll 判定）。
+ *  滚动：xterm 保持其自然行为（视口在底部时新输出自动跟进）；文本回退模式每次新输出后
+ *    直接滚到底部。旧版"回到底部"浮钮已移除。
  *
  * 平台差异（Unix 进程组 / Windows 进程树）已封死在主进程 pty-host，
  * 本卡只负责"渲染 + 触发 onStop"，不感知任何平台分支。
@@ -95,41 +96,66 @@ export default function ExecutionCard({
   const fitObj = useRef(null);
   const sessionIdRef = useRef(exec.sessionId || null);
   const prevSessionRef = useRef(undefined); // 记录上一次 sessionId，区分"首次挂载"与"重跑"
-  const [atBottom, setAtBottom] = useState(true); // 视口是否在底部（决定是否显示"回到底部"按钮）
-  const atBottomRef = useRef(true); // 供 scroll 回调 / 输出写入读取最新值
-  const markAtBottom = (v) => {
-    atBottomRef.current = v;
-    setAtBottom(v);
-  };
-
   // 仅当运行在 Electron 且会话为真实 PTY 时才挂载 xterm
   const usingXterm = exec.mode === 'pty' && ptyClient.available;
+
+  // —— 运行状态自治：status / lines 由本卡自己维护，App 不再持有 ——
+  const [status, setStatus] = useState('running'); // running | exited
+  const [lines, setLines] = useState([]); // mock 模式的流式输出
+  const stoppedRef = useRef(false); // mock 流停止标记（Stop 点击 / 卸载时置位）
+
+  // 订阅 PTY 退出事件：仅当与当前会话一致才翻 exited，忽略"重跑杀旧会话"的残留 exit
+  useEffect(() => {
+    const off = ptyClient.onExit(({ execId, sessionId }) => {
+      if (execId !== exec.id) return;
+      if (sessionId && sessionIdRef.current && sessionId !== sessionIdRef.current) return;
+      setStatus('exited');
+    });
+    return off;
+  }, [exec.id]);
+
+  // mock 模式：模拟输出流自管。依赖 exec.sessionId（运行实例 id）——初次挂载与重跑
+  // 都会触发新实例从而重启流；bootError 存在时直接显示错误并以 exited 结束。
+  useEffect(() => {
+    if (usingXterm) return; // PTY 模式由 xterm + onExit 接管
+    stoppedRef.current = false;
+    setStatus('running');
+    if (exec.bootError) {
+      setLines([exec.bootError]);
+      setStatus('exited');
+      return;
+    }
+    const seq = mockOutputFor(exec.name);
+    setLines([seq[0]]);
+    let i = 1;
+    let timer;
+    const tick = () => {
+      if (stoppedRef.current) return;
+      if (i >= seq.length) {
+        setStatus('exited');
+        return;
+      }
+      setLines(seq.slice(0, i + 1));
+      i += 1;
+      timer = setTimeout(tick, 80);
+    };
+    timer = setTimeout(tick, 120);
+    return () => {
+      clearTimeout(timer);
+      stoppedRef.current = true;
+    };
+  }, [usingXterm, exec.sessionId, exec.bootError, exec.name]);
 
   useEffect(() => {
     sessionIdRef.current = exec.sessionId || null;
   }, [exec.sessionId]);
 
-  // 文本回退模式：仅在"当前处于底部"时跟随最新输出（与 xterm 自然行为一致）；
-  // 用户上翻看历史时不强制滚动，由下方 scroll 监听维持 atBottom 状态。
+  // 文本回退模式：每次有新输出后直接滚到底部（始终跟随最新输出）。
   useEffect(() => {
     const el = outRef.current;
     if (!el || usingXterm) return;
-    if (atBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [exec.lines?.length, usingXterm]);
-
-  // 文本回退模式：监听容器滚动，维持 atBottom 状态（与 xterm 分支对称）
-  useEffect(() => {
-    if (usingXterm) return undefined;
-    const el = outRef.current;
-    if (!el) return undefined;
-    const onScroll = () => {
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      markAtBottom(distance < 2);
-    };
-    el.addEventListener('scroll', onScroll);
-    markAtBottom(true); // 初始在底部
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [usingXterm]);
+    el.scrollTop = el.scrollHeight;
+  }, [lines.length, usingXterm]);
 
   // xterm 生命周期：挂载时建实例、订阅本卡流式输出；卸载/换会话时清理
   useEffect(() => {
@@ -169,19 +195,6 @@ export default function ExecutionCard({
       /* 旧环境无 ResizeObserver，退化为不自动重适配（不影响功能） */
     }
 
-    // 监听视口滚动，判定是否在底部：仅当不在底部时显示"回到底部"按钮（VS Code 式）。
-    // 跟随完全交给 xterm 自然行为（视口在底部时新输出自动滚到底，上翻后停在原处）。
-    // 用捕获阶段监听稳定的 host（termRef），每次重新查当前 .xterm-viewport，
-    // 以兼容 fit()/reset() 重建视口 DOM 导致旧监听失效、按钮永不出现的问题。
-    const onViewportScroll = () => {
-      const vEl = hostEl.querySelector('.xterm-viewport');
-      if (!vEl) return;
-      const distance = vEl.scrollHeight - vEl.scrollTop - vEl.clientHeight;
-      markAtBottom(distance < 2);
-    };
-    hostEl.addEventListener('scroll', onViewportScroll, true);
-    markAtBottom(true); // 初始在底部
-
     const offData = ptyClient.onData(({ execId, data }) => {
       if (execId !== exec.id) return;
       // 仅写入数据；是否跟随由 xterm 自然行为决定（见上方说明）。
@@ -203,7 +216,6 @@ export default function ExecutionCard({
       offData();
       offInput.dispose();
       container.removeEventListener('click', focusTerm);
-      hostEl.removeEventListener('scroll', onViewportScroll, true);
       if (resizeObserver) resizeObserver.disconnect();
       try {
         term.dispose();
@@ -222,7 +234,9 @@ export default function ExecutionCard({
     const term = termObj.current;
     const prev = prevSessionRef.current;
     prevSessionRef.current = exec.sessionId;
-    if (!term || !usingXterm) return;
+    if (!usingXterm) return; // mock 由上方 mock effect 管 running/exited
+    setStatus('running'); // 新会话 / 重跑：回到运行中（PTY 自治）
+    if (!term) return;
     if (prev != null && exec.sessionId && prev !== exec.sessionId) {
       term.reset();
     }
@@ -262,25 +276,14 @@ export default function ExecutionCard({
     return () => ro.disconnect();
   }, [usingXterm]);
 
-  // 回到底部：xterm 用 scrollToBottom，文本回退直接设 scrollTop；滚动监听会隐藏按钮
-  const scrollToBottom = () => {
-    if (usingXterm && termObj.current) {
-      try {
-        termObj.current.scrollToBottom();
-      } catch {
-        /* noop */
-      }
-      markAtBottom(true);
-    } else {
-      const el = outRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-        markAtBottom(true);
-      }
-    }
-  };
-
   const groupLabel = exec.group || 'Ungrouped';
+
+  // Stop：PTY 交给 App 的 onStop 去 kill 会话；mock 由本卡本地终止自己的流并翻 exited
+  const handleStop = () => {
+    onStop(exec.id);
+    stoppedRef.current = true;
+    setStatus('exited');
+  };
 
   // 统一只显示具体解释器路径/名称（移除原 'global' 概念；旧 'global' 数据经 resolveShellPath 仍解析为全局壳）
   const effectivePath = resolveShellPath(exec.shell, globalShellPath);
@@ -304,11 +307,11 @@ export default function ExecutionCard({
           <button className="icon-btn" title="Re-run" onClick={() => onRerun(exec.id)}>
             <IconRefresh />
           </button>
-          {exec.status === 'running' && (
+          {status === 'running' && (
             <button
               className="icon-btn icon-btn--stop"
               title="Stop"
-              onClick={() => onStop(exec.id)}
+              onClick={handleStop}
             >
               <IconStop />
             </button>
@@ -329,20 +332,8 @@ export default function ExecutionCard({
           </div>
         ) : (
           <div className="exec-card__body" ref={outRef}>
-            <pre className="exec-card__output">{exec.lines.join('\n')}</pre>
+            <pre className="exec-card__output">{lines.join('\n')}</pre>
           </div>
-        )}
-        {/* 仅当视口不在底部时显示"回到底部"按钮（VS Code 式）：跟随由 xterm 自然承担 */}
-        {!atBottom && (
-          <button
-            type="button"
-            className="exec-card__scroll-bottom"
-            title="Scroll to bottom"
-            onClick={scrollToBottom}
-          >
-            <IconArrowDown />
-            <span>回到底部</span>
-          </button>
         )}
       </div>
 

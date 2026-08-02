@@ -6,7 +6,6 @@ import AddGroupModal from './components/AddGroupModal.jsx';
 import AddScriptPanel from './components/AddScriptPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import { useTheme } from './hooks/useTheme.js';
-import { mockOutputFor } from './data/mockScripts.js';
 import { readFrontendShells } from './shellStore.js';
 import { resolveShellPath } from './shellUtils.js';
 import { ptyClient } from './ptyClient.js';
@@ -39,13 +38,6 @@ export default function App() {
   const [shells, setShells] = useState([]);
   const [globalShellPath, setGlobalShellPath] = useState(null);
 
-  const abortRef = useRef(new Set()); // mock 模式的终止令牌
-  // 镜像最新 executions，供 onExit 判断\"对应输出卡是否还在\"（Close All 已清卡片后，
-  // 不应再由 onExit 把脚本状态覆盖回 exited）。
-  const executionsRef = useRef(executions);
-  useEffect(() => {
-    executionsRef.current = executions;
-  }, [executions]);
 
   // 拉取 shell 列表（检测到的 + 自定义的）与全局 shell 路径；供"添加/编辑脚本"的
   // 解释器下拉、以及执行时把 'global' 解析成实际路径。未挂载 Electron 时为无操作。
@@ -78,41 +70,16 @@ export default function App() {
     scriptsApi
       .list()
       .then((repo) => {
-        setScripts(
-          Array.isArray(repo.scripts) ? repo.scripts.map((s) => ({ ...s, status: 'idle' })) : [],
-        );
+        setScripts(Array.isArray(repo.scripts) ? repo.scripts : []);
         setGroups(Array.isArray(repo.groups) ? repo.groups : []);
       })
       .catch(() => {
         const fe = readFrontendScripts();
-        setScripts(fe.scripts.map((s) => ({ ...s, status: 'idle' })));
+        setScripts(fe.scripts);
         setGroups(fe.groups);
       });
   };
 
-  // 真实 PTY 模式：订阅主进程抛来的"执行结束"事件，把对应输出卡翻成 exited
-  // 并回填退出码；同时同步脚本级状态。平台差异已在主进程封死，这里零分支。
-  // 关键：exit 事件携带 sessionId，仅当与当前卡片的 sessionId 一致才生效——
-  // 否则是"重跑时杀掉旧会话"产生的残留 exit，应忽略，否则会把刚设回 running 的
-  // 状态误翻成 exited（重跑场景的竞态 bug）。
-  useEffect(() => {
-    if (!ptyClient.available) return undefined;
-    return ptyClient.onExit(({ execId, scriptId, exitCode, sessionId }) => {
-      setExecutions((prev) =>
-        prev.map((e) =>
-          e.id === execId && e.sessionId === sessionId
-            ? { ...e, status: 'exited', exit: exitCode ?? null }
-            : e,
-        ),
-      );
-      const cur = executionsRef.current.find((e) => e.id === execId);
-      if (scriptId && cur && cur.sessionId === sessionId) {
-        setScripts((prev) =>
-          prev.map((s) => (s.id === scriptId ? { ...s, status: 'exited' } : s)),
-        );
-      }
-    });
-  }, []);
 
   // 主题：三态循环（system → dark → light → system），通过 <html data-theme> 切换
   const { theme, cycleTheme } = useTheme();
@@ -178,17 +145,13 @@ export default function App() {
         scriptId: script.id,
         group: script.group,
         name: script.name,
-        status: 'running',
-        exit: null,
         shell: shellChoice,
         shellPath,
         sessionId: null,
-        lines: [],
         maximized: false,
         mode: 'pty',
       };
       setExecutions((prev) => [exec, ...prev]);
-      patchScript(script.id, { status: 'running' });
       ptyClient
         .open({ execId: id, scriptId: script.id, content: script.content || '', shell: shellPath })
         .then((res) => {
@@ -203,48 +166,29 @@ export default function App() {
           setExecutions((prev) =>
             prev.map((e) =>
               e.id === id
-                ? { ...e, status: 'exited', exit: 1, mode: 'mock', lines: [msg] }
+                ? { ...e, mode: 'mock', sessionId: `mock-${id}`, bootError: msg }
                 : e,
             ),
           );
-          patchScript(script.id, { status: 'exited' });
         });
       return;
     }
 
-    // 回退：mock 流式输出
-    const lines = mockOutputFor(script.name);
+    // 回退：mock 模式。状态与模拟输出流均由 ExecutionCard 自己维护
+    // （它订阅 ptyClient.onExit 翻 exited，并自跑 mock 流）；App 只创建静态卡片，
+    // 并给定运行实例 id（sessionId）供卡片区分"初次挂载 vs 重跑"。
     const exec = {
       id,
       scriptId: script.id,
       group: script.group,
       name: script.name,
-      status: 'running',
-      exit: null,
       shell: shellChoice,
       shellPath,
-      lines: [lines[0]],
+      sessionId: `mock-${id}`,
       maximized: false,
       mode: 'mock',
     };
     setExecutions((prev) => [exec, ...prev]);
-    patchScript(script.id, { status: 'running' });
-
-    const tick = (i) => {
-      if (abortRef.current.has(id)) return; // 被停止则中断
-      if (i >= lines.length) {
-        setExecutions((prev) =>
-          prev.map((e) => (e.id === id ? { ...e, status: 'exited', exit: 0 } : e)),
-        );
-        patchScript(script.id, { status: 'exited' });
-        return;
-      }
-      setExecutions((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, lines: lines.slice(0, i + 1) } : e)),
-      );
-      setTimeout(() => tick(i + 1), 80);
-    };
-    setTimeout(() => tick(1), 120);
   };
 
   const handleExecuteSelected = () => {
@@ -286,7 +230,7 @@ export default function App() {
     if (isEdit) {
       patchScript(finalId, record);
     } else {
-      setScripts((prev) => [...prev, { ...record, status: 'idle' }]);
+      setScripts((prev) => [...prev, record]);
     }
 
     // 持久化：优先后端 /api/scripts；失败回退 localStorage
@@ -397,53 +341,32 @@ export default function App() {
   const handleClose = (execId) => {
     const exec = executions.find((e) => e.id === execId);
     if (!exec) return;
-    const scriptId = exec.scriptId;
-    const wasRunning = exec.status === 'running';
-    // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程
-    if (exec.mode === 'pty' && exec.status === 'running' && exec.sessionId) {
+    // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程（mock 卡由各自卡片卸载时停定时器）
+    if (exec.mode === 'pty' && exec.sessionId) {
       ptyClient.kill(execId);
     }
-    abortRef.current.delete(execId);
-    const remaining = executions.filter((e) => e.id !== execId);
-    setExecutions(remaining);
-    // 该脚本已无其它"运行中"的输出卡 → 复位脚本状态，避免左侧列表卡在 Running
-    // （与 handleCloseAll 语义一致；同脚本存在多张卡时不会误复位）。
-    if (scriptId && wasRunning && !remaining.some((e) => e.scriptId === scriptId && e.status === 'running')) {
-      setScripts((prev) => prev.map((s) => (s.id === scriptId ? { ...s, status: 'idle' } : s)));
-    }
+    setExecutions(executions.filter((e) => e.id !== execId));
   };
 
   const handleCloseAll = () => {
     executions.forEach((exec) => {
-      // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程；mock 模式标记中断令牌
-      if (exec.mode === 'pty' && exec.status === 'running' && exec.sessionId) {
+      // 关闭仍运行中的 PTY 卡时先杀掉会话，避免孤儿进程（mock 卡由各自卡片卸载时停定时器）
+      if (exec.mode === 'pty' && exec.sessionId) {
         ptyClient.kill(exec.id);
-      } else if (exec.mode === 'mock') {
-        abortRef.current.add(exec.id);
       }
     });
-    // 复位所有被标记为 running 的脚本状态：Close All 后列表不应再显示 Running。
-    // 上方已 kill/abort 运行会话，onExit 会因卡片已清而被上面的守卫跳过，不会覆盖本处复位。
-    setScripts((prev) => prev.map((s) => (s.status === 'running' ? { ...s, status: 'idle' } : s)));
     setExecutions([]);
   };
 
   // 停止某次执行：PTY 模式通过 execId 让主进程精准 kill（跨平台一致）；
-  // mock 模式标记中断令牌。kill 后 onExit 会再回填退出码。
+  // mock 模式由卡片自身管理（点击 Stop 即本地终止自己的模拟流）。状态翻转交给 ExecutionCard。
   const handleStop = (execId) => {
     const exec = executions.find((e) => e.id === execId);
     if (!exec) return;
     if (exec.mode === 'pty' && exec.sessionId) {
       ptyClient.kill(execId);
-    } else if (exec.mode === 'mock') {
-      abortRef.current.add(execId);
     }
-    setExecutions((prev) =>
-      prev.map((e) => (e.id === execId ? { ...e, status: 'exited' } : e)),
-    );
-    // 同步把脚本状态翻回非 running：PTY 模式 onExit 会再补一次（幂等）；
-    // mock 模式无 exit 事件，必须在此兜底，否则脚本列表仍显示 Running。
-    if (exec.scriptId) patchScript(exec.scriptId, { status: 'exited' });
+    // mock 模式无需 App 介入：ExecutionCard 的 Stop 处理会本地终止自身流并翻 exited。
   };
 
   const handleRerun = (execId, mode) => {
@@ -453,43 +376,38 @@ export default function App() {
       );
       return;
     }
-    // 重新执行：复用同一张卡片（exec.id 不变），在当前终端内重跑，
-    // 而不是新建卡片 / 新终端。
+    // 重新执行：复用同一张卡片（exec.id 不变），在当前终端内重跑，而非新建卡片。
+    // 状态与 mock 流交由 ExecutionCard 自己维护（它靠 sessionId 变化判"重跑"并清屏/重启流）。
     const exec = executions.find((e) => e.id === execId);
     if (!exec) return;
     const script = scripts.find((s) => s.id === exec.scriptId);
     if (!script) return;
 
-    // 1) 终止正在运行的旧会话，避免孤儿进程 / 输出串台
+    // 1) 终止正在运行的旧 PTY 会话，避免孤儿进程 / 输出串台
+    //    （mock 旧流无需单独停：下方改 sessionId 会让卡片 effect cleanup 清掉旧定时器）
     if (exec.mode === 'pty' && exec.sessionId) {
       ptyClient.kill(execId);
-    } else if (exec.mode === 'mock') {
-      abortRef.current.add(execId);
     }
 
     const shellChoice = script.shell || 'global';
     const shellPath = resolveShellPath(shellChoice, globalShellPath);
 
-    // 2) 重置卡片状态（保留 exec.id；先把 sessionId 置空，使"杀旧会话"产生的残留
-    //    exit 事件（仍携带旧 sessionId）不再匹配，避免把刚设回 running 的状态误翻成 exited。
-    //    sessionId 待新会话返回时覆盖，ExecutionCard 靠其变化判"重跑"并清屏）。
+    // 2) 重置为"新运行实例"：先把 sessionId 置空（使"杀旧会话"产生的残留 exit 事件
+    //    不再匹配），ExecutionCard 靠 sessionId 变化判"重跑"并清屏/重启流；
+    //    sessionId 待新会话返回时覆盖。mock 模式直接给定新实例 id。
     setExecutions((prev) =>
       prev.map((e) =>
         e.id === execId
           ? {
               ...e,
-              status: 'running',
-              exit: null,
               shell: shellChoice,
               shellPath,
-              sessionId: null,
-              lines: [],
+              sessionId: ptyClient.available ? null : `mock-${execId}-${Date.now()}`,
               mode: ptyClient.available ? 'pty' : 'mock',
             }
           : e,
       ),
     );
-    patchScript(script.id, { status: 'running' });
 
     if (ptyClient.available) {
       ptyClient
@@ -501,36 +419,17 @@ export default function App() {
         })
         .catch((err) => {
           const msg = String((err && err.message) || err);
+          // PTY 创建失败：降级为 mock 错误卡（ExecutionCard 检测 bootError 显示并翻 exited）
           setExecutions((prev) =>
             prev.map((e) =>
               e.id === execId
-                ? { ...e, status: 'exited', exit: 1, mode: 'mock', lines: [msg] }
+                ? { ...e, mode: 'mock', sessionId: `mock-${execId}`, bootError: msg }
                 : e,
             ),
           );
-          patchScript(script.id, { status: 'exited' });
         });
-    } else {
-      // 回退：mock 流式输出（复用同卡片）
-      const lines = mockOutputFor(script.name);
-      const tick = (i) => {
-        if (abortRef.current.has(execId)) return;
-        if (i >= lines.length) {
-          setExecutions((prev) =>
-            prev.map((e) =>
-              e.id === execId ? { ...e, status: 'exited', exit: 0 } : e,
-            ),
-          );
-          patchScript(script.id, { status: 'exited' });
-          return;
-        }
-        setExecutions((prev) =>
-          prev.map((e) => (e.id === execId ? { ...e, lines: lines.slice(0, i + 1) } : e)),
-        );
-        setTimeout(() => tick(i + 1), 80);
-      };
-      setTimeout(() => tick(0), 120);
     }
+    // mock 模式：sessionId 已在上方设为新值，ExecutionCard 的 mock effect 会自动重启流。
   };
 
   return (
