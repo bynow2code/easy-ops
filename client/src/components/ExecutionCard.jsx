@@ -165,7 +165,7 @@ export default function ExecutionCard({
       fontSize: 12,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       lineHeight: 1.2,
-      cursorBlink: false,
+      cursorBlink: true,
       theme: XTERM_THEME[readDomTheme()],
     });
     const fit = new FitAddon();
@@ -285,10 +285,21 @@ export default function ExecutionCard({
     setStatus('exited');
   };
 
-  // 统一只显示具体解释器路径/名称（移除原 'global' 概念；旧 'global' 数据经 resolveShellPath 仍解析为全局壳）
+  // 统一只显示具体解释器名称（移除原 'global' 概念；旧 'global' 数据经 resolveShellPath 仍解析为全局壳）。
+  // 找不到匹配名称时，从路径取 basename（如 /bin/zsh → zsh），而非显示完整路径；
+  // 完整路径保留在 title 上便于溯源。
   const effectivePath = resolveShellPath(exec.shell, globalShellPath);
   const matchedShell = effectivePath ? shells.find((s) => s.path === effectivePath) : null;
-  const shellName = matchedShell?.name || effectivePath || 'system default';
+  const shellName =
+    matchedShell?.name ||
+    (effectivePath ? effectivePath.split(/[\\/]/).pop() : 'system default');
+
+  // 标题栏状态指示：bootError 视为 Error，否则按 running/exited 显示。
+  const statusInfo = exec.bootError
+    ? { label: 'Error', tone: 'err' }
+    : status === 'running'
+      ? { label: 'Running', tone: 'run' }
+      : { label: 'Exited', tone: 'done' };
 
   return (
     <article className={`exec-card ${exec.maximized ? 'is-max' : ''}`}>
@@ -297,10 +308,17 @@ export default function ExecutionCard({
           <span className={`badge badge--${badgeVariant(groupLabel)}`}>{groupLabel}</span>
           <span className="exec-card__name">{exec.name}</span>
           <span
+            className={`exec-card__status exec-card__status--${statusInfo.tone}`}
+            title={statusInfo.label}
+          >
+            <span className="exec-card__status-dot" />
+            {statusInfo.label}
+          </span>
+          <span
             className="exec-card__meta exec-card__meta--shell"
             title={effectivePath || 'system default'}
           >
-            Shell: {shellName}
+            {shellName}
           </span>
         </div>
         <div className="exec-card__head-right">

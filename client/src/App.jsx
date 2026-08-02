@@ -6,7 +6,7 @@ import AddGroupModal from './components/AddGroupModal.jsx';
 import AddScriptPanel from './components/AddScriptPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import { useTheme } from './hooks/useTheme.js';
-import { readFrontendShells } from './shellStore.js';
+import { readFrontendShells, readFrontendNoShellMode } from './shellStore.js';
 import { resolveShellPath } from './shellUtils.js';
 import { ptyClient } from './ptyClient.js';
 import { shellApi } from './shellApi.js';
@@ -37,6 +37,9 @@ export default function App() {
   // 以及执行时把 'global' 解析成实际路径。未挂载 Electron 时保持为空/默认，UI 优雅退化。
   const [shells, setShells] = useState([]);
   const [globalShellPath, setGlobalShellPath] = useState(null);
+  // No Shell Mode：模拟"无可用解释器"。开启时执行/重跑脚本直接给出明确失败，
+  // 而非用 null 路径假装运行（mock 模式下甚至会照常跑出模拟输出 → 模式"未生效"）。
+  const [noShellMode, setNoShellMode] = useState(false);
 
 
   // 拉取 shell 列表（检测到的 + 自定义的）与全局 shell 路径；供"添加/编辑脚本"的
@@ -51,11 +54,13 @@ export default function App() {
       .then((st) => {
         setShells(Array.isArray(st.shells) ? st.shells : []);
         setGlobalShellPath(st.activeShellPath || st.shells?.[0]?.path || null);
+        setNoShellMode(Boolean(st.noShellMode));
       })
       .catch(() => {
         const fe = readFrontendShells();
         setShells(fe);
         setGlobalShellPath(fe[0]?.path || null);
+        setNoShellMode(readFrontendNoShellMode());
       });
   };
 
@@ -135,6 +140,29 @@ export default function App() {
   //  - 非 Electron（浏览器 dev / 单测）：回退到 mock 流式输出，保证 UI 可用。
   const runScript = (script) => {
     const id = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    // No Shell Mode：模拟"无可用解释器"，直接给出明确失败卡，
+    // 而非用 null 路径去开 PTY（Electron 下报含糊错误 / mock 下照常跑出模拟输出）。
+    if (noShellMode) {
+      setExecutions((prev) => [
+        {
+          id,
+          scriptId: script.id,
+          group: script.group,
+          name: script.name,
+          shell: script.shell || 'global',
+          shellPath: null,
+          sessionId: `mock-${id}`,
+          maximized: false,
+          mode: 'mock',
+          bootError:
+            'No shell available — No Shell Mode is on. Turn it off in Settings to run scripts.',
+        },
+        ...prev,
+      ]);
+      return;
+    }
+
     // 'global' 解析为当前应用全局 shell 路径；否则用脚本指定的解释器路径
     const shellChoice = script.shell || 'global';
     const shellPath = resolveShellPath(shellChoice, globalShellPath);
@@ -382,6 +410,26 @@ export default function App() {
     if (!exec) return;
     const script = scripts.find((s) => s.id === exec.scriptId);
     if (!script) return;
+
+    // No Shell Mode：重跑同样明确失败（复用同一卡片，避免假装重跑）。
+    if (noShellMode) {
+      setExecutions((prev) =>
+        prev.map((e) =>
+          e.id === execId
+            ? {
+                ...e,
+                shell: script.shell || 'global',
+                shellPath: null,
+                sessionId: `mock-${execId}`,
+                mode: 'mock',
+                bootError:
+                  'No shell available — No Shell Mode is on. Turn it off in Settings to run scripts.',
+              }
+            : e,
+        ),
+      );
+      return;
+    }
 
     // 1) 终止正在运行的旧 PTY 会话，避免孤儿进程 / 输出串台
     //    （mock 旧流无需单独停：下方改 sessionId 会让卡片 effect cleanup 清掉旧定时器）

@@ -464,6 +464,56 @@ body {
   color: var(--text-muted, #475569);
 }
 
+/* 标题栏运行状态指示：圆点 + 文案。running 绿点呼吸、exited 中性灰、error 红。 */
+.exec-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 9px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-soft, #f6f7f9);
+  color: var(--text-muted, #475569);
+  white-space: nowrap;
+}
+.exec-card__status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.exec-card__status--run {
+  color: #15803d;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+.exec-card__status--run .exec-card__status-dot {
+  background: #16a34a;
+  animation: exec-status-pulse 1.1s ease-in-out infinite;
+}
+.exec-card__status--done {
+  color: #475569;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+.exec-card__status--done .exec-card__status-dot {
+  background: #94a3b8;
+}
+.exec-card__status--err {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+.exec-card__status--err .exec-card__status-dot {
+  background: #dc2626;
+}
+@keyframes exec-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
 .exec-card__close {
   height: 22px;
   background: transparent;
@@ -799,6 +849,32 @@ input[type='checkbox'] {
   --c-green-2: #14532d;
   --c-purple-2: #4c1d95;
   --c-purple: #c4b5fd;
+}
+
+/* 标题栏状态指示：深色主题下重着色调，保证在深色面板上可读 */
+:root[data-theme='dark'] .exec-card__status--run {
+  color: #4ade80;
+  border-color: #14532d;
+  background: #0c2a18;
+}
+:root[data-theme='dark'] .exec-card__status--run .exec-card__status-dot {
+  background: #4ade80;
+}
+:root[data-theme='dark'] .exec-card__status--done {
+  color: #9ca3af;
+  border-color: #3a3b40;
+  background: #1f2024;
+}
+:root[data-theme='dark'] .exec-card__status--done .exec-card__status-dot {
+  background: #9ca3af;
+}
+:root[data-theme='dark'] .exec-card__status--err {
+  color: #f87171;
+  border-color: #7f1d1d;
+  background: #2a1414;
+}
+:root[data-theme='dark'] .exec-card__status--err .exec-card__status-dot {
+  background: #f87171;
 }
 
 :root[data-theme='dark'] .pill--white {

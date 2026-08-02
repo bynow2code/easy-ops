@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconCheck, IconExternal } from './Icons.jsx';
-import { readFrontendShells, writeFrontendShells } from '../shellStore.js';
+import {
+  readFrontendShells,
+  writeFrontendShells,
+  readFrontendNoShellMode,
+  writeFrontendNoShellMode,
+} from '../shellStore.js';
 import { shellApi } from '../shellApi.js';
 
 /**
@@ -54,7 +59,7 @@ export default function SettingsModal({ open, onClose }) {
       } catch {
         if (!cancelled) {
           setShellState({
-            noShellMode: false,
+            noShellMode: readFrontendNoShellMode(),
             shells: readFrontendShells(),
             activeShellPath: null,
           });
@@ -159,7 +164,14 @@ export default function SettingsModal({ open, onClose }) {
     try {
       await shellApi.setNoShellMode(next);
       await reloadShells();
-    } catch {
+    } catch (err) {
+      // 后端不可达（纯 dev 没起 server）：本地兜底（仅前端态、不持久化到后端）
+      if (err && err.isNetwork) {
+        writeFrontendNoShellMode(next);
+        setShellState((prev) => ({ ...prev, noShellMode: next }));
+        showFlash('info', 'No Shell Mode (frontend only — backend offline)');
+        return;
+      }
       showFlash('err', 'Failed to toggle No Shell Mode');
     }
   };
