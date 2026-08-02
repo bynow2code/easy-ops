@@ -15,12 +15,17 @@
 const fs = require('fs');
 const path = require('path');
 
+// 缺省空配置（文件缺失 / 解析失败时回退）
+const EMPTY_CONFIG = Object.freeze({ noShellMode: false, shells: [], activeShellPath: null });
+
 function getPath(userDataDir) {
   return path.join(userDataDir, 'shell-config.json');
 }
 
 function normalize(raw) {
   const safe = raw && typeof raw === 'object' ? raw : {};
+  const activeShellPath =
+    typeof safe.activeShellPath === 'string' ? safe.activeShellPath || null : null;
   return {
     noShellMode: Boolean(safe.noShellMode),
     shells: Array.isArray(safe.shells)
@@ -33,8 +38,7 @@ function normalize(raw) {
             custom: Boolean(s.custom),
           }))
       : [],
-    activeShellPath:
-      typeof safe.activeShellPath === 'string' && safe.activeShellPath ? safe.activeShellPath : null,
+    activeShellPath,
   };
 }
 
@@ -43,13 +47,24 @@ function read(userDataDir) {
     const raw = fs.readFileSync(getPath(userDataDir), 'utf8');
     return normalize(JSON.parse(raw));
   } catch {
-    return { noShellMode: false, shells: [], activeShellPath: null };
+    return { ...EMPTY_CONFIG };
   }
 }
 
 function write(userDataDir, data) {
   const safe = normalize(data);
   fs.writeFileSync(getPath(userDataDir), JSON.stringify(safe, null, 2), 'utf8');
+}
+
+/**
+ * 读-改-写：读取当前配置，交给 mutator 就地修改，再落盘，返回修改后的配置。
+ * 适用于没有"提前返回、跳过落盘"需求的场景（如 setNoShellMode / setActive）。
+ */
+function update(userDataDir, mutator) {
+  const cfg = read(userDataDir);
+  mutator(cfg);
+  write(userDataDir, cfg);
+  return cfg;
 }
 
 /**
@@ -68,4 +83,4 @@ function removeShell(userDataDir, filePath) {
   return removed;
 }
 
-module.exports = { getPath, read, write, normalize, removeShell };
+module.exports = { getPath, read, write, update, normalize, removeShell };

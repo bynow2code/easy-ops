@@ -116,11 +116,10 @@ ipcMain.handle('shell:getNoShellMode', () => {
 });
 
 ipcMain.handle('shell:setNoShellMode', (_evt, value) => {
-  const userData = app.getPath('userData');
-  const cfg = shellCfg.read(userData);
-  cfg.noShellMode = Boolean(value);
-  if (cfg.noShellMode) cfg.activeShellPath = null; // 切到无 shell 时清掉当前
-  shellCfg.write(userData, cfg);
+  const cfg = shellCfg.update(app.getPath('userData'), (c) => {
+    c.noShellMode = Boolean(value);
+    if (c.noShellMode) c.activeShellPath = null; // 切到无 shell 时清掉当前
+  });
   logger.info('设置 noShellMode', { value: cfg.noShellMode });
   return cfg.noShellMode;
 });
@@ -137,22 +136,14 @@ ipcMain.handle('shell:choose', async () => {
   const res = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts));
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return null;
   const filePath = res.filePaths[0];
-  // 顺手探测版本
-  let version = null;
-  try {
-    const { execFileSync } = require('child_process');
-    const out = execFileSync(filePath, ['--version'], { encoding: 'utf8', timeout: 2000 });
-    version = String(out).split(/\r?\n/)[0].trim();
-  } catch {
-    /* 探测失败也可保存，后续再补 */
-  }
+  // 顺手探测版本（复用探测模块，失败也可保存，后续再补）
+  const version = shellDetect.probeVersion(filePath);
   return { path: filePath, name: path.basename(filePath), version, custom: true, probeFailed: !version };
 });
 
 ipcMain.handle('shell:add', (_evt, filePath) => {
-  if (typeof filePath !== 'string' || !filePath) {
-    return { ok: false, error: 'Empty path' };
-  }
+  const argErr = validateShellArg(filePath);
+  if (argErr) return argErr;
   if (!fs.existsSync(filePath)) return { ok: false, error: 'File not found' };
   const userData = app.getPath('userData');
   const cfg = shellCfg.read(userData);
@@ -164,25 +155,21 @@ ipcMain.handle('shell:add', (_evt, filePath) => {
 });
 
 ipcMain.handle('shell:setActive', (_evt, filePath) => {
-  const userData = app.getPath('userData');
-  const cfg = shellCfg.read(userData);
   if (filePath) {
     const found = findShell(filePath);
     if (!found) return { ok: false, error: 'Shell not in list' };
-    cfg.activeShellPath = found.path;
-  } else {
-    cfg.activeShellPath = null; // 跟随默认
   }
-  cfg.noShellMode = false; // 显式选 shell 自动退出无 shell 模式
-  shellCfg.write(userData, cfg);
+  const cfg = shellCfg.update(app.getPath('userData'), (c) => {
+    c.activeShellPath = filePath || null; // 跟随默认
+    c.noShellMode = false; // 显式选 shell 自动退出无 shell 模式
+  });
   logger.info('设置当前 shell', { path: cfg.activeShellPath });
   return { ok: true, ...loadShells() };
 });
 
 ipcMain.handle('shell:remove', (_evt, filePath) => {
-  if (typeof filePath !== 'string' || !filePath) {
-    return { ok: false, error: 'Empty path' };
-  }
+  const argErr = validateShellArg(filePath);
+  if (argErr) return argErr;
   const userData = app.getPath('userData');
   const cfg = shellCfg.read(userData);
   if (!cfg.shells.some((s) => s.path === filePath)) {
@@ -197,6 +184,12 @@ ipcMain.handle('shell:remove', (_evt, filePath) => {
 });
 
 // ---------- helpers ----------
+// 校验 IPC 传入的 shell 路径参数：非非空字符串返回错误对象，否则返回 null
+function validateShellArg(filePath) {
+  if (typeof filePath !== 'string' || !filePath) return { ok: false, error: 'Empty path' };
+  return null;
+}
+
 function compareSemver(a, b) {
   const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
   const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);

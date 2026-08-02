@@ -26,6 +26,13 @@ const logger = createLogger({
 /** @type {Map<string, import('node-pty').IPty>} */
 const sessions = new Map();
 
+// 取用已存在的会话；不存在则跳过（不抛错），action 内对 term 操作
+function withSession(id, action) {
+  const term = sessions.get(id);
+  if (!term) return;
+  action(term);
+}
+
 /**
  * 为某个脚本打开一个交互式终端会话
  * @param {string} scriptId 脚本标识（作为日志上下文）
@@ -62,21 +69,18 @@ function openSession(scriptId, opts, onData) {
 }
 
 function write(sessionId, data) {
-  const term = sessions.get(sessionId);
-  if (term) term.write(data);
+  withSession(sessionId, (term) => term.write(data));
 }
 
 function resize(sessionId, cols, rows) {
-  const term = sessions.get(sessionId);
-  if (term) term.resize(cols, rows);
+  withSession(sessionId, (term) => term.resize(cols, rows));
 }
 
 function kill(sessionId) {
-  const term = sessions.get(sessionId);
-  if (term) {
+  withSession(sessionId, (term) => {
     term.kill();
     sessions.delete(sessionId);
-  }
+  });
 }
 
 module.exports = { openSession, write, resize, kill, sessions };

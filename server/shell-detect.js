@@ -16,7 +16,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const CANDIDATES_DARWIN = [
+// 通用候选路径；darwin 额外包含 homebrew 安装位置
+const BASE_CANDIDATES = [
   '/bin/bash',
   '/bin/zsh',
   '/bin/sh',
@@ -26,26 +27,17 @@ const CANDIDATES_DARWIN = [
   '/usr/local/bin/bash',
   '/usr/local/bin/zsh',
   '/usr/local/bin/fish',
+];
+
+const DARWIN_EXTRA = [
   '/opt/homebrew/bin/bash',
   '/opt/homebrew/bin/zsh',
   '/opt/homebrew/bin/fish',
 ];
 
-const CANDIDATES_LINUX = [
-  '/bin/bash',
-  '/bin/zsh',
-  '/bin/sh',
-  '/usr/bin/bash',
-  '/usr/bin/zsh',
-  '/usr/bin/fish',
-  '/usr/local/bin/bash',
-  '/usr/local/bin/zsh',
-  '/usr/local/bin/fish',
-];
-
 function candidates() {
-  if (process.platform === 'darwin') return CANDIDATES_DARWIN;
-  if (process.platform === 'linux') return CANDIDATES_LINUX;
+  if (process.platform === 'darwin') return [...BASE_CANDIDATES, ...DARWIN_EXTRA];
+  if (process.platform === 'linux') return BASE_CANDIDATES;
   return []; // Windows 暂未实现
 }
 
@@ -82,4 +74,4 @@ function detect() {
   return out;
 }
 
-module.exports = { detect };
+module.exports = { detect, probeVersion };
