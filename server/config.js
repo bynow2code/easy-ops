@@ -17,9 +17,21 @@ const os = require('os');
 // 开发 / 独立运行时回退到用户主目录下的 .easyops/logs。
 const LOG_DIR = process.env.EASYOPS_LOG_DIR || path.join(os.homedir(), '.easyops', 'logs');
 
+// Shell 配置持久化目录（shell-config.json 落盘位置）。
+// 打包后由主进程通过 EASY_OPS_USER_DATA 注入（= app.getPath('userData')），
+// 保证 Electron 与内嵌后端读写同一份配置；开发 / 独立运行时回退到用户主目录。
+function getUserDataDir() {
+  return process.env.EASY_OPS_USER_DATA || path.join(os.homedir(), '.easy-ops');
+}
+
 module.exports = {
-  // 脚本持久化文件（脚本列表 / 新增脚本写入此处）
-  scriptsFile: path.join(__dirname, '..', 'scripts.json'),
+  // Shell 配置持久化目录解析（供 shell-routes 复用）
+  getUserDataDir,
+
+  // 脚本持久化文件（脚本列表 / 新增脚本写入此处）。
+  // 与 shell-config 一致落到 userData（Electron 内 = app.getPath('userData')），
+  // 这样 Settings 面板显示的 "Scripts Config" 路径与实际落盘位置相同，避免两处不一致。
+  scriptsFile: path.join(getUserDataDir(), 'scripts.json'),
 
   // 日志配置（注入到 shared/logger 的 createLogger）
   log: {

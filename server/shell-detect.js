@@ -17,6 +17,7 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const { execFileSync } = require('child_process');
 
 // 通用候选路径；darwin 额外包含 homebrew 安装位置
@@ -48,6 +49,14 @@ const WIN32_CANDIDATES = [
   'C:\\Windows\\System32\\cmd.exe',
 ];
 
+// Windows 默认优先级：仅 POSIX 受支持项（Git Bash > WSL）。
+// 用于 getDefaultShellPath——在"真实已安装"的候选里按此顺序挑，避免默认指向不存在的路径。
+const WIN_DEFAULT_PRIORITY = [
+  'C:\\Program Files\\Git\\bin\\bash.exe',
+  'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  'C:\\Windows\\System32\\wsl.exe',
+];
+
 function candidates() {
   if (process.platform === 'darwin') return [...BASE_CANDIDATES, ...DARWIN_EXTRA];
   if (process.platform === 'linux') return BASE_CANDIDATES;
@@ -69,6 +78,41 @@ function isExecutable(p) {
   } catch {
     return false;
   }
+}
+
+// 自定义 shell 路径校验：确保加入的是"真实存在、可执行、且本软件能用"的解释器。
+// 用于 POST /api/shells，防止把任意文件（.txt / 目录 / 不可执行 / 非受支持壳）加进列表。
+// 返回 { ok: true } 或 { ok: false, error }（error 直接作为前端提示文案）。
+function validateCustomShellPath(p) {
+  if (typeof p !== 'string' || !p.trim()) {
+    return { ok: false, error: 'Empty path' };
+  }
+  // 必须是绝对路径：相对路径会按进程 cwd 解析，极易歧义且不可复现
+  const isAbs =
+    process.platform === 'win32'
+      ? /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\')
+      : p.startsWith('/');
+  if (!isAbs) {
+    return { ok: false, error: 'Path must be absolute' };
+  }
+  let stat;
+  try {
+    stat = fs.statSync(p);
+  } catch {
+    return { ok: false, error: 'File not found' };
+  }
+  if (stat.isDirectory()) {
+    return { ok: false, error: 'Not a file (looks like a directory)' };
+  }
+  if (!isExecutable(p)) {
+    return { ok: false, error: 'Not an executable file' };
+  }
+  // Windows 仅支持 Git Bash 与 WSL 跑 .sh；其余（cmd / powershell / 任意 exe）明确拒绝。
+  // 注意：Windows 的 X_OK 等价于 F_OK，故用文件名进一步约束为 bash/wsl 类解释器。
+  if (process.platform === 'win32' && !/(bash|wsl)\.exe$/i.test(p)) {
+    return { ok: false, error: 'Only Git Bash or WSL is supported on Windows' };
+  }
+  return { ok: true };
 }
 
 function probeVersion(p) {
@@ -100,4 +144,28 @@ function detect() {
   return out;
 }
 
-module.exports = { detect, probeVersion };
+// 解析"系统默认 shell"路径：优先取用户实际登录 shell（$SHELL / passwd），
+// 检测不到时按平台兜底（macOS Catalina+ 默认 zsh，其余 bash / Windows Git Bash）。
+// 既用于后端把 activeShellPath:null（"跟随默认"）解析成真实路径，也作为前端无显式选择时的默认。
+function getDefaultShellPath() {
+  if (process.platform === 'win32') {
+    // Windows 仅支持 Git Bash 与 WSL 跑 .sh；默认优先级 Git Bash > WSL。
+    // 自动获取：在"真实已安装（可执行）"的受支持候选里按优先级挑；
+    // 一个都没装则兜底到 Git Bash 默认路径常量（仍可在设置里手动修正）。
+    for (const p of WIN_DEFAULT_PRIORITY) {
+      if (isExecutable(p)) return p;
+    }
+    return 'C:\\Program Files\\Git\\bin\\bash.exe';
+  }
+  const env = process.env.SHELL;
+  if (typeof env === 'string' && env.trim()) return env.trim();
+  try {
+    const info = os.userInfo();
+    if (info && typeof info.shell === 'string' && info.shell) return info.shell;
+  } catch {
+    // 个别环境（无 passwd 条目）os.userInfo 会抛错，忽略走平台兜底
+  }
+  return process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash';
+}
+
+module.exports = { detect, probeVersion, getDefaultShellPath, validateCustomShellPath };

@@ -24,9 +24,23 @@ const logger = createLogger({
 const app = express();
 app.use(express.json());
 
-// TODO(下一步): 脚本列表 / 新增 接口
-// GET  /api/scripts  -> 读取 scripts.json
-// POST /api/scripts  -> 写入 scripts.json
+// 本地工具跨域：渲染层（Electron 内为 file:// 或 dev server 源）以 fetch 调后端，
+// 后端与渲染层不同源，需放行 CORS。仅放行本地 API，且为本地单机应用，允许任意源。
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// Shell 检测 / 自定义：前端设置页与执行期的解释器来源
+const { registerShellRoutes } = require('./shell-routes');
+registerShellRoutes(app);
+
+// 脚本仓库 CRUD（列表 / 新增 / 更新 / 删除 / 分组），是 scripts.json 唯一写方
+const { registerScriptsRoutes } = require('./scripts-routes');
+registerScriptsRoutes(app);
 
 // 端口：默认 0 → 由操作系统分配空闲端口（避免与其他程序抢 4521）；
 // 仍可用环境变量 PORT 强制指定（兼容测试 / 调试）。

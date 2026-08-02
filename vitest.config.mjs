@@ -9,7 +9,11 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./vitest.setup.js'],
-    include: ['client/src/**/*.{test,spec}.{js,jsx}'],
+    include: [
+      'client/src/**/*.{test,spec}.{js,jsx}',
+      'server/**/*.{test,spec}.js',
+      'test/**/*.{test,spec}.js',
+    ],
     css: false,
   },
 });

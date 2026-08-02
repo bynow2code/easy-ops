@@ -4,17 +4,23 @@ import { useEscapeKey } from '../hooks/useEscapeKey.js';
 
 const MAX_NAME = 20;
 
+// 读取当前生效主题，映射为 Monaco 内置主题名（跟随 <html data-theme>）
+function readMonacoTheme() {
+  if (typeof document === 'undefined') return 'vs';
+  return document.documentElement.dataset.theme === 'dark' ? 'vs-dark' : 'vs';
+}
+
 /**
  * 添加 / 编辑脚本：停靠在主区右侧的编辑器面板（非居中弹窗）。
  *  - 新增模式：script 为 null，表单清空。
  *  - 编辑模式：script 为已有脚本，名称/分组/内容预填，Save 时回传 id 由父级更新。
  *  - Script Name：必填，最长 20 字符
  *  - Group：必填，从现有分组下拉选择（编辑时若原分组已不存在也保留可选项）
- *  - Shell：可选解释器；"Global" 用应用全局 shell，其余为检测/自定义到的其他 shell
+ *  - Shell：可选解释器；默认选中当前激活的 shell，下拉仅列出检测/自定义到的真实 shell
  *  - Script Content：monaco-editor（shell 语法高亮 + 代码提示），占满面板剩余高度
  *
  * 受控 UI + 派生校验，父级通过 onSave({ id, name, group, content, shell }) 拿到合法数据
- * （新增时 id 为 undefined，编辑时为原脚本 id；shell 为 'global' 或某个 shell 路径）。
+ * （新增时 id 为 undefined，编辑时为原脚本 id；shell 为某个 shell 路径，默认 = 当前激活 shell）。
  */
 export default function AddScriptPanel({
   open,
@@ -27,7 +33,11 @@ export default function AddScriptPanel({
 }) {
   const [name, setName] = useState('');
   const [group, setGroup] = useState('');
-  const [shellChoice, setShellChoice] = useState('global');
+  // 默认选中「当前激活的 shell」：优先 globalShellPath（须在 shells 列表内），否则列表首个；
+  // 都为空则 ''（运行时由 resolveShellPath 回退到应用全局/系统默认 shell）。
+  const defaultShellChoice =
+    shells.find((s) => s.path === globalShellPath)?.path ?? shells[0]?.path ?? '';
+  const [shellChoice, setShellChoice] = useState(defaultShellChoice);
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
 
@@ -42,7 +52,7 @@ export default function AddScriptPanel({
     const editor = monaco.editor.create(containerRef.current, {
       value: script?.content ?? '',
       language: 'shell',
-      theme: 'vs',
+      theme: readMonacoTheme(),
       minimap: { enabled: false },
       automaticLayout: true,
       fontSize: 13,
@@ -68,17 +78,32 @@ export default function AddScriptPanel({
     };
   }, [open, script]);
 
+  // 主题跟随：监听 <html data-theme> 变化，实时切换 Monaco 的 dark / light 主题
+  useEffect(() => {
+    if (!open) return undefined;
+    const apply = () => editorRef.current?.updateOptions({ theme: readMonacoTheme() });
+    const observer = new MutationObserver(apply);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
+  }, [open]);
+
   // 打开时初始化表单并聚焦名称：
-  //  - 编辑模式（script 存在）预填名称/分组/解释器；新增模式清空（默认 Global）。
+  //  - 编辑模式（script 存在）预填名称/分组/解释器；新增模式清空（默认 = 当前激活 shell）。
   //  - 不把 groups 放入依赖，否则新增分组会误清空正在填写的内容。
+  //  - defaultShellChoice 刻意不列入依赖：shells 可能在面板开启后被 reloadShells 更新，
+  //    若纳入依赖会在用户填写中途重置表单。
   useEffect(() => {
     if (!open) return;
     setName(script ? script.name : '');
     setGroup(script ? script.group : '');
-    setShellChoice(script?.shell || 'global');
+    setShellChoice(script?.shell || defaultShellChoice);
     setError('');
     const t = setTimeout(() => nameRef.current?.focus(), 0);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, script]);
 
   // 仅允许 ESC 与 Close 按钮关闭
@@ -92,12 +117,6 @@ export default function AddScriptPanel({
   const groupEmpty = !group;
   const valid = !nameEmpty && !nameTooLong && !groupEmpty;
   const canSave = valid && ready;
-
-  // 解析"Global"选项展示用的全局 shell 名称/版本（找不到匹配时回退到路径）
-  const globalShell = shells.find((s) => s.path === globalShellPath);
-  const resolvedGlobalLabel = globalShell
-    ? `${globalShell.name}${globalShell.version ? ` ${globalShell.version}` : ''}`
-    : '';
 
   // 按校验优先级返回第一条错误（无错误返回 null）
   const buildNameError = () => {
@@ -197,21 +216,23 @@ export default function AddScriptPanel({
             value={shellChoice}
             onChange={(e) => setShellChoice(e.target.value)}
           >
-            <option value="global">
-              Global{resolvedGlobalLabel ? ` — ${resolvedGlobalLabel}` : ''}
-            </option>
-            {shells.map((s) => (
-              <option key={s.path} value={s.path}>
-                {s.name || s.path}
-                {s.version ? ` ${s.version}` : ''}
+            {shells.length === 0 ? (
+              <option value="" disabled>
+                (No shell detected — uses system default)
               </option>
-            ))}
+            ) : (
+              shells.map((s) => (
+                <option key={s.path} value={s.path}>
+                  {s.name || s.path}
+                </option>
+              ))
+            )}
           </select>
           <div className="field__meta">
             <span className="field__hint">
-              {shellChoice === 'global'
-                ? `Uses the app global shell (${globalShellPath ? globalShellPath : 'system default'})`
-                : 'Uses this specific interpreter for this script only'}
+              {shellChoice
+                ? 'Uses this specific interpreter for this script'
+                : `Uses the app global shell (${globalShellPath ? globalShellPath : 'system default'})`}
             </span>
           </div>
         </label>

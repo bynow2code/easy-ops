@@ -7,7 +7,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "electron:dev": "electron .",
+    "server:dev": "PORT=4521 node server/index.js",
+    "electron:dev": "node scripts/dev-all.js",
+    "dev:all": "node scripts/dev-all.js",
     "rebuild:pty": "npx --yes electron-rebuild -f -w node-pty",
     "build": "vite build",
     "dist": "electron-builder",

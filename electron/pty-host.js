@@ -9,11 +9,9 @@
  *       依赖 electron，便于单测。
  *
  * 执行模型（对齐 VS Code 的终端/进程管理最佳实践）：
- *  - 脚本以"内容"直接喂给解释器：pty.spawn(interpreter, [args..., content])，
+ *  - 脚本以"内容"直接喂给解释器：pty.spawn(interpreter, [])（交互式常驻 shell），脚本内容作为首条输入喂入，
  *    不写任何临时文件。这样天然跨平台（Windows 上无需 /mnt/c 路径翻译）。
- *  - 解释器参数模板"数据驱动"：POSIX 系统一 -c；wsl.exe 是启动器需
- *    wsl.exe bash -c；cmd 用 /c、pwsh 用 -Command。新增解释器只补一张表，
- *   上层的 feature / UI 代码零平台分支。
+ *  - 平台差异只在“默认 shell 选哪个”（getDefaultShell），feature / UI 代码零平台分支。
  *  - 停止跨平台一致：统一 killByExec(execId)。Windows 的 ConPTY 下
  *    term.kill() 已杀整棵进程树；Unix 下对整个进程组先发 SIGTERM，
  *    宽限 ~2s 仍存活再 SIGKILL（与 VS Code 的 TERMINATE_TIMEOUT 思路一致），
@@ -85,27 +83,22 @@ function getDefaultShell() {
   } catch {
     // 个别环境（无 passwd 条目）os.userInfo 会抛错，忽略走回退
   }
-  return 'bash';
+  // 无默认 shell：macOS Catalina+ 默认 zsh；其余平台回退 bash
+  return process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash';
 }
 
-// --------- 解释器参数模板（数据驱动；本文件是唯一知道"如何喂内容"的地方）---------
-function buildSpawnArgs(shellPath, content) {
-  const lc = String(shellPath).toLowerCase();
-  if (lc.endsWith('wsl.exe')) return ['bash', '-c', content]; // wsl.exe 是启动器，不能 -c
-  if (lc.endsWith('cmd.exe')) return ['/c', content];
-  if (lc.endsWith('powershell.exe') || lc.endsWith('pwsh.exe')) return ['-Command', content];
-  return ['-c', content]; // bash / zsh / sh / fish …… 统一 -c
-}
-
-// --------- 打开会话 ---------
+// --------- 打开会话（交互式常驻 shell）---------
+// 脚本内容不作为 -c 参数，而是作为"首条输入"喂给一个常驻的交互式 shell：
+// 脚本跑完停在提示符，用户可继续手敲命令（read / REPL / ssh / vim 等皆可用）。
+// 不写任何临时文件，天然跨平台（Windows 上无需 /mnt/c 路径翻译）。
 function openSession({ execId, scriptId, content, shell, cwd, env }) {
   const interpreter = shell || getDefaultShell();
-  const args = buildSpawnArgs(interpreter, content || '');
   const ctxLogger = logger.child({ scriptId, execId });
 
   let term;
   try {
-    term = pty.spawn(interpreter, args, {
+    // 交互式：不传 -c 等参数，直接起一个读 pty 的活 shell
+    term = pty.spawn(interpreter, [], {
       name: 'xterm-color',
       cols: 80,
       rows: 24,
@@ -113,7 +106,7 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
       env: Object.assign({}, process.env, env || {}),
     });
   } catch (err) {
-    ctxLogger.error('PTY 会话创建失败', { interpreter, args }, err);
+    ctxLogger.error('PTY 会话创建失败', { interpreter }, err);
     throw err;
   }
 
@@ -126,11 +119,26 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
     ctxLogger.info('PTY 会话结束', { sessionId, exitCode, signal });
     sessions.delete(sessionId);
     if (execToSession.get(execId) === sessionId) execToSession.delete(execId);
-    bus.emit('exit', { execId, scriptId, exitCode: exitCode ?? null, signal: signal ?? null });
+    bus.emit('exit', {
+      execId,
+      scriptId,
+      exitCode: exitCode ?? null,
+      signal: signal ?? null,
+      sessionId,
+    });
   });
 
-  ctxLogger.info('PTY 会话已创建', { sessionId, interpreter, args });
-  return { sessionId, interpreter, args };
+  // 把脚本内容作为首条输入（像在终端里粘贴/敲下这段）；空内容则直接给干净交互 shell
+  if (content) {
+    try {
+      term.write(content + '\n');
+    } catch {
+      /* 会话异常时写入可能抛错，忽略 */
+    }
+  }
+
+  ctxLogger.info('PTY 会话已创建（交互式）', { sessionId, interpreter });
+  return { sessionId, interpreter, args: [] };
 }
 
 function write(sessionId, data) {
@@ -203,7 +211,6 @@ module.exports = {
   resize,
   kill: killByExec,
   killByExec,
-  buildSpawnArgs,
   getSessionIdForExec: (id) => execToSession.get(id) || null,
   getDefaultShell,
   sessions,

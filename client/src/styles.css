@@ -7,6 +7,7 @@
   --bg-panel: #ffffff;
   --bg-soft: #fafbfc;
   --bg-muted: #f3f4f6;
+  --exec-term-bg: #ffffff; /* 浅色主题下终端容器背景（避免 xterm-viewport #000 黑边露出） */
   --border: #e5e7eb;
   --border-soft: #eef0f3;
   --border-row: #f1f2f5;
@@ -134,10 +135,6 @@ body {
 .icon-btn:hover {
   background: var(--bg-muted);
   color: #374151;
-}
-.icon-btn.is-on {
-  color: var(--c-blue);
-  background: var(--c-blue-2);
 }
 
 /* ------------ Main two columns ------------ */
@@ -379,7 +376,11 @@ body {
 
 .exec-list {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto; /* 仅纵向滚动；关掉 overflow-x 避免任何横向条 */
+  overflow-x: hidden;
+  /* 永久预留滚动条槽位，避免在「编辑器面板 ↔ 执行列表」切换时
+     因滚动条出现/消失导致内容横向位移（即关闭编辑窗口时的抖动） */
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -407,9 +408,16 @@ body {
   flex-direction: column;
   position: relative;
   overflow: hidden;
-  /* 剩余高度充足时与同级窗口均分区域；不足时按 min-height 显示并交由 .exec-list 滚动（瀑布流） */
-  flex: 1 1 0;
+  /* 多张卡：按内容尺寸堆叠，超出面板高度由 .exec-list 纵向滚动（瀑布流）。
+     仅一张卡时（:only-child）改为撑满整列高度，避免"单个输出窗口没占满高度"；
+     最大化场景由 .exec-list.has-max .exec-card.is-max 覆盖为 flex:1 1 auto 占满。 */
+  flex: 0 1 auto;
   min-height: 204px; /* 窗口最小高度：头(44)+正文约5行(128)+尾(30)+边框 ≈ 204px */
+}
+/* 仅一张输出卡时占满整列（终端随之撑高）；多张卡仍按内容堆叠并由列表滚动 */
+.exec-list > .exec-card:only-child {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .exec-card__head {
@@ -476,17 +484,6 @@ body {
   color: var(--text-muted, #475569);
 }
 
-.exec-card__exit {
-  font-size: 12px;
-  font-weight: 700;
-}
-.exec-card__exit.is-ok {
-  color: var(--c-green);
-}
-.exec-card__exit.is-fail {
-  color: var(--c-red);
-}
-
 .exec-card__close {
   height: 22px;
   background: transparent;
@@ -530,35 +527,6 @@ body {
   word-break: break-word;
 }
 
-.exec-card__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  border-top: 1px solid var(--border-soft);
-  background: var(--bg-soft);
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.status-pill {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-.status-pill--running {
-  background: var(--c-blue-2);
-  color: var(--c-blue-3);
-}
-.status-pill--exited {
-  background: var(--c-green-2);
-  color: var(--c-green-3);
-}
-.status-pill--idle {
-  background: #eef1f4;
-  color: var(--text-faint);
-}
-
 /* ------------ Custom scrollbar (美观) ------------ */
 .panel::-webkit-scrollbar,
 .exec-list::-webkit-scrollbar,
@@ -576,6 +544,7 @@ body {
 .panel::-webkit-scrollbar-thumb,
 .exec-list::-webkit-scrollbar-thumb,
 .exec-card__body::-webkit-scrollbar-thumb,
+.exec-card__term .xterm-viewport::-webkit-scrollbar-thumb,
 ::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 4px;
@@ -583,6 +552,7 @@ body {
 .panel::-webkit-scrollbar-thumb:hover,
 .exec-list::-webkit-scrollbar-thumb:hover,
 .exec-card__body::-webkit-scrollbar-thumb:hover,
+.exec-card__term .xterm-viewport::-webkit-scrollbar-thumb:hover,
 ::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
@@ -767,6 +737,8 @@ input[type='checkbox'] {
   flex-direction: column;
   gap: 14px;
   overflow-y: auto;
+  /* 与 .exec-list 一致：永久预留滚动条槽位，避免切换面板时内容横向位移 */
+  scrollbar-gutter: stable;
 }
 /* 编辑器字段占满面板剩余高度，Monaco 随之撑开 */
 .editor-panel__editor {
@@ -832,6 +804,7 @@ input[type='checkbox'] {
   --bg-panel: #25262a;
   --bg-soft: #1f2024;
   --bg-muted: #2a2b2f;
+  --exec-term-bg: #1e1e1e; /* 深色主题下终端容器背景 */
   --border: #3a3b40;
   --border-soft: #2e2f33;
   --border-row: #2a2b2f;
@@ -842,8 +815,10 @@ input[type='checkbox'] {
 
   /* 语义浅色背景调暗，使 pill/badge 在深色面板上仍可读 */
   --c-blue-2: #1e3a8a;
+  --c-blue-3: #93c5fd;
   --c-green-2: #14532d;
   --c-purple-2: #4c1d95;
+  --c-purple: #c4b5fd;
 }
 
 :root[data-theme='dark'] .pill--white {
@@ -864,10 +839,6 @@ input[type='checkbox'] {
 :root[data-theme='dark'] .icon-btn:hover {
   background: #2a2b2f;
   color: var(--text);
-}
-:root[data-theme='dark'] .icon-btn.is-on {
-  color: #93c5fd;
-  background: #1e3a8a;
 }
 :root[data-theme='dark'] .v-splitter {
   background: #3a3b40;
@@ -922,9 +893,9 @@ input[type='checkbox'] {
   background: var(--c-blue);
 }
 
-/* ------------ Settings (App Info) Modal ------------ */
+/* ------------ Settings Modal ------------ */
 .modal--settings {
-  width: 560px;
+  width: 680px;
   max-height: 80vh;
 }
 .modal__body--settings {
@@ -1064,26 +1035,6 @@ input[type='checkbox'] {
   color: var(--text-muted);
   border: 1px solid var(--border);
 }
-.settings-tag--posix {
-  color: #0f6e56;
-  border-color: rgba(15, 110, 86, 0.45);
-  background: rgba(15, 110, 86, 0.08);
-}
-.settings-tag--native {
-  color: #993c1d;
-  border-color: rgba(153, 60, 29, 0.45);
-  background: rgba(153, 60, 29, 0.08);
-}
-:root[data-theme='dark'] .settings-tag--posix {
-  color: #5dcaa5;
-  border-color: rgba(93, 202, 165, 0.5);
-  background: rgba(93, 202, 165, 0.12);
-}
-:root[data-theme='dark'] .settings-tag--native {
-  color: #f0997b;
-  border-color: rgba(240, 153, 123, 0.5);
-  background: rgba(240, 153, 123, 0.12);
-}
 .settings-muted--pad {
   padding: 8px 0;
 }
@@ -1148,7 +1099,9 @@ input[type='checkbox'] {
   flex-direction: column;
   gap: 4px;
   background: var(--bg-panel);
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 .settings-shell-card:hover {
   border-color: var(--c-blue);
@@ -1162,9 +1115,6 @@ input[type='checkbox'] {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-.settings-shell-card__version {
-  flex: 1 1 auto;
 }
 .settings-shell-card__path {
   font-family: 'SFMono-Regular', Menlo, Consolas, 'Courier New', monospace;
@@ -1187,7 +1137,9 @@ input[type='checkbox'] {
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .settings-shell-card__remove:hover {
@@ -1223,6 +1175,11 @@ input[type='checkbox'] {
 }
 .settings-add-row .field__input {
   flex: 1 1 auto;
+}
+
+/* 添加/校验反馈容器：紧贴 Add 行下方，与 Close 页脚分离 */
+.settings-add-flash {
+  margin-top: 8px;
 }
 
 .settings-flash {
@@ -1271,19 +1228,91 @@ input[type='checkbox'] {
 :root[data-theme='dark'] .settings-shell-card.is-active {
   background: rgba(37, 99, 235, 0.1);
 }
+:root[data-theme='dark'] .settings-flash--ok {
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+}
+:root[data-theme='dark'] .settings-flash--err {
+  background: rgba(248, 113, 113, 0.16);
+  color: #fca5a5;
+}
+:root[data-theme='dark'] .settings-flash--info {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}
 
 /* ------------ Execution card: real PTY (xterm) ------------ */
+/* 容器背景跟随主题，避免浅色主题时露出 xterm-viewport 的 #000 黑边。
+   真实终端背景由 xterm.theme.background 渲染（同样跟随主题）。 */
 .exec-card__term {
   flex: 1 1 auto;
   min-height: 160px;
-  max-height: 360px;
   overflow: hidden;
   padding: 8px 10px;
-  background: #1e1e1e;
+  background: var(--exec-term-bg);
   border-radius: 0 0 6px 6px;
 }
-.exec-card__term .xterm {
+.exec-card__term .xterm,
+.exec-card__term .xterm-viewport {
+  background-color: transparent !important; /* 跟随容器主题色（去掉 xterm 默认 #000 黑边） */
+}
+.exec-card__term .xterm-viewport {
+  overflow-y: auto; /* 仍允许滚回 scrollback，但不强制显示滚动条 */
+  /* 关键：关掉横向滚动。xterm 视口 overflow-y 非 visible 时 overflow-x 会被算成
+     auto；一旦纵向滚动条吃掉沟槽宽度、内容比可视区宽出几像素，就会冒出横向滚动条。
+     overflow-x:hidden 可彻底消除（代价：超宽的单行输出右端几像素被裁，内嵌终端可接受）。 */
+  overflow-x: hidden;
+}
+/* xterm 自带基于 VS Code 的 .scrollbar（宽块、深色），会盖住原生窄滚动条；
+   直接隐藏它，改用我们已在通用规则里统一定制好的原生滚动条（8px 圆角灰条），
+   从而与页面其它滚动条完全一致。滚动仍由 .xterm-viewport 原生 overflow 驱动，不受影响。 */
+.exec-card__term .xterm .xterm-scrollable-element > .scrollbar {
+  display: none !important;
+}
+/* Firefox 下的细滚动条兜底（Webkit 走上面的 ::-webkit-scrollbar 规则） */
+.exec-card__term .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+/* xterm 挂载元素（无 padding），让 FitAddon 用真实 clientHeight 算 rows，
+   避免把外层 padding 计入行高导致最后一行底部被 overflow:hidden 裁掉 */
+.exec-card__term-host {
+  width: 100%;
   height: 100%;
+}
+/* 输出区相对定位容器：承载 xterm/文本与浮动的"回到底部"按钮 */
+.exec-card__view {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 浮动"回到底部"按钮（VS Code 式）：仅当视口不在底部时渲染 */
+.exec-card__scroll-bottom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+.exec-card__scroll-bottom:hover {
+  background: var(--bg-muted);
+}
+.exec-card__scroll-bottom svg {
+  width: 14px;
+  height: 14px;
 }
 /* 最大化时让终端占满整卡 */
 .exec-card.is-max .exec-card__term {

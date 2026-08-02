@@ -15,13 +15,8 @@ contextBridge.exposeInMainWorld('easyOps', {
     copyToClipboard: (text) => ipcRenderer.invoke('app:copyToClipboard', text),
   },
   shell: {
-    list: () => ipcRenderer.invoke('shell:list'),
+    // 仅保留需要主进程原生能力的文件选择对话框；其余 shell 数据走 HTTP 后端
     choose: () => ipcRenderer.invoke('shell:choose'),
-    add: (p) => ipcRenderer.invoke('shell:add', p),
-    remove: (p) => ipcRenderer.invoke('shell:remove', p),
-    setActive: (p) => ipcRenderer.invoke('shell:setActive', p),
-    getNoShellMode: () => ipcRenderer.invoke('shell:getNoShellMode'),
-    setNoShellMode: (v) => ipcRenderer.invoke('shell:setNoShellMode', v),
   },
   backend: {
     getPort: () => ipcRenderer.invoke('backend:getPort'),
@@ -33,7 +28,17 @@ contextBridge.exposeInMainWorld('easyOps', {
       ipcRenderer.invoke('pty:resize', { sessionId, cols, rows }),
     kill: (execId) => ipcRenderer.invoke('pty:kill', { execId }),
     // 渲染层订阅来自主进程的流式输出 / 退出事件
-    onData: (cb) => ipcRenderer.on('pty:data', (_e, p) => cb(p)),
-    onExit: (cb) => ipcRenderer.on('pty:exit', (_e, p) => cb(p)),
+    // 注意：必须返回「只移除本 handler」的取消函数，否则 cleanup 时
+    // ipcRenderer.off() 无参会误删其他卡的监听器。
+    onData: (cb) => {
+      const handler = (_e, p) => cb(p);
+      ipcRenderer.on('pty:data', handler);
+      return () => ipcRenderer.removeListener('pty:data', handler);
+    },
+    onExit: (cb) => {
+      const handler = (_e, p) => cb(p);
+      ipcRenderer.on('pty:exit', handler);
+      return () => ipcRenderer.removeListener('pty:exit', handler);
+    },
   },
 });

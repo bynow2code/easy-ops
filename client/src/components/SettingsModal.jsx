@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconCheck, IconExternal } from './Icons.jsx';
 import { readFrontendShells, writeFrontendShells } from '../shellStore.js';
+import { shellApi } from '../shellApi.js';
 
 /**
- * 设置（App Info）模态框
+ * 设置（Settings）模态框
  * ------------------------------------------------------------------
  * 通过 window.easyOps（由 electron/preload.js 暴露）与主进程通信：
  *  - app.getInfo      版本 / GitHub / 路径
@@ -33,6 +34,7 @@ export default function SettingsModal({ open, onClose }) {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(null); // { kind: 'ok'|'err'|'info', text }
   const [updateResult, setUpdateResult] = useState(null); // { hasUpdate, latest, current, releaseUrl, error }
+  const [backendPort, setBackendPort] = useState(null); // 后端监听的实际端口（Electron 内由 port.txt 读出）
   const fileInputRef = useRef(null); // 无后端时用于 <input type="file"> 前端选路径
 
   // 打开时拉取数据；关闭时清空避免下次残留
@@ -44,12 +46,12 @@ export default function SettingsModal({ open, onClose }) {
         const info = await api.app.getInfo();
         if (!cancelled) setAppInfo(info);
       }
-      if (api?.shell?.list) {
-        const st = await api.shell.list();
+      // 通过 HTTP 拉取后端检测到的 shell（Electron 走端口、纯 dev 走代理）；
+      // 后端不可达时退化到 localStorage 的前端态
+      try {
+        const st = await shellApi.list();
         if (!cancelled) setShellState(st);
-      } else {
-        // 无 Electron 后端：从 localStorage 恢复前端态自定义 shell,
-        // 否则列表为空、关闭后 Add/Edit Script 选不到这些 shell
+      } catch {
         if (!cancelled) {
           setShellState({
             noShellMode: false,
@@ -57,6 +59,17 @@ export default function SettingsModal({ open, onClose }) {
             activeShellPath: null,
           });
         }
+      }
+      // 后端实际端口：Electron 内由 port.txt 读出（getPort 带重试等后端就绪）；
+      // 纯 Vite dev 无此 IPC，保持 null → 界面显示 "—"。
+      if (api?.backend?.getPort) {
+        let port = null;
+        for (let i = 0; i < 20; i++) {
+          port = await api.backend.getPort();
+          if (port) break;
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        if (!cancelled) setBackendPort(port);
       }
     })();
     return () => {
@@ -79,6 +92,15 @@ export default function SettingsModal({ open, onClose }) {
   const showFlash = (kind, text) => {
     setFlash({ kind, text });
     setTimeout(() => setFlash((f) => (f && f.text === text ? null : f)), 1800);
+  };
+
+  // 把路径转成 shell 可直接粘贴的写法：除 a-zA-Z0-9 / . _ - : @ + , 之外的字符
+  // 用反斜杠前缀转义（POSIX shell 转义规则）。
+  // 例：/Users/x/Application Support/a.log -> /Users/x/Application\ Support/a.log
+  const shellQuote = (p) => {
+    const s = String(p ?? '');
+    if (!s || s === '—') return s;
+    return s.replace(/([^a-zA-Z0-9/._\-:@+,])/g, '\\$1');
   };
 
   // 仅负责写入剪贴板，返回是否成功；成功反馈由各自按钮就地显示，
@@ -111,8 +133,11 @@ export default function SettingsModal({ open, onClose }) {
   };
 
   const reloadShells = async () => {
-    if (!api?.shell?.list) return;
-    setShellState(await api.shell.list());
+    try {
+      setShellState(await shellApi.list());
+    } catch {
+      /* 保留当前态 */
+    }
   };
 
   const onCheckUpdates = async () => {
@@ -130,33 +155,46 @@ export default function SettingsModal({ open, onClose }) {
   };
 
   const onToggleNoShell = async (e) => {
-    if (!api?.shell?.setNoShellMode) return;
     const next = e.target.checked;
-    await api.shell.setNoShellMode(next);
-    await reloadShells();
+    try {
+      await shellApi.setNoShellMode(next);
+      await reloadShells();
+    } catch {
+      showFlash('err', 'Failed to toggle No Shell Mode');
+    }
   };
 
-  // 把一条 shell 路径加入列表：优先走 Electron IPC（会落盘 shell-config.json）；
-  // 无后端（如纯 Vite 开发）时本地入列表并提示"仅前端态、不持久化"。
+  // 把一条 shell 路径加入列表：走后端 HTTP（会落盘 shell-config.json，且后端做完整校验）。
+  //  - 后端显式拒绝（路径非法 / 已存在 等）：提示错误，绝不本地偷偷添加。
+  //  - 仅当后端真的不可达（纯 dev 没起 server）才本地兜底，并明确标注"非持久化"。
   const addShellByPath = async (p) => {
     if (!p) return;
-    if (api?.shell?.add) {
-      const res = await api.shell.add(p);
+    try {
+      const res = await shellApi.add(p);
       if (res?.ok) {
         setShellState((prev) => ({ ...prev, shells: res.shells }));
-      } else if (res?.error) {
-        showFlash('err', res.error);
+        return;
       }
-      return;
+      // 后端显式拒绝：直接提示，不兜底添加
+      if (res?.error) {
+        showFlash('err', res.error);
+        return;
+      }
+    } catch (err) {
+      if (err && err.isNetwork) {
+        // 后端确实不可达：本地兜底（仅前端态、不持久化）
+        setShellState((prev) => {
+          if (prev.shells.some((s) => s.path === p)) return prev;
+          const name = p.split(/[\\/]/).pop() || p;
+          const next = { ...prev, shells: [...prev.shells, { path: p, name, custom: true }] };
+          writeFrontendShells(next.shells);
+          return next;
+        });
+        showFlash('info', 'Added (frontend only — backend offline)');
+        return;
+      }
+      showFlash('err', (err && err.message) || 'Add failed');
     }
-    setShellState((prev) => {
-      if (prev.shells.some((s) => s.path === p)) return prev;
-      const name = p.split(/[\\/]/).pop() || p;
-      const next = { ...prev, shells: [...prev.shells, { path: p, name, custom: true }] };
-      writeFrontendShells(next.shells);
-      return next;
-    });
-    showFlash('info', 'Added (frontend only — backend offline)');
   };
 
   const onBrowseShell = async () => {
@@ -191,24 +229,28 @@ export default function SettingsModal({ open, onClose }) {
   };
 
   const onSetActive = async (path) => {
-    if (!api?.shell?.setActive) return;
-    const res = await api.shell.setActive(path || null);
-    if (res?.ok) {
-      setShellState({
-        noShellMode: res.noShellMode,
-        shells: res.shells,
-        activeShellPath: res.activeShellPath,
-      });
-    } else if (res?.error) {
-      showFlash('err', res.error);
+    try {
+      const res = await shellApi.setActive(path || null);
+      if (res?.ok) {
+        setShellState({
+          noShellMode: res.noShellMode,
+          shells: res.shells,
+          activeShellPath: res.activeShellPath,
+        });
+      } else if (res?.error) {
+        showFlash('err', res.error);
+      }
+    } catch (err) {
+      showFlash('err', (err && err.message) || 'Failed to set active');
     }
   };
 
   // 移除一条自定义 shell：激活的不可移除（后端也兜底拒绝）。
+  // 后端显式拒绝（如"正在使用"）时提示错误，绝不本地偷偷移除。
   const onRemoveShell = async (p) => {
     if (!p) return;
-    if (api?.shell?.remove) {
-      const res = await api.shell.remove(p);
+    try {
+      const res = await shellApi.remove(p);
       if (res?.ok) {
         setShellState({
           noShellMode: res.noShellMode,
@@ -216,19 +258,26 @@ export default function SettingsModal({ open, onClose }) {
           activeShellPath: res.activeShellPath,
         });
         showFlash('ok', 'Removed');
-      } else if (res?.error) {
-        showFlash('err', res.error);
+        return;
       }
-      return;
+      if (res?.error) {
+        showFlash('err', res.error);
+        return;
+      }
+    } catch (err) {
+      if (err && err.isNetwork) {
+        // 后端不可达：本地兜底移除（仅前端态）；激活的同样不动
+        setShellState((prev) => {
+          if (prev.activeShellPath === p) return prev;
+          const next = { ...prev, shells: prev.shells.filter((s) => s.path !== p) };
+          writeFrontendShells(next.shells);
+          return next;
+        });
+        showFlash('info', 'Removed (frontend only — backend offline)');
+        return;
+      }
+      showFlash('err', (err && err.message) || 'Failed to remove');
     }
-    // 无后端：本地移除（仅前端态）；激活的同样不动
-    setShellState((prev) => {
-      if (prev.activeShellPath === p) return prev;
-      const next = { ...prev, shells: prev.shells.filter((s) => s.path !== p) };
-      writeFrontendShells(next.shells);
-      return next;
-    });
-    showFlash('info', 'Removed (frontend only — backend offline)');
   };
 
   const githubUrl = appInfo?.githubUrl || GITHUB_FALLBACK;
@@ -243,7 +292,7 @@ export default function SettingsModal({ open, onClose }) {
     <div className="modal-overlay">
       <div className="modal modal--settings" role="dialog" aria-modal="true" aria-label="Settings">
         <div className="modal__head">
-          <span className="modal__title">App Info</span>
+          <span className="modal__title">Settings</span>
           <button className="modal__close" onClick={onClose} aria-label="Close">
             ×
           </button>
@@ -277,12 +326,11 @@ export default function SettingsModal({ open, onClose }) {
               <>
                 <div className="settings-current-shell">
                   <span className="settings-pill">{currentShell.name?.toUpperCase()}</span>
-                  <span className="settings-muted">{currentShell.version || ''}</span>
                   <ShellTags shell={currentShell} />
                 </div>
                 <div className="settings-path-row">
-                  <code className="settings-path">{currentShell.path}</code>
-                  <CopyButton text={currentShell.path} onCopy={copy} />
+                  <code className="settings-path">{shellQuote(currentShell.path)}</code>
+                  <CopyButton text={shellQuote(currentShell.path)} onCopy={copy} />
                 </div>
               </>
             ) : (
@@ -330,9 +378,6 @@ export default function SettingsModal({ open, onClose }) {
                     >
                       <div className="settings-shell-card__head">
                         <span className="settings-pill">{s.name}</span>
-                        <span className="settings-muted settings-shell-card__version">
-                          {s.version || ''}
-                        </span>
                         <ShellTags shell={s} />
                         {active && (
                           <span className="settings-active-badge">
@@ -384,6 +429,13 @@ export default function SettingsModal({ open, onClose }) {
                 Add
               </button>
             </div>
+            {/* 校验/添加反馈就近显示在 Add 行下方（不进页脚，避免与 Close 混淆）。
+                涵盖：添加非法文件、重复、移除、设默认、No Shell 切换 等。 */}
+            {flash && (
+              <div className="settings-add-flash">
+                <span className={`settings-flash settings-flash--${flash.kind}`}>{flash.text}</span>
+              </div>
+            )}
             {/* 无后端时的前端文件选择回退；Electron 下优先走 dialog.showOpenDialog */}
             <input
               ref={fileInputRef}
@@ -393,25 +445,31 @@ export default function SettingsModal({ open, onClose }) {
             />
           </Section>
 
+          <Section label="Backend">
+            <div className="settings-row">
+              <span className="settings-value">{backendPort ?? '—'}</span>
+              {backendPort ? (
+                <CopyButton text={String(backendPort)} onCopy={copy} />
+              ) : null}
+            </div>
+          </Section>
+
           <Section label="Scripts Config">
             <div className="settings-path-row">
-              <code className="settings-path">{scriptsConfig}</code>
-              <CopyButton text={scriptsConfig} onCopy={copy} />
+              <code className="settings-path">{shellQuote(scriptsConfig)}</code>
+              <CopyButton text={shellQuote(scriptsConfig)} onCopy={copy} />
             </div>
           </Section>
 
           <Section label="Log File">
             <div className="settings-path-row">
-              <code className="settings-path">{logFile}</code>
-              <CopyButton text={logFile} onCopy={copy} />
+              <code className="settings-path">{shellQuote(logFile)}</code>
+              <CopyButton text={shellQuote(logFile)} onCopy={copy} />
             </div>
           </Section>
         </div>
 
         <div className="modal__foot modal__foot--settings">
-          {flash && (
-            <span className={`settings-flash settings-flash--${flash.kind}`}>{flash.text}</span>
-          )}
           <button className="btn btn--ghost" onClick={onClose}>
             Close
           </button>
@@ -440,16 +498,9 @@ function platformLabel(p) {
 
 function ShellTags({ shell }) {
   const platform = shell?.platform;
-  const posix = shell?.posix;
   return (
     <span className="settings-shell-tags">
       {platform && <span className="settings-tag">{platformLabel(platform)}</span>}
-      <span
-        className={`settings-tag ${posix ? 'settings-tag--posix' : 'settings-tag--native'}`}
-        title={posix ? 'Runs .sh scripts' : 'Native shell — cannot run .sh'}
-      >
-        {posix ? 'runs .sh' : 'native'}
-      </span>
     </span>
   );
 }

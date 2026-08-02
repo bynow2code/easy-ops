@@ -11,6 +11,13 @@ export default defineConfig({
     port: 5173,
     host: '127.0.0.1',
     strictPort: true,
+    // 纯 Vite 开发（无 Electron）时，把 /api 代理到内嵌后端，使前端能连上后端
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:4521',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     outDir: '../dist',

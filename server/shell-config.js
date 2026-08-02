@@ -53,6 +53,8 @@ function read(userDataDir) {
 
 function write(userDataDir, data) {
   const safe = normalize(data);
+  // 目录可能尚不存在（首次运行 / 独立 dev 指定了新目录），先确保存在再写入
+  fs.mkdirSync(userDataDir, { recursive: true });
   fs.writeFileSync(getPath(userDataDir), JSON.stringify(safe, null, 2), 'utf8');
 }
 

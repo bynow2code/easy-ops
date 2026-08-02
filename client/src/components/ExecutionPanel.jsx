@@ -14,7 +14,6 @@ export default function ExecutionPanel({
   onCloseAll,
   onRerun,
   onStop,
-  onToggleStick,
 }) {
   const hasMax = executions.some((e) => e.maximized);
 
@@ -43,7 +42,6 @@ export default function ExecutionPanel({
               onClose={onClose}
               onRerun={onRerun}
               onStop={onStop}
-              onToggleStick={onToggleStick}
             />
           ))
         )}
