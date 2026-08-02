@@ -163,10 +163,10 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
 }
 
 function write(sessionId, data) {
-  const s = sessions.get(sessionId);
-  if (s) {
+  const session = sessions.get(sessionId);
+  if (session) {
     try {
-      s.term.write(data);
+      session.term.write(data);
     } catch {
       // 会话已退出时写入可能抛错，忽略
     }
@@ -174,10 +174,10 @@ function write(sessionId, data) {
 }
 
 function resize(sessionId, cols, rows) {
-  const s = sessions.get(sessionId);
-  if (s) {
+  const session = sessions.get(sessionId);
+  if (session) {
     try {
-      s.term.resize(cols, rows);
+      session.term.resize(cols, rows);
     } catch {
       // 尺寸非法或会话已退出，忽略
     }
@@ -216,9 +216,9 @@ function killSession(term) {
 function killByExec(execId) {
   const sessionId = execToSession.get(execId);
   if (!sessionId) return false;
-  const s = sessions.get(sessionId);
-  if (s) {
-    killSession(s.term);
+  const session = sessions.get(sessionId);
+  if (session) {
+    killSession(session.term);
     sessions.delete(sessionId);
   }
   execToSession.delete(execId);
@@ -232,8 +232,8 @@ function killByExec(execId) {
 function killAll() {
   const ids = Array.from(sessions.keys());
   for (const sessionId of ids) {
-    const s = sessions.get(sessionId);
-    if (s) killSession(s.term);
+    const session = sessions.get(sessionId);
+    if (session) killSession(session.term);
     sessions.delete(sessionId);
   }
   execToSession.clear();
@@ -248,7 +248,6 @@ module.exports = {
   kill: killByExec,
   killByExec,
   killAll,
-  getSessionIdForExec: (id) => execToSession.get(id) || null,
   getDefaultShell,
   sessions,
 };

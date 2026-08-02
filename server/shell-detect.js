@@ -62,9 +62,7 @@ function candidates() {
 
 // Windows 原生解释器（cmd / powershell）不能跑 .sh；其余视为 POSIX 环境
 function classifyPosix(p) {
-  if (/cmd\.exe$/i.test(p)) return false;
-  if (/powershell/i.test(p)) return false;
-  return true;
+  return !/cmd\.exe$/i.test(p) && !/powershell/i.test(p);
 }
 
 function isExecutable(p) {

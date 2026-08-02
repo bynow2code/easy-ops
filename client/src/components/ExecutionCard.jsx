@@ -100,8 +100,11 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
   // 订阅 PTY 退出事件：仅当与当前会话一致才翻 exited，忽略"重跑杀旧会话"的残留 exit
   useEffect(() => {
     const off = ptyClient.onExit(({ execId, sessionId }) => {
-      if (execId !== exec.id) return;
-      if (sessionId && sessionIdRef.current && sessionId !== sessionIdRef.current) return;
+      if (
+        execId !== exec.id ||
+        (sessionId && sessionIdRef.current && sessionId !== sessionIdRef.current)
+      )
+        return;
       setStatus('exited');
     });
     return off;

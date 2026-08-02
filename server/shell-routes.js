@@ -55,10 +55,10 @@ function validatePath(p) {
 
 function registerShellRoutes(app) {
   // userData 目录延迟读取：允许调用方在 require 之前通过 env 注入
-  const ud = () => config.getUserDataDir();
+  const userDataDir = () => config.getUserDataDir();
 
   app.get('/api/shells', (_req, res) => {
-    res.json(loadShells(ud()));
+    res.json(loadShells(userDataDir()));
   });
 
   app.post('/api/shells', (req, res) => {
@@ -66,13 +66,13 @@ function registerShellRoutes(app) {
     const v = shellDetect.validateCustomShellPath(p);
     if (!v.ok) return res.status(400).json({ ok: false, error: v.error });
 
-    const cfg = shellCfg.read(ud());
+    const cfg = shellCfg.read(userDataDir());
     if (cfg.shells.some((s) => s.path === p)) {
       return res.status(409).json({ ok: false, error: 'Already added' });
     }
     cfg.shells.push({ path: p, name: path.basename(p), custom: true });
-    shellCfg.write(ud(), cfg);
-    res.json({ ok: true, shells: loadShells(ud()).shells });
+    shellCfg.write(userDataDir(), cfg);
+    res.json({ ok: true, shells: loadShells(userDataDir()).shells });
   });
 
   app.delete('/api/shells', (req, res) => {
@@ -80,15 +80,15 @@ function registerShellRoutes(app) {
     const argErr = validatePath(p);
     if (argErr) return res.status(400).json(argErr);
 
-    const cfg = shellCfg.read(ud());
+    const cfg = shellCfg.read(userDataDir());
     if (!cfg.shells.some((s) => s.path === p)) {
       return res.status(404).json({ ok: false, error: 'Shell not found' });
     }
     if (cfg.activeShellPath === p) {
       return res.status(409).json({ ok: false, error: 'Cannot remove the active shell' });
     }
-    shellCfg.removeShell(ud(), p);
-    const st = loadShells(ud());
+    shellCfg.removeShell(userDataDir(), p);
+    const st = loadShells(userDataDir());
     res.json({
       ok: true,
       noShellMode: st.noShellMode,
@@ -100,14 +100,14 @@ function registerShellRoutes(app) {
   app.post('/api/shells/active', (req, res) => {
     const p = req.body && req.body.path;
     if (p) {
-      const found = loadShells(ud()).shells.find((s) => s.path === p);
+      const found = loadShells(userDataDir()).shells.find((s) => s.path === p);
       if (!found) return res.status(404).json({ ok: false, error: 'Shell not in list' });
     }
-    shellCfg.update(ud(), (c) => {
+    shellCfg.update(userDataDir(), (c) => {
       c.activeShellPath = p || null; // 跟随默认
       c.noShellMode = false; // 显式选 shell 自动退出无 shell 模式
     });
-    const st = loadShells(ud());
+    const st = loadShells(userDataDir());
     res.json({
       ok: true,
       noShellMode: st.noShellMode,
@@ -118,11 +118,11 @@ function registerShellRoutes(app) {
 
   app.post('/api/shells/no-shell-mode', (req, res) => {
     const value = !!(req.body && req.body.value);
-    shellCfg.update(ud(), (c) => {
+    shellCfg.update(userDataDir(), (c) => {
       c.noShellMode = value;
       if (value) c.activeShellPath = null; // 切到无 shell 时清掉当前
     });
-    const st = loadShells(ud());
+    const st = loadShells(userDataDir());
     res.json({
       ok: true,
       noShellMode: st.noShellMode,

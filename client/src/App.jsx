@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import TopBar from './components/TopBar.jsx';
 import ScriptList from './components/ScriptList.jsx';
 import ExecutionPanel from './components/ExecutionPanel.jsx';
@@ -57,49 +57,69 @@ export default function App() {
   // 而非用 null 路径假装运行（mock 模式下甚至会照常跑出模拟输出 → 模式"未生效"）。
   const [noShellMode, setNoShellMode] = useState(false);
 
+  // 从「仓库形态」回填三个顶层状态（后端 res 与前端 fallback 同形）。
+  // 按字段是否存在决定回填，避免后端只回部分字段时把其余状态清零。
+  const applyRepo = useCallback((repo) => {
+    if (!repo) return;
+    if (Array.isArray(repo.scripts)) setScripts(repo.scripts);
+    if (Array.isArray(repo.groups)) setGroups(repo.groups);
+    if (repo.defaultGroup) setDefaultGroup(repo.defaultGroup);
+  }, []);
+
   // 拉取 shell 列表（检测到的 + 自定义的）与全局 shell 路径；供"添加/编辑脚本"的
   // 解释器下拉、以及执行时把 'global' 解析成实际路径。未挂载 Electron 时为无操作。
   // 抽成独立函数：挂载时调一次，Settings 关闭时也调一次，确保设置里新增/移除的
   // 自定义 shell 能实时反映到 Add/Edit Script 的下拉（否则会停留在挂载时的快照）。
-  const reloadShells = () => {
+  const reloadShells = useCallback(() => {
     // 通过 HTTP 从后端拉取（检测到的 + 自定义的）shell 与全局路径；
     // 后端不可达时退化到前端态 localStorage，保证 UI 不崩。
     shellApi
       .list()
-      .then((st) => {
-        setShells(Array.isArray(st.shells) ? st.shells : []);
-        setGlobalShellPath(st.activeShellPath || st.shells?.[0]?.path || null);
-        setNoShellMode(Boolean(st.noShellMode));
+      .then((shellState) => {
+        setShells(Array.isArray(shellState.shells) ? shellState.shells : []);
+        setGlobalShellPath(shellState.activeShellPath || shellState.shells?.[0]?.path || null);
+        setNoShellMode(Boolean(shellState.noShellMode));
       })
       .catch(() => {
-        const fe = readFrontendShells();
-        setShells(fe);
-        setGlobalShellPath(fe[0]?.path || null);
+        const localShells = readFrontendShells();
+        setShells(localShells);
+        setGlobalShellPath(localShells[0]?.path || null);
         setNoShellMode(readFrontendNoShellMode());
       });
-  };
-
-  useEffect(() => {
-    reloadShells();
-    loadScripts();
   }, []);
 
   // 拉取已保存的脚本与分组：优先走后端 /api/scripts；后端不可达时退化到
   // localStorage（scriptsStore），保证无主进程 / 离线时 UI 也能恢复上次数据。
-  const loadScripts = () => {
+  const loadScripts = useCallback(() => {
     scriptsApi
       .list()
-      .then((repo) => {
-        setScripts(Array.isArray(repo.scripts) ? repo.scripts : []);
-        setGroups(Array.isArray(repo.groups) ? repo.groups : []);
-        setDefaultGroup(repo.defaultGroup || DEFAULT_GROUP);
-      })
+      .then(applyRepo)
+      .catch(() => applyRepo(readFrontendScripts()));
+  }, [applyRepo]);
+
+  useEffect(() => {
+    reloadShells();
+    loadScripts();
+  }, [reloadShells, loadScripts]);
+
+  // 后端调用成功则 apply(repo)；失败则在前端 localStorage 复刻同一变换（transform
+  // 接收当前前端仓库、返回新仓库，与 server 纯函数同源语义），回写后再 apply。
+  const persistWithFallback = (apiCall, transform, apply) => {
+    apiCall
+      .then((repo) => apply(repo))
       .catch(() => {
-        const fe = readFrontendScripts();
-        setScripts(fe.scripts);
-        setGroups(fe.groups);
-        setDefaultGroup(fe.defaultGroup || DEFAULT_GROUP);
+        const localRepo = readFrontendScripts();
+        const next = transform(localRepo) || localRepo;
+        writeFrontendScripts(next);
+        apply(next);
       });
+  };
+
+  // 仅把变更写入前端 localStorage（用于「内存已乐观更新、只差落盘」的脚本级操作）。
+  const persistLocal = (mutate) => {
+    const fe = readFrontendScripts();
+    mutate(fe);
+    writeFrontendScripts(fe);
   };
 
   // 主题：三态循环（system → dark → light → system），通过 <html data-theme> 切换
@@ -275,14 +295,14 @@ export default function App() {
     }
 
     // 持久化：优先后端 /api/scripts；失败回退 localStorage
-    scriptsApi.save(record).catch(() => {
-      const fe = readFrontendScripts();
-      const exists = fe.scripts.some((s) => s.id === finalId);
-      fe.scripts = exists
-        ? fe.scripts.map((s) => (s.id === finalId ? record : s))
-        : [...fe.scripts, record];
-      writeFrontendScripts(fe);
-    });
+    scriptsApi.save(record).catch(() =>
+      persistLocal((fe) => {
+        const exists = fe.scripts.some((s) => s.id === finalId);
+        fe.scripts = exists
+          ? fe.scripts.map((s) => (s.id === finalId ? record : s))
+          : [...fe.scripts, record];
+      }),
+    );
 
     setAddScriptOpen(false);
     setEditingScript(null);
@@ -331,11 +351,11 @@ export default function App() {
     });
     // 持久化换组结果（移动只改 group）：优先后端，失败回退 localStorage
     if (movedRecord) {
-      scriptsApi.save(movedRecord).catch(() => {
-        const fe = readFrontendScripts();
-        fe.scripts = fe.scripts.map((s) => (s.id === movedRecord.id ? movedRecord : s));
-        writeFrontendScripts(fe);
-      });
+      scriptsApi.save(movedRecord).catch(() =>
+        persistLocal((fe) => {
+          fe.scripts = fe.scripts.map((s) => (s.id === movedRecord.id ? movedRecord : s));
+        }),
+      );
     }
   };
 
@@ -348,11 +368,11 @@ export default function App() {
       .then((res) => {
         if (res && Array.isArray(res.groups)) setGroups(res.groups);
       })
-      .catch(() => {
-        const fe = readFrontendScripts();
-        if (!fe.groups.includes(name)) fe.groups.push(name);
-        writeFrontendScripts(fe);
-      });
+      .catch(() =>
+        persistLocal((fe) => {
+          if (!fe.groups.includes(name)) fe.groups.push(name);
+        }),
+      );
     setAddGroupOpen(false);
   };
 
@@ -369,23 +389,11 @@ export default function App() {
     setDeletingGroup(null);
     if (!name) return;
     // 优先后端；失败回退 localStorage（本地复刻后端变换）
-    scriptsApi
-      .removeGroup(name, deleteScripts)
-      .then((res) => {
-        if (res) {
-          setScripts(res.scripts);
-          setGroups(res.groups);
-          setDefaultGroup(res.defaultGroup || DEFAULT_GROUP);
-        }
-      })
-      .catch(() => {
-        const fe = readFrontendScripts();
-        const updated = removeGroupFromRepo(fe, name, deleteScripts);
-        writeFrontendScripts(updated);
-        setScripts(updated.scripts);
-        setGroups(updated.groups);
-        setDefaultGroup(updated.defaultGroup || DEFAULT_GROUP);
-      });
+    persistWithFallback(
+      scriptsApi.removeGroup(name, deleteScripts),
+      (fe) => removeGroupFromRepo(fe, name, deleteScripts),
+      applyRepo,
+    );
   };
 
   // 重命名分组（默认分组与普通分组都允许；默认分组重命名会同步更新 defaultGroup）。
@@ -399,21 +407,15 @@ export default function App() {
     setRenameGroupOpen(false);
     setRenamingGroup(null);
     if (!oldName || !newName || newName === oldName) return;
-    scriptsApi
-      .renameGroup(oldName, newName)
-      .then((res) => {
-        if (res) {
-          setGroups(res.groups);
-          setDefaultGroup(res.defaultGroup || DEFAULT_GROUP);
-        }
-      })
-      .catch(() => {
-        const fe = readFrontendScripts();
-        const updated = renameGroupInRepo(fe, oldName, newName);
-        writeFrontendScripts(updated);
-        setGroups(updated.groups);
-        setDefaultGroup(updated.defaultGroup || DEFAULT_GROUP);
-      });
+    // 重命名只动 groups + defaultGroup（不影响 scripts 列表）
+    persistWithFallback(
+      scriptsApi.renameGroup(oldName, newName),
+      (fe) => renameGroupInRepo(fe, oldName, newName),
+      (repo) => {
+        if (Array.isArray(repo.groups)) setGroups(repo.groups);
+        if (repo.defaultGroup) setDefaultGroup(repo.defaultGroup);
+      },
+    );
   };
 
   // 导出脚本：以「新版本为主」，文件只需 name + content（兼容旧导入/导出格式）。
@@ -460,23 +462,11 @@ export default function App() {
         return;
       }
       // 优先后端批量导入；失败回退 localStorage（本地复刻后端变换）
-      scriptsApi
-        .importScripts(records)
-        .then((res) => {
-          if (res) {
-            setScripts(res.scripts);
-            setGroups(res.groups);
-            setDefaultGroup(res.defaultGroup || DEFAULT_GROUP);
-          }
-        })
-        .catch(() => {
-          const fe = readFrontendScripts();
-          const updated = importIntoRepo(fe, records);
-          writeFrontendScripts(updated);
-          setScripts(updated.scripts);
-          setGroups(updated.groups);
-          setDefaultGroup(updated.defaultGroup || DEFAULT_GROUP);
-        });
+      persistWithFallback(
+        scriptsApi.importScripts(records),
+        (fe) => importIntoRepo(fe, records),
+        applyRepo,
+      );
     } catch {
       window.alert('Failed to read file: not valid JSON.');
     }
@@ -492,11 +482,11 @@ export default function App() {
     // 乐观更新内存
     setScripts((prev) => prev.filter((s) => s.id !== script.id));
     // 持久化：优先后端 DELETE /api/scripts；失败回退 localStorage
-    scriptsApi.remove(script.id).catch(() => {
-      const fe = readFrontendScripts();
-      fe.scripts = fe.scripts.filter((s) => s.id !== script.id);
-      writeFrontendScripts(fe);
-    });
+    scriptsApi.remove(script.id).catch(() =>
+      persistLocal((fe) => {
+        fe.scripts = fe.scripts.filter((s) => s.id !== script.id);
+      }),
+    );
   };
 
   const handleClose = (execId) => {
