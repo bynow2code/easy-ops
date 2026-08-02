@@ -138,6 +138,48 @@ body {
   color: #374151;
 }
 
+/* ------------ Tooltip (custom, 150ms; shown below the icon) ------------ */
+.tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tooltip-bubble {
+  position: absolute;
+  top: calc(100% + 6px);
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  animation: tooltip-fade-in 100ms ease-out;
+}
+/* 水平对齐：默认居中；贴近视口右/左边缘时改为贴右/贴左，
+   避免 tooltip 延伸到 viewport 外导致 body 出现横向滚动条。 */
+.tooltip-wrap--center .tooltip-bubble {
+  left: 50%;
+  transform: translateX(-50%);
+}
+.tooltip-wrap--right .tooltip-bubble {
+  right: 0;
+}
+.tooltip-wrap--left .tooltip-bubble {
+  left: 0;
+}
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* ------------ Main two columns ------------ */
 .main {
   flex: 1;
@@ -898,6 +940,7 @@ input[type='checkbox'] {
   color: var(--text-faint);
   font-size: 12px;
   font-style: italic;
+  text-align: center;
   border-bottom: 1px solid var(--border-row);
 }
 

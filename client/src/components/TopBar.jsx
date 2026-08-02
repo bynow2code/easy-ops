@@ -7,6 +7,7 @@ import {
   IconMoon,
   IconContrast,
 } from './Icons.jsx';
+import Tooltip from './Tooltip.jsx';
 
 /**
  * Top bar.
@@ -94,8 +95,10 @@ export default function TopBar({
 
 function IconBtn({ title, onClick, children }) {
   return (
-    <button className="icon-btn" title={title} aria-label={title} onClick={onClick}>
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button className="icon-btn" aria-label={title} onClick={onClick}>
+        {children}
+      </button>
+    </Tooltip>
   );
 }

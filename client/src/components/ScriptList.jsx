@@ -162,12 +162,14 @@ export default function ScriptList({
             </div>
             {!isCollapsed && (
               <>
-                <div className="script-group__cols">
-                  <span />
-                  <span />
-                  <span className="col-name">Name</span>
-                  <span className="col-actions">Actions</span>
-                </div>
+                {items.length > 0 && (
+                  <div className="script-group__cols">
+                    <span />
+                    <span />
+                    <span className="col-name">Name</span>
+                    <span className="col-actions">Actions</span>
+                  </div>
+                )}
                 <div
                   className="script-group__rows"
                   onDragOver={(e) => handleGroupDragOver(group, e)}
