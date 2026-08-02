@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { monaco } from '../monaco/setup';
+import { useEscapeKey } from '../hooks/useEscapeKey.js';
 
 const MAX_NAME = 20;
 
@@ -80,15 +81,8 @@ export default function AddScriptPanel({
     return () => clearTimeout(t);
   }, [open, script]);
 
-  // 仅允许 ESC 与 Close 按钮关闭：全局监听 Escape
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // 仅允许 ESC 与 Close 按钮关闭
+  useEscapeKey(open, onClose);
 
   if (!open) return null;
 
@@ -105,15 +99,16 @@ export default function AddScriptPanel({
     ? `${globalShell.name}${globalShell.version ? ` ${globalShell.version}` : ''}`
     : '';
 
+  // 按校验优先级返回第一条错误（无错误返回 null）
+  const buildNameError = () => {
+    if (nameEmpty) return 'Script name is required';
+    if (nameTooLong) return `Name too long (max ${MAX_NAME})`;
+    return 'Please select a group';
+  };
+
   const handleSave = () => {
     if (!valid) {
-      setError(
-        nameEmpty
-          ? 'Script name is required'
-          : nameTooLong
-            ? `Name too long (max ${MAX_NAME})`
-            : 'Please select a group',
-      );
+      setError(buildNameError());
       return;
     }
     const content = editorRef.current?.getValue() ?? '';

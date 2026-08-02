@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useEscapeKey } from '../hooks/useEscapeKey.js';
 
 const MIN_LEN = 1;
 const MAX_LEN = 6;
@@ -21,15 +22,8 @@ export default function AddGroupModal({ open, existing = [], onClose, onSave }) 
     return () => clearTimeout(t);
   }, [open]);
 
-  // 仅允许 ESC 与 Close 按钮关闭：全局监听 Escape
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // 仅允许 ESC 与 Close 按钮关闭
+  useEscapeKey(open, onClose);
 
   if (!open) return null;
 

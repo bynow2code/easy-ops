@@ -7,25 +7,13 @@
 
 // 根据脚本名生成模拟输出（与截图一致风格）
 export function mockOutputFor(name) {
-  const isPms = name.startsWith('PMS');
-  const isWms = name.startsWith('WMS');
-  const isOms = name.startsWith('OMS');
   const isDev = /-DEV$/.test(name);
-  const repo = isPms
-    ? isDev
-      ? 'dev_mns_pms'
-      : 'mns_pms'
-    : isWms
-      ? isDev
-        ? 'dev_mns_wms'
-        : 'mns_wms'
-      : isOms
-        ? isDev
-          ? 'dev_mns_oms'
-          : 'mns_oms'
-        : isDev
-          ? `dev_${name.toLowerCase()}`
-          : name.toLowerCase();
+  const lower = name.toLowerCase();
+  let repo;
+  if (name.startsWith('PMS')) repo = isDev ? 'dev_mns_pms' : 'mns_pms';
+  else if (name.startsWith('WMS')) repo = isDev ? 'dev_mns_wms' : 'mns_wms';
+  else if (name.startsWith('OMS')) repo = isDev ? 'dev_mns_oms' : 'mns_oms';
+  else repo = isDev ? `dev_${lower}` : lower;
 
   return [
     `======== ${repo} ========`,

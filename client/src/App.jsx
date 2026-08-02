@@ -8,6 +8,7 @@ import SettingsModal from './components/SettingsModal.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { mockOutputFor } from './data/mockScripts.js';
 import { readFrontendShells } from './shellStore.js';
+import { resolveShellPath } from './shellUtils.js';
 
 /**
  * 应用根组件：管理三个顶层状态
@@ -106,6 +107,10 @@ export default function App() {
       return next;
     });
 
+  // 按 id 局部更新某条脚本（不可变）
+  const patchScript = (id, patch) =>
+    setScripts((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+
   // 执行入口（单脚本/批量）
   const runScript = (script) => {
     const id = `exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -113,7 +118,7 @@ export default function App() {
     const startedAt = Date.now();
     // 'global' 解析为当前应用全局 shell 路径；否则用脚本指定的解释器路径
     const shellChoice = script.shell || 'global';
-    const shellPath = shellChoice === 'global' ? globalShellPath : shellChoice;
+    const shellPath = resolveShellPath(shellChoice, globalShellPath);
     const exec = {
       id,
       scriptId: script.id,
@@ -130,8 +135,7 @@ export default function App() {
       stickToBottom: true,
     };
     setExecutions((prev) => [exec, ...prev]);
-    // 脚本侧状态切到 running
-    setScripts((prev) => prev.map((s) => (s.id === script.id ? { ...s, status: 'running' } : s)));
+    patchScript(script.id, { status: 'running' });
 
     // 模拟流式输出 + 完成
     const tick = (i) => {
@@ -140,9 +144,7 @@ export default function App() {
         setExecutions((prev) =>
           prev.map((e) => (e.id === id ? { ...e, status: 'exited', exit: 0, duration } : e)),
         );
-        setScripts((prev) =>
-          prev.map((s) => (s.id === script.id ? { ...s, status: 'exited' } : s)),
-        );
+        patchScript(script.id, { status: 'exited' });
         return;
       }
       setExecutions((prev) =>
@@ -152,8 +154,6 @@ export default function App() {
     };
     setTimeout(() => tick(1), 120);
   };
-
-  const handleExecute = (script) => runScript(script);
 
   const handleExecuteSelected = () => {
     const ids = selected;
@@ -180,9 +180,7 @@ export default function App() {
   const handleSaveScript = ({ id, name, group, content, shell }) => {
     if (id) {
       // 编辑模式：原地更新
-      setScripts((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, name, group, content: content || '', shell } : s)),
-      );
+      patchScript(id, { name, group, content: content || '', shell });
     } else {
       // 新增模式
       const newId = `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -287,7 +285,7 @@ export default function App() {
           selectedSet={selected}
           onToggle={toggle}
           onSelectGroup={selectGroup}
-          onExecute={handleExecute}
+          onExecute={runScript}
           onEdit={handleEdit}
           onRemove={handleRemove}
           onMoveScript={handleMoveScript}

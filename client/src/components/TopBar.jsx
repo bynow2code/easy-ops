@@ -23,13 +23,15 @@ export default function TopBar({
   onOpenSettings,
 }) {
   const disableSel = selectedCount === 0;
-  const ThemeIcon = theme === 'dark' ? IconMoon : theme === 'light' ? IconSun : IconContrast;
-  const themeTitle =
-    theme === 'dark'
-      ? 'Theme: Dark — click to switch to Light'
-      : theme === 'light'
-        ? 'Theme: Light — click to switch to Follow system'
-        : 'Theme: Follow system — click to switch to Dark';
+  // 主题图标/提示按三态查表，避免层层三元
+  const THEME_ICONS = { dark: IconMoon, light: IconSun, system: IconContrast };
+  const THEME_TITLES = {
+    dark: 'Theme: Dark — click to switch to Light',
+    light: 'Theme: Light — click to switch to Follow system',
+    system: 'Theme: Follow system — click to switch to Dark',
+  };
+  const ThemeIcon = THEME_ICONS[theme] || IconContrast;
+  const themeTitle = THEME_TITLES[theme] || THEME_TITLES.system;
   return (
     <header className="top-bar">
       <div className="top-bar__left">

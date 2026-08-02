@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconArrowDown, IconRefresh, IconExpand } from './Icons.jsx';
+import { resolveShellPath } from '../shellUtils.js';
 
 /**
  * 单个脚本的执行输出卡（按截图）：
@@ -35,8 +36,8 @@ export default function ExecutionCard({
   const ago = formatAgo(now - exec.startedAt);
   const groupLabel = exec.group || 'Ungrouped';
 
-  // 解析该次执行实际使用的解释器：'global' 取应用全局路径，否则用脚本指定路径
-  const effectivePath = exec.shell === 'global' || !exec.shell ? globalShellPath : exec.shell;
+  // 解析该次执行实际使用的解释器：'global'/空 → 应用全局路径，否则脚本指定路径
+  const effectivePath = resolveShellPath(exec.shell, globalShellPath);
   const matchedShell = effectivePath ? shells.find((s) => s.path === effectivePath) : null;
   const shellName = matchedShell?.name || effectivePath || 'system default';
 
