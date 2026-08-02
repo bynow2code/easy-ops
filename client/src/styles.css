@@ -74,7 +74,7 @@ body {
   gap: 8px;
 }
 .top-bar__right {
-  gap: 4px;
+  gap: 6px;
 }
 
 .pill {
@@ -92,6 +92,7 @@ body {
     opacity 0.15s;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
 .pill--muted {
   background: var(--bg-muted);
@@ -144,6 +145,9 @@ body {
   gap: 2px;
   padding: 0 16px 16px;
   min-height: 0;
+  /* 锁定自身 overflow：新卡挂载时 xterm 的尺寸抖动不会顶出整窗级别的临时滚动条
+     （列表/脚本列表各自内部滚动不受影响，它们才是真正的滚动容器）。 */
+  overflow: hidden;
 }
 .main.is-dragging {
   cursor: col-resize;
@@ -181,6 +185,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* 防止 flex 默认 min-width:auto 让面板因内容最小宽度把整行撑宽、冒出横向滚动条 */
+  min-width: 0;
 }
 .panel--list {
   padding: 14px 14px 16px;
@@ -390,6 +396,9 @@ body {
   flex: 1;
   overflow-y: auto; /* 仅纵向滚动；关掉 overflow-x 避免任何横向条 */
   overflow-x: hidden;
+  /* 永久预留纵向滚动条槽位：避免新卡挂载瞬间列表高度越界时滚动条"闪现"
+     并导致内容横向位移（与 editor-panel__body 同样的手法）。 */
+  scrollbar-gutter: stable;
   /* 永久预留滚动条槽位，避免在「编辑器面板 ↔ 执行列表」切换时
      因滚动条出现/消失导致内容横向位移（即关闭编辑窗口时的抖动） */
   scrollbar-gutter: stable;
@@ -1036,10 +1045,10 @@ input[type='checkbox'] {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
 }
 .modal__foot--settings {
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 .btn--sm {
   height: 20px;
@@ -1071,6 +1080,30 @@ input[type='checkbox'] {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-group + .settings-group {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.settings-group__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.settings-group__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .settings-row {
@@ -1190,12 +1223,12 @@ input[type='checkbox'] {
   user-select: text;
 }
 
-.settings-warning {
-  border: 1.5px dashed #f59e0b;
+.settings-mode {
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
-  background: rgba(245, 158, 11, 0.06);
-  color: #92400e;
+  background: var(--bg-muted);
+  color: var(--text);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1209,10 +1242,10 @@ input[type='checkbox'] {
   color: var(--text);
   cursor: pointer;
 }
-.settings-warning__hint {
+.settings-mode__hint {
   margin: 0;
   font-size: 12px;
-  color: #b45309;
+  color: var(--text-muted);
 }
 
 .settings-shell-list {
@@ -1334,12 +1367,12 @@ input[type='checkbox'] {
 }
 
 /* dark theme overrides for settings */
-:root[data-theme='dark'] .settings-warning {
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
+:root[data-theme='dark'] .settings-mode {
+  background: var(--bg-muted);
+  color: var(--text);
 }
-:root[data-theme='dark'] .settings-warning__hint {
-  color: #fbbf24;
+:root[data-theme='dark'] .settings-mode__hint {
+  color: var(--text-muted);
 }
 :root[data-theme='dark'] .settings-update--ok {
   background: rgba(22, 163, 74, 0.14);

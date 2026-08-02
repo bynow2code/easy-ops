@@ -9,9 +9,9 @@ import {
 } from './Icons.jsx';
 
 /**
- * 顶部按钮区
- *  - 左侧：Execute Selected / Add Script / Add Group / Delete Selected（计数联动 selected.length）
- *  - 右侧：下载（导出）/ 上传（导入）/ 主题切换 / 设置
+ * Top bar.
+ *  - Left: Execute Selected / Add Script / Add Group / Delete Selected (counter-driven)
+ *  - Right: Export / Import (icons) / theme switch / settings
  */
 export default function TopBar({
   selectedCount,
@@ -68,10 +68,10 @@ export default function TopBar({
         </button>
       </div>
       <div className="top-bar__right">
-        <IconBtn title="Export scripts" onClick={onExport}>
+        <IconBtn title="Export config" onClick={onExport}>
           <IconDownload />
         </IconBtn>
-        <IconBtn title="Import scripts" onClick={() => fileRef.current && fileRef.current.click()}>
+        <IconBtn title="Import config" onClick={() => fileRef.current && fileRef.current.click()}>
           <IconUpload />
         </IconBtn>
         <input

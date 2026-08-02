@@ -320,174 +320,177 @@ export default function SettingsModal({ open, onClose }) {
         </div>
 
         <div className="modal__body modal__body--settings">
-          <Section label="Version">
-            <div className="settings-row">
-              <span className="settings-value">{version}</span>
-              <button className="btn btn--ghost btn--sm" disabled={busy} onClick={onCheckUpdates}>
-                {busy ? 'Checking…' : 'Check Updates'}
-              </button>
-            </div>
-            {updateResult && (
-              <UpdateBanner result={updateResult} onOpen={openLink} onInstall={onInstallUpdate} />
-            )}
-          </Section>
-
-          <Section label="GitHub">
-            <button
-              type="button"
-              className="settings-link"
-              onClick={() => openLink(githubUrl)}
-              title={githubUrl}
-            >
-              {githubUrl}
-              <IconExternal />
-            </button>
-          </Section>
-
-          <Section label="Shell">
-            {currentShell ? (
-              <>
-                <div className="settings-current-shell">
-                  <span className="settings-pill">{currentShell.name?.toUpperCase()}</span>
-                  <ShellTags shell={currentShell} />
-                </div>
-                <div className="settings-path-row">
-                  <code className="settings-path">{shellQuote(currentShell.path)}</code>
-                  <CopyButton text={shellQuote(currentShell.path)} onCopy={copy} />
-                </div>
-              </>
-            ) : (
-              <div className="settings-muted">No shell selected</div>
-            )}
-          </Section>
-
-          <Section label="Shells">
-            <div className="settings-warning">
-              <label className="settings-checkbox">
-                <input
-                  type="checkbox"
-                  checked={shellState.noShellMode}
-                  onChange={onToggleNoShell}
-                />
-                <span>No Shell Mode (simulate no bash installed)</span>
-              </label>
-              <p className="settings-warning__hint">
-                For testing startup &amp; execution behavior when no shell is available.
-              </p>
-            </div>
-
-            {shellState.shells.length === 0 ? (
-              <div className="settings-muted settings-muted--pad">
-                {shellState.noShellMode ? 'No shells (No Shell Mode is on)' : 'No shells detected'}
+          <SettingsGroup title="About">
+            <Section label="Version">
+              <div className="settings-row">
+                <span className="settings-value">{version}</span>
+                <button className="btn btn--ghost btn--sm" disabled={busy} onClick={onCheckUpdates}>
+                  {busy ? 'Checking…' : 'Check Updates'}
+                </button>
               </div>
-            ) : (
-              <ul className="settings-shell-list">
-                {shellState.shells.map((s) => {
-                  const active =
-                    s.path === (shellState.activeShellPath || shellState.shells[0]?.path);
-                  const removable = s.custom && !active;
-                  return (
-                    <li
-                      key={s.path}
-                      className={`settings-shell-card ${active ? 'is-active' : ''}`}
-                      onClick={() => !s.custom && onSetActive(s.path)}
-                      title={
-                        s.custom
-                          ? active
-                            ? 'Active shell — cannot remove'
-                            : 'Custom shell — click × to remove'
-                          : 'Click to set as active'
-                      }
-                    >
-                      <div className="settings-shell-card__head">
-                        <span className="settings-pill">{s.name}</span>
-                        <ShellTags shell={s} />
-                        {active && (
-                          <span className="settings-active-badge">
-                            <IconCheck /> Active
-                          </span>
-                        )}
-                        {removable && (
-                          <button
-                            type="button"
-                            className="settings-shell-card__remove"
-                            title="Remove this custom shell"
-                            aria-label="Remove this custom shell"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onRemoveShell(s.path);
-                            }}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                      <code className="settings-shell-card__path">{s.path}</code>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+              {updateResult && (
+                <UpdateBanner result={updateResult} onOpen={openLink} onInstall={onInstallUpdate} />
+              )}
+            </Section>
 
-            <div className="settings-add-row">
-              <input
-                className="field__input"
-                type="text"
-                value={customPath}
-                placeholder="Add a bash path, e.g. C:\\tools\\git\\bin\\bash.exe or /opt/homebrew/bin/bash"
-                onChange={(e) => setCustomPath(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onAddTypedPath();
-                  if (e.key === 'Escape') onClose();
-                }}
-              />
-              <button className="btn btn--ghost btn--sm" onClick={onBrowseShell}>
-                Browse
-              </button>
+            <Section label="GitHub">
               <button
-                className="btn btn--blue btn--sm"
-                onClick={onAddTypedPath}
-                disabled={!customPath.trim()}
+                type="button"
+                className="settings-link"
+                onClick={() => openLink(githubUrl)}
+                title={githubUrl}
               >
-                Add
+                {githubUrl}
+                <IconExternal />
               </button>
-            </div>
-            {/* 校验/添加反馈就近显示在 Add 行下方（不进页脚，避免与 Close 混淆）。
-                涵盖：添加非法文件、重复、移除、设默认、No Shell 切换 等。 */}
-            {flash && (
-              <div className="settings-add-flash">
-                <span className={`settings-flash settings-flash--${flash.kind}`}>{flash.text}</span>
+            </Section>
+          </SettingsGroup>
+
+          <SettingsGroup title="Shells">
+            <Section label="No Shell Mode">
+              <div className="settings-mode">
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={shellState.noShellMode}
+                    onChange={onToggleNoShell}
+                  />
+                  <span>No Shell Mode (simulate no bash installed)</span>
+                </label>
+                <p className="settings-mode__hint">
+                  For testing startup &amp; execution behavior when no shell is available.
+                </p>
               </div>
-            )}
-            {/* 无后端时的前端文件选择回退；Electron 下优先走 dialog.showOpenDialog */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              style={{ display: 'none' }}
-              onChange={onFilePicked}
-            />
-          </Section>
+            </Section>
 
-          <Section label="Backend">
-            <div className="settings-row">
-              <span className="settings-value">{backendPort ?? '—'}</span>
-              {backendPort ? <CopyButton text={String(backendPort)} onCopy={copy} /> : null}
-            </div>
-          </Section>
+            <Section label="Active Shell">
+              {currentShell ? (
+                <>
+                  <div className="settings-current-shell">
+                    <span className="settings-pill">{currentShell.name?.toUpperCase()}</span>
+                  </div>
+                  <div className="settings-path-row">
+                    <code className="settings-path">{shellQuote(currentShell.path)}</code>
+                    <CopyButton text={shellQuote(currentShell.path)} onCopy={copy} />
+                  </div>
+                </>
+              ) : (
+                <div className="settings-muted">No shell selected</div>
+              )}
+            </Section>
 
-          <Section label="Scripts Config">
-            <div className="settings-path-row">
-              <code className="settings-path">{shellQuote(scriptsConfig)}</code>
-              <CopyButton text={shellQuote(scriptsConfig)} onCopy={copy} />
-            </div>
-          </Section>
+            <Section label="Shell List">
+              {shellState.shells.length === 0 ? (
+                <div className="settings-muted settings-muted--pad">
+                  {shellState.noShellMode ? 'No shells (No Shell Mode is on)' : 'No shells detected'}
+                </div>
+              ) : (
+                <ul className="settings-shell-list">
+                  {shellState.shells.map((s) => {
+                    const active =
+                      s.path === (shellState.activeShellPath || shellState.shells[0]?.path);
+                    const removable = s.custom && !active;
+                    return (
+                      <li
+                        key={s.path}
+                        className={`settings-shell-card ${active ? 'is-active' : ''}`}
+                        onClick={() => !s.custom && onSetActive(s.path)}
+                        title={
+                          s.custom
+                            ? active
+                              ? 'Active shell — cannot remove'
+                              : 'Custom shell — click × to remove'
+                            : 'Click to set as active'
+                        }
+                      >
+                        <div className="settings-shell-card__head">
+                          <span className="settings-pill">{s.name}</span>
+                          {active && (
+                            <span className="settings-active-badge">
+                              <IconCheck /> Active
+                            </span>
+                          )}
+                          {removable && (
+                            <button
+                              type="button"
+                              className="settings-shell-card__remove"
+                              title="Remove this custom shell"
+                              aria-label="Remove this custom shell"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveShell(s.path);
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        <code className="settings-shell-card__path">{s.path}</code>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
 
-          <Section label="Log File">
-            <div className="settings-path-row">
-              <code className="settings-path">{shellQuote(logFile)}</code>
-              <CopyButton text={shellQuote(logFile)} onCopy={copy} />
-            </div>
-          </Section>
+              <div className="settings-add-row">
+                <input
+                  className="field__input"
+                  type="text"
+                  value={customPath}
+                  placeholder="Add a bash path, e.g. C:\\tools\\git\\bin\\bash.exe or /opt/homebrew/bin/bash"
+                  onChange={(e) => setCustomPath(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') onAddTypedPath();
+                    if (e.key === 'Escape') onClose();
+                  }}
+                />
+                <button className="btn btn--ghost btn--sm" onClick={onBrowseShell}>
+                  Browse
+                </button>
+                <button
+                  className="btn btn--blue btn--sm"
+                  onClick={onAddTypedPath}
+                  disabled={!customPath.trim()}
+                >
+                  Add
+                </button>
+              </div>
+              {flash && (
+                <div className="settings-add-flash">
+                  <span className={`settings-flash settings-flash--${flash.kind}`}>{flash.text}</span>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                style={{ display: 'none' }}
+                onChange={onFilePicked}
+              />
+            </Section>
+          </SettingsGroup>
+
+          <SettingsGroup title="Paths & Ports">
+            <Section label="Scripts Config">
+              <div className="settings-path-row">
+                <code className="settings-path">{shellQuote(scriptsConfig)}</code>
+                <CopyButton text={shellQuote(scriptsConfig)} onCopy={copy} />
+              </div>
+            </Section>
+
+            <Section label="Log File">
+              <div className="settings-path-row">
+                <code className="settings-path">{shellQuote(logFile)}</code>
+                <CopyButton text={shellQuote(logFile)} onCopy={copy} />
+              </div>
+            </Section>
+
+            <Section label="Backend">
+              <div className="settings-path-row">
+                <span className="settings-path">{backendPort ?? '—'}</span>
+                {backendPort ? <CopyButton text={String(backendPort)} onCopy={copy} /> : null}
+              </div>
+            </Section>
+          </SettingsGroup>
         </div>
 
         <div className="modal__foot modal__foot--settings">
@@ -509,20 +512,12 @@ function Section({ label, children }) {
   );
 }
 
-// 平台 + POSIX 标签：平台显示 macOS/Windows/Linux；posix 标记该壳能否跑 .sh
-function platformLabel(p) {
-  if (p === 'darwin') return 'macOS';
-  if (p === 'win32') return 'Windows';
-  if (p === 'linux') return 'Linux';
-  return p || '—';
-}
-
-function ShellTags({ shell }) {
-  const platform = shell?.platform;
+function SettingsGroup({ title, children }) {
   return (
-    <span className="settings-shell-tags">
-      {platform && <span className="settings-tag">{platformLabel(platform)}</span>}
-    </span>
+    <section className="settings-group">
+      <h2 className="settings-group__title">{title}</h2>
+      <div className="settings-group__body">{children}</div>
+    </section>
   );
 }
 

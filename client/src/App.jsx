@@ -19,6 +19,7 @@ import {
   importIntoRepo,
 } from './scriptsStore.js';
 import { DEFAULT_GROUP } from './constants.js';
+import { readSplit, writeSplit } from './uiStore.js';
 import DeleteGroupModal from './components/DeleteGroupModal.jsx';
 import RenameGroupModal from './components/RenameGroupModal.jsx';
 
@@ -125,23 +126,27 @@ export default function App() {
   // 主题：三态循环（system → dark → light → system），通过 <html data-theme> 切换
   const { theme, cycleTheme } = useTheme();
 
-  // 左右分栏比例（脚本列表宽度占比 %），支持拖动中线调节
-  const [split, setSplit] = useState(50);
+  // 左右分栏比例（脚本列表宽度占比 %），支持拖动中线调节；持久化到 localStorage，
+  // 重开程序后恢复上次位置（读不到则回退默认 50%，即正中）。
+  const [split, setSplit] = useState(() => readSplit() ?? 50);
   const [dragging, setDragging] = useState(false);
   const mainRef = useRef(null);
 
   const startDrag = (e) => {
     e.preventDefault();
     setDragging(true);
+    let lastPct = split; // 拖拽起点值，避免首帧跳变
     const move = (ev) => {
       const rect = mainRef.current?.getBoundingClientRect();
       if (!rect) return;
       let pct = ((ev.clientX - rect.left) / rect.width) * 100;
       pct = Math.min(80, Math.max(20, pct)); // 限制 20%~80%，避免某一栏被压没
+      lastPct = pct;
       setSplit(pct);
     };
     const up = () => {
       setDragging(false);
+      writeSplit(lastPct); // 拖完落盘，下次打开保持
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
     };

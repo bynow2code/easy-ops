@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { monaco } from '../monaco/setup';
 import { useEscapeKey } from '../hooks/useEscapeKey.js';
 
-const MAX_NAME = 20;
+const MAX_NAME = 10;
 
 // 读取当前生效主题，映射为 Monaco 内置主题名（跟随 <html data-theme>）
 function readMonacoTheme() {
@@ -14,7 +14,7 @@ function readMonacoTheme() {
  * 添加 / 编辑脚本：停靠在主区右侧的编辑器面板（非居中弹窗）。
  *  - 新增模式：script 为 null，表单清空。
  *  - 编辑模式：script 为已有脚本，名称/分组/内容预填，Save 时回传 id 由父级更新。
- *  - Script Name：必填，最长 20 字符
+ *  - Script Name：必填，最长 10 字符
  *  - Group：必填，从现有分组下拉选择（编辑时若原分组已不存在也保留可选项）
  *  - Shell：可选解释器；默认选中当前激活的 shell，下拉仅列出检测/自定义到的真实 shell
  *  - Script Content：monaco-editor（shell 语法高亮 + 代码提示），占满面板剩余高度
