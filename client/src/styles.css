@@ -206,13 +206,20 @@ body {
 }
 
 /* 右栏容器：执行面板（普通流，始终挂载）与编辑器（absolute 浮层）同处此区域。
-   执行面板不被卸载，编辑脚本时 xterm 输出得以保留。 */
+   执行面板不被卸载，编辑脚本时 xterm 输出得以保留。
+   关键：right-region 自身必须 overflow:hidden，硬裁剪所有子元素的滚动条 / 溢出——
+   否则 exec 面板里的 .exec-list 原生滚动条、xterm 自带 .scrollbar（position:absolute）
+   可能越出右栏边界，跨过 v-splitter "透过"到左侧脚本列表/编辑器边界，
+   出现"输出窗口有滚动条 → 脚本编辑页冒出一个滚动条"的 bleed 现象。
+   .editor-panel 虽以 inset:0 不透明覆盖在 exec 之上做"软保险"，
+   但 overflow:hidden 才是真正的硬边界——两者并存才稳。 */
 .right-region {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
   position: relative;
+  overflow: hidden;
 }
 .right-region > .panel {
   flex: 1 1 auto;
@@ -371,7 +378,8 @@ body {
 
 .script-group__cols {
   display: grid;
-  grid-template-columns: 22px 22px minmax(0, 1fr) 180px;
+  /* 4 列：勾选 22 + 名称 1fr + 操作 180。无独立拖把列。 */
+  grid-template-columns: 22px minmax(0, 1fr) 180px;
   gap: 8px;
   align-items: center;
   color: var(--text-faint);
@@ -393,18 +401,7 @@ body {
   background: rgba(37, 99, 235, 0.06);
 }
 
-/* 分组拖拽排序：抓手图标 + 拖拽态反馈 */
-.script-group__grip {
-  flex: 0 0 auto;
-  color: var(--text-faint);
-  cursor: grab;
-  opacity: 0.55;
-  margin-right: 2px;
-  transition: opacity 0.15s ease;
-}
-.script-group__grip:hover {
-  opacity: 1;
-}
+/* 拖拽排序：分组头整列可拖（去掉独立拖把），光标给 grab 提示；无专属抓手图标。 */
 .script-group__head {
   cursor: grab;
 }
@@ -421,11 +418,16 @@ body {
 .script-row {
   position: relative; /* 插入指示线（::before/::after）定位锚点 */
   display: grid;
-  grid-template-columns: 22px 22px minmax(0, 1fr) 180px;
+  /* 3 列：勾选 22 + 名称 1fr + 操作 180。整行可拖（draggable=true），无独立拖把列。 */
+  grid-template-columns: 22px minmax(0, 1fr) 180px;
   gap: 8px;
   align-items: center;
   padding: 6px 4px;
   border-bottom: 1px solid var(--border-row);
+  cursor: grab;
+}
+.script-row:active {
+  cursor: grabbing;
 }
 .script-row:hover {
   background: #fbfcfd;
@@ -451,17 +453,6 @@ body {
 }
 .script-row.is-drop-after::after {
   bottom: -1px;
-}
-.script-row__drag:active {
-  cursor: grabbing;
-}
-
-.script-row__drag {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #cbd5e1;
-  cursor: grab;
 }
 .script-row__name {
   font-weight: 500;

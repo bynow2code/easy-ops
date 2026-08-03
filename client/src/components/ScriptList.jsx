@@ -185,23 +185,6 @@ export default function ScriptList({
               // 拖拽结束时（无论是否成功 drop）统一清理拖拽态，避免状态泄漏导致分组永久变灰
               onDragEnd={() => handleReorderEnd()}
             >
-              <svg
-                className="script-group__grip"
-                viewBox="0 0 10 16"
-                width="10"
-                height="16"
-                aria-hidden="true"
-                title="Drag to reorder"
-              >
-                  <g fill="currentColor">
-                    <circle cx="2" cy="3" r="1.2" />
-                    <circle cx="7" cy="3" r="1.2" />
-                    <circle cx="2" cy="8" r="1.2" />
-                    <circle cx="7" cy="8" r="1.2" />
-                    <circle cx="2" cy="13" r="1.2" />
-                    <circle cx="7" cy="13" r="1.2" />
-                  </g>
-                </svg>
               <button
                 type="button"
                 className="script-group__toggle"

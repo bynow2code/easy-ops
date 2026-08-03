@@ -29,9 +29,20 @@ export function filterSentinelChunk(data, token, buf) {
   const out = [];
   let detected = false;
   for (const line of parts) {
-    if (line.includes(token)) {
+    // 哨兵回显行（用户在 PS1 第二行 $ 后键入的 echo 命令）包含 SENTINEL_HINT：
+    //   这一行的"前缀"是 shell 的 PS1 第二行内容（典型为 "$ "），后半段才是用户键入的
+    //   echo 命令。若整行 drop，前缀里的 PS1 第二行（"$ "）会一起消失 → 第一个 PS1
+    //   显示残缺。故精细化处理：保留 SENTINEL_HINT 之前的前缀 + 换行，丢弃 echo 命令。
+    if (line.includes(SENTINEL_HINT)) {
+      const prefix = line.slice(0, line.indexOf(SENTINEL_HINT));
+      out.push(prefix + '\n');
       detected = true;
-      continue; // 丢弃哨兵行（回显命令或 echo 输出），保持终端干净
+      continue;
+    }
+    if (line.includes(token)) {
+      // 哨兵 echo 输出行：整行丢弃（含 echo 输出 + 行尾换行）。
+      detected = true;
+      continue;
     }
     out.push(line + '\n');
   }
@@ -39,13 +50,29 @@ export function filterSentinelChunk(data, token, buf) {
   if (tail.length > 0) {
     // 仅当尾行疑似哨兵片段时才持到下一 chunk 重组；否则立即写出，
     // 避免延迟普通输出/交互回显（如脚本结束后的提示符）。
+    const sentinelHintIdx = tail.indexOf(SENTINEL_HINT);
+    // tail 形如 "user@host:~$ echo "（PS1 第二行 + echo 命令前几字符）也被识别为
+    // 哨兵片段早期——避免 chunk 边界刚好在 `echo "` 后时丢失 PS1 前缀。
+    // 长度上限 100 是哨兵 echo 命令总长度的安全上界（echo "EASYOPS_DONE_xxx" ≈ 6+1+34+1 ≈ 42
+    // 字符；前缀 + 6 字符足以判定）；超过则认为是普通长行回显，不持起。
+    const echoIdx = sentinelHintIdx >= 0 ? sentinelHintIdx : tail.indexOf('echo "');
     const looksSentinel =
       tail.includes(token) ||
       tail.includes(SENTINEL_HINT) ||
       isPrefixOf(tail, echoLine) ||
-      isPrefixOf(tail, token);
-    if (looksSentinel) nextBuf = tail;
-    else out.push(tail);
+      isPrefixOf(tail, token) ||
+      (echoIdx >= 0 && tail.length < 100);
+    if (looksSentinel && echoIdx > 0) {
+      // tail 是"PS1 第二行 + echo 命令片段"的拼接：把已能确认的 PS1 前缀立即写出，
+      // 仅 echo 命令片段（从 echoIdx 起）持到 buf 等重组。
+      // 后续 chunk 拼齐 echo 命令后整行 drop，PS1 前缀不再重复补出。
+      out.push(tail.slice(0, echoIdx) + '\n');
+      nextBuf = tail.slice(echoIdx);
+    } else if (looksSentinel) {
+      nextBuf = tail;
+    } else {
+      out.push(tail);
+    }
   }
   return { text: out.join(''), buf: nextBuf, detected };
 }

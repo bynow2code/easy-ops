@@ -62,16 +62,8 @@ export const IconStop = (p) => (
   </svg>
 );
 
-export const IconDrag = (p) => (
-  <svg {...base} {...p} strokeWidth="1.5">
-    <circle cx="9" cy="6" r="1" />
-    <circle cx="9" cy="12" r="1" />
-    <circle cx="9" cy="18" r="1" />
-    <circle cx="15" cy="6" r="1" />
-    <circle cx="15" cy="12" r="1" />
-    <circle cx="15" cy="18" r="1" />
-  </svg>
-);
+// 拖动把手：已统一为"整行/整个分组头都可拖"，不再使用独立抓手图标。
+// 该 IconDrag 组件被移除以保持代码清洁（无引用即删）。
 
 // 主题切换图标：sun=light, moon=dark, contrast=follow system
 export const IconSun = (p) => (

@@ -120,7 +120,8 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
     });
   });
 
-  // 把脚本内容作为首条输入（像在终端里粘贴/敲下这段）；空内容则直接给干净交互 shell
+  // 把脚本内容作为首条输入（像在终端里粘贴/敲下这段）；空内容则直接给干净交互 shell。
+  // 尾巴的 \n 用来"提交"这段输入；shell 看到脚本末尾的换行后开始执行并最终输出 PS1。
   if (content) {
     try {
       term.write(content + '\n');
@@ -129,11 +130,15 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
     }
   }
 
-  // 完成探测哨兵：脚本首条输入之后写一行唯一 marker；渲染层在输出流里识别该 token
-  // 即判定"脚本已结束"（shell 仍常驻、可继续交互）。marker 命令会被终端回显，
-  // 渲染层会连同其输出一并剔除，终端保持干净。
+  // 完成探测哨兵：脚本首条输入被 shell 执行完毕并打印 PS1 之后，**直接**写一行
+  // 唯一 marker 让 shell 在 PS1 第二行（`$ ` 之后）回显并执行。注意：不要在前面
+  // 再多写一个 `\n` —— 那会让 shell 误以为用户提交了一行空输入，从而在脚本结束
+  // 的 PS1 之外**额外**输出一遍 PS1 + 一个空行，终端上就会出现"多余换行 + 多余
+  // 提示符"。渲染层识别 token 即翻 Completed，并连同回显 + echo 输出一起剔除，
+  // 终端上只剩"脚本输出 → PS1（脚本结束）→ PS1（哨兵后）"两个提示符，中间不再
+  // 多出空行/提示符。
   try {
-    term.write('\n' + doneMarker + '\n');
+    term.write(doneMarker + '\n');
   } catch {
     /* 会话异常时写入可能抛错，忽略 */
   }

@@ -1,13 +1,9 @@
-import { useState } from 'react';
-import { IconDrag } from './Icons.jsx';
-
 /**
- * 单个脚本行（拖拽柄 · 勾选 · 名称 · 操作四件套）
- * 拖动行为：
- *  - 仅在按下左侧拖拽柄（script-row__drag）后才允许拖动整行（armed 模式），
- *    避免与勾选/按钮的点击冲突；
- *  - 拖动整行作为拖拽影像：拖到同组其他行上半区=插到其前、下半区=插到其后 → 重排；
- *    拖到其他分组 → 换组（dropEdge 指示当前将插入的上/下位置）。
+ * 单个脚本行（勾选 · 名称 · 操作）。
+ * 整行可拖动：原生 HTML5 DnD，draggable={true}。
+ * 拖到同组其他行上半区=插到其前、下半区=插到其后 → 重排；
+ * 拖到其他分组 → 换组（dropEdge 指示当前将插入的上/下位置）。
+ * 没有专门的"拖把"区域，整行都能作为拖拽源。
  */
 export default function ScriptItem({
   script,
@@ -23,33 +19,17 @@ export default function ScriptItem({
   onReorderOver,
   onReorderDrop,
 }) {
-  const [armed, setArmed] = useState(false);
-
   return (
     <div
       className={`script-row ${dragging ? 'is-dragging' : ''} ${
         dropEdge === 'before' ? 'is-drop-before' : ''
       } ${dropEdge === 'after' ? 'is-drop-after' : ''}`}
-      draggable={armed}
-      onDragStart={(e) => {
-        onReorderStart(script, e);
-      }}
-      onDragEnd={() => {
-        setArmed(false);
-        onReorderEnd();
-      }}
-      onMouseUp={() => setArmed(false)}
+      draggable
+      onDragStart={(e) => onReorderStart(script, e)}
+      onDragEnd={() => onReorderEnd()}
       onDragOver={(e) => onReorderOver(script, e)}
       onDrop={(e) => onReorderDrop(script, e)}
     >
-      <div
-        className="script-row__drag"
-        title="Drag to reorder, or drop onto another group to move"
-        onMouseDown={() => setArmed(true)}
-        onMouseUp={() => setArmed(false)}
-      >
-        <IconDrag />
-      </div>
       <div className="script-row__check">
         <input
           type="checkbox"
