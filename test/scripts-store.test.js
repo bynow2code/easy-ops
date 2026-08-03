@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import store from '../server/scripts-store.js';
 
-const { DEFAULT_GROUP, normalize, applyRemoveGroup, applyRenameGroup, applyImport } = store;
+const { DEFAULT_GROUP, GROUP_NAME_MAX, SCRIPT_NAME_MIN, SCRIPT_NAME_MAX, normalize, applyRemoveGroup, applyRenameGroup, applyReorderGroups, applyImport, addGroup, upsertScript } = store;
 
 describe('scripts-store: backward compatibility', () => {
   it('归一化旧版裸数组（无 groups、无 group 字段）→ 归入默认分组', () => {
@@ -18,11 +18,14 @@ describe('scripts-store: backward compatibility', () => {
     expect(repo.scripts[0].content).toBe('#!/bin/bash\necho hi');
   });
 
-  it('旧版数组带 group 但无 groups 列表 → 自动补全分组', () => {
+  it('旧版数组带 group 但无 groups 列表 → 不信任 group，强制归 Default', () => {
     const raw = [{ id: '1', name: 'Deploy', content: 'ls', group: 'backend' }];
     const repo = normalize(raw);
-    expect(repo.groups).toContain('backend');
-    expect(repo.scripts[0].group).toBe('backend');
+    // 外部/旧版配置（裸数组、缺 groups 列表）视为只有 name+content 可靠，
+    // 其中的 group 字段不信任，脚本强制归入默认分组，多余字段不污染分组列表。
+    expect(repo.groups).not.toContain('backend');
+    expect(repo.groups).toContain(DEFAULT_GROUP);
+    expect(repo.scripts[0].group).toBe(DEFAULT_GROUP);
   });
 
   it('包装格式 {scripts, groups, defaultGroup} 原样保留', () => {
@@ -109,6 +112,100 @@ describe('scripts-store: group rename', () => {
   });
 });
 
+describe('scripts-store: group name length (1-10)', () => {
+  const base = {
+    scripts: [{ id: 'a', name: 'A', group: 'backend', content: 'x' }],
+    groups: ['backend', 'frontend'],
+    defaultGroup: DEFAULT_GROUP,
+  };
+
+  it('applyRenameGroup：边界 1 字符合法', () => {
+    const next = applyRenameGroup(base, 'backend', 'a');
+    expect(next).not.toBe(base);
+    expect(next.groups).toContain('a');
+  });
+
+  it(`applyRenameGroup：边界 ${GROUP_NAME_MAX} 字符合法`, () => {
+    const ok = 'x'.repeat(GROUP_NAME_MAX);
+    const next = applyRenameGroup(base, 'backend', ok);
+    expect(next).not.toBe(base);
+    expect(next.groups).toContain(ok);
+  });
+
+  it(`applyRenameGroup：${GROUP_NAME_MAX + 1} 字符超长 → 拒绝（返回原 repo）`, () => {
+    expect(applyRenameGroup(base, 'backend', 'x'.repeat(GROUP_NAME_MAX + 1))).toBe(base);
+  });
+
+  it('addGroup：空 / 空白 / 超长 → 返回 null（提前返回，不写盘）', () => {
+    expect(addGroup('')).toBe(null);
+    expect(addGroup('   ')).toBe(null);
+    expect(addGroup('x'.repeat(GROUP_NAME_MAX + 1))).toBe(null);
+  });
+});
+
+describe('scripts-store: script name length (1-20)', () => {
+  it('upsertScript：空白/空 name → 返回 null（不写盘）', () => {
+    expect(upsertScript({ name: '   ', group: DEFAULT_GROUP, content: 'x' })).toBe(null);
+    expect(upsertScript({ name: '', group: DEFAULT_GROUP, content: 'x' })).toBe(null);
+  });
+
+  it(`upsertScript：超长（>${SCRIPT_NAME_MAX}）name → 返回 null（不写盘）`, () => {
+    expect(upsertScript({ name: 'x'.repeat(SCRIPT_NAME_MAX + 1), group: DEFAULT_GROUP, content: 'x' })).toBe(null);
+  });
+
+  it('边界常量与需求一致（1-20）', () => {
+    expect(SCRIPT_NAME_MIN).toBe(1);
+    expect(SCRIPT_NAME_MAX).toBe(20);
+  });
+});
+
+describe('scripts-store: group reorder', () => {
+  const base = {
+    scripts: [
+      { id: 'a', name: 'A', group: 'backend', content: 'x' },
+      { id: 'b', name: 'B', group: 'frontend', content: 'y' },
+    ],
+    groups: ['backend', 'frontend'],
+    defaultGroup: DEFAULT_GROUP,
+  };
+  const full = { ...base, groups: [DEFAULT_GROUP, 'backend', 'frontend'] };
+
+  it('合法重排 → 原样采用传入顺序（默认分组可落任意位置）', () => {
+    const next = applyReorderGroups(full, [DEFAULT_GROUP, 'frontend', 'backend']);
+    expect(next.groups).toEqual([DEFAULT_GROUP, 'frontend', 'backend']);
+    expect(next.scripts).toHaveLength(2); // 脚本不受影响
+  });
+
+  it('默认分组可移动到非首位', () => {
+    // 旧实现强制默认分组置顶；现改为尊重用户拖拽结果：default 落在中间仍被原样保留。
+    const next = applyReorderGroups(full, ['backend', DEFAULT_GROUP, 'frontend']);
+    expect(next.groups).toEqual(['backend', DEFAULT_GROUP, 'frontend']);
+  });
+
+  it('漏带默认分组 → 集合不完整，拒绝（返回 null）', () => {
+    expect(applyReorderGroups(full, ['frontend', 'backend'])).toBe(null);
+  });
+
+  it('集合不一致（缺项/多余项）→ 拒绝（返回 null）', () => {
+    expect(applyReorderGroups(full, [DEFAULT_GROUP, 'backend'])).toBe(null);
+    expect(applyReorderGroups(full, [DEFAULT_GROUP, 'backend', 'frontend', 'extra'])).toBe(null);
+  });
+
+  it('含重复项 → 拒绝（返回 null）', () => {
+    expect(applyReorderGroups(full, [DEFAULT_GROUP, 'backend', 'backend', 'frontend'])).toBe(null);
+  });
+
+  it('含非字符串 / 空串 → 拒绝（返回 null）', () => {
+    expect(applyReorderGroups(full, [DEFAULT_GROUP, 'backend', ''])).toBe(null);
+    expect(applyReorderGroups(full, [DEFAULT_GROUP, 'backend', 123])).toBe(null);
+  });
+
+  it('非数组入参 → 拒绝（返回 null）', () => {
+    expect(applyReorderGroups(full, null)).toBe(null);
+    expect(applyReorderGroups(full, 'backend')).toBe(null);
+  });
+});
+
 describe('scripts-store: import', () => {
   const base = {
     scripts: [{ id: 'existing', name: 'Keep', group: DEFAULT_GROUP, content: 'old' }],
@@ -127,5 +224,15 @@ describe('scripts-store: import', () => {
     expect(next.scripts.some((s) => s.name === 'NoId')).toBe(true);
     // 无 name 的条目被忽略
     expect(next.scripts.every((s) => s.name)).toBe(true);
+  });
+
+  it('裸数组（非包装 {scripts}）也能导入并归 Default', () => {
+    const next = applyImport(base, [
+      { name: 'A', content: 'echo a' },
+      { name: 'B', content: 'echo b' },
+    ]);
+    const imported = next.scripts.filter((s) => s.name === 'A' || s.name === 'B');
+    expect(imported).toHaveLength(2);
+    expect(imported.every((s) => s.group === DEFAULT_GROUP)).toBe(true);
   });
 });

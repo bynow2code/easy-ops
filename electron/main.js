@@ -179,6 +179,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 880,
+    autoHideMenuBar: true, // 隐藏原生菜单栏（Windows/macOS 均生效；按 Alt 可临时唤出）
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -197,6 +198,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // 开发模式：强制与打包应用共享同一份 userData（%APPDATA%\EasyOps）。
+  // 否则 dev 下 app.name 取 package.json 的 name 字段('easy-ops')，会把配置写到
+  // %APPDATA%\easy-ops，导致读不到打包应用创建的 EasyOps\scripts.json / shell-config.json。
+  if (!app.isPackaged) {
+    app.setPath('userData', path.join(app.getPath('appData'), 'EasyOps'));
+  }
+
   // 启动内嵌后端（Express）：先注入 userData / 日志目录，使其与主进程共享同一份
   // shell-config.json，随后装入 server/index.js 即在主进程内监听，前端即可通过
   // HTTP(端口来自 port.txt) 连接后端。这是"前端连接后端"的落地点。

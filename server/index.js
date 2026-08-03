@@ -10,6 +10,24 @@
 
 const express = require('express');
 const fs = require('fs');
+
+// 未注入 userData（独立 server / 纯前端 dev：npm run server:dev）时，回退到与 Electron
+// 相同的 userData 约定（productName = EasyOps），确保读写的 scripts.json / shell-config.json
+// 与打包应用 / electron:dev 是同一份；否则会回退到错误的 .easy-ops 目录而读不到真实配置。
+// 注：server/config.js 现已改为惰性求值（getter），故 env 设置时机不再硬性卡在 require 之前；
+// 此处仍在 require('./config') 之前设置，仅作清晰的习惯保留。
+if (!process.env.EASY_OPS_USER_DATA) {
+  const os = require('os');
+  const path = require('path');
+  const base =
+    process.platform === 'win32'
+      ? process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')
+      : process.platform === 'darwin'
+        ? path.join(os.homedir(), 'Library', 'Application Support')
+        : path.join(os.homedir(), '.config');
+  process.env.EASY_OPS_USER_DATA = path.join(base, 'EasyOps');
+}
+
 const { createLogger } = require('../shared/logger');
 const config = require('./config');
 

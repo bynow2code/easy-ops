@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { monaco } from '../monaco/setup';
 import { useEscapeKey } from '../hooks/useEscapeKey.js';
 
-const MAX_NAME = 10;
+const MAX_NAME = 20;
 
 // 读取当前生效主题，映射为 Monaco 内置主题名（跟随 <html data-theme>）
 function readMonacoTheme() {

@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey.js';
 
 const MIN_LEN = 1;
-const MAX_LEN = 6;
+const MAX_LEN = 10; // 须与后端 scripts-store 的 GROUP_NAME_MAX 一致
 
 /**
  * 添加 Group 模态框（静态界面，暂不接后端）。
- * 校验：Group name 至少 1 个字符、至多 6 个字符，且不能与已有分组重名。
+ * 校验：Group name 至少 1 个字符、至多 10 个字符，且不能与已有分组重名。
  *
  * 纯函数式 UI：受控输入 + 派生校验状态，父级通过 onSave(name) 拿到合法名称。
  */

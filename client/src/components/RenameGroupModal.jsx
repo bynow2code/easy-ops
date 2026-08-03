@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey.js';
 
 const MIN_LEN = 1;
-const MAX_LEN = 6;
+const MAX_LEN = 10; // 须与后端 scripts-store 的 GROUP_NAME_MAX 一致
 
 /**
- * 重命名分组模态框（纯 UI，与 AddGroupModal 同规则：1–6 字符、不与现有分组重名）。
+ * 重命名分组模态框（纯 UI，与 AddGroupModal 同规则：1–10 字符、不与现有分组重名）。
  *  - defaultGroup ：传入当前默认分组名；该组重命名时允许「改成自身」（视为无变化）。
  *  - existing     ：除「当前分组本身」外的其他分组名，用于重名校验。
  * 父级通过 onConfirm(newName) 拿到合法新名。

@@ -25,6 +25,13 @@ export const scriptsApi = {
       method: 'PATCH',
       body: JSON.stringify({ oldName, newName }),
     }),
+  // 重排分组顺序：PATCH /api/groups/reorder -> { ok, scripts, groups, defaultGroup }
+  //   order 为当前全部分组名的全新顺序（默认分组将锁定置顶）。
+  reorderGroups: (order) =>
+    request('/groups/reorder', {
+      method: 'PATCH',
+      body: JSON.stringify({ order }),
+    }),
   // 批量导入脚本（只需 name + content）：POST /api/scripts/import
   //   -> { ok, scripts, groups, defaultGroup }
   importScripts: (scripts) =>

@@ -6,12 +6,14 @@ import { IconDrag } from './Icons.jsx';
  * 拖动行为：
  *  - 仅在按下左侧拖拽柄（script-row__drag）后才允许拖动整行（armed 模式），
  *    避免与勾选/按钮的点击冲突；
- *  - 拖动整行作为拖拽影像，拖到同组其他行前 → 重排；拖到其他分组 → 换组。
+ *  - 拖动整行作为拖拽影像：拖到同组其他行上半区=插到其前、下半区=插到其后 → 重排；
+ *    拖到其他分组 → 换组（dropEdge 指示当前将插入的上/下位置）。
  */
 export default function ScriptItem({
   script,
   selected,
   dragging,
+  dropEdge = null, // 'before' | 'after' | null：拖拽悬停时在本行上/下显示插入指示线
   onToggle,
   onExecute,
   onEdit,
@@ -25,7 +27,9 @@ export default function ScriptItem({
 
   return (
     <div
-      className={`script-row ${dragging ? 'is-dragging' : ''}`}
+      className={`script-row ${dragging ? 'is-dragging' : ''} ${
+        dropEdge === 'before' ? 'is-drop-before' : ''
+      } ${dropEdge === 'after' ? 'is-drop-after' : ''}`}
       draggable={armed}
       onDragStart={(e) => {
         onReorderStart(script, e);

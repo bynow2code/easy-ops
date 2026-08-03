@@ -16,6 +16,7 @@ import {
   writeFrontendScripts,
   removeGroupFromRepo,
   renameGroupInRepo,
+  reorderGroupsInRepo,
   importIntoRepo,
 } from './scriptsStore.js';
 import { DEFAULT_GROUP } from './constants.js';
@@ -140,7 +141,11 @@ export default function App() {
       .open({ execId, scriptId: script.id, content: script.content || '', shell: shellPath })
       .then((res) => {
         setExecutions((prev) =>
-          prev.map((e) => (e.id === execId ? { ...e, sessionId: res?.sessionId || null } : e)),
+          prev.map((e) =>
+            e.id === execId
+              ? { ...e, sessionId: res?.sessionId || null, doneToken: res?.doneToken || null }
+              : e,
+          ),
         );
       })
       .catch((err) => {
@@ -444,6 +449,22 @@ export default function App() {
     setRenameGroupOpen(true);
   };
 
+  // 分组拖拽排序：乐观更新内存顺序，再持久化。优先后端 /api/groups/reorder；
+  // 后端不可达时在前端 localStorage 复刻同一变换（默认分组锁定首位）。
+  const handleReorderGroups = (newOrder) => {
+    setGroups(newOrder);
+    scriptsApi.reorderGroups(newOrder)
+      .then((res) => {
+        if (res && Array.isArray(res.groups)) setGroups(res.groups);
+      })
+      .catch(() =>
+        persistLocal((localRepo) => {
+          const next = reorderGroupsInRepo(localRepo, newOrder);
+          if (next) localRepo.groups = next.groups;
+        }),
+      );
+  };
+
   const handleConfirmRenameGroup = (newName) => {
     const oldName = renamingGroup;
     setRenameGroupOpen(false);
@@ -639,6 +660,7 @@ export default function App() {
           onEdit={handleEdit}
           onRemove={handleRemove}
           onMoveScript={handleMoveScript}
+          onReorderGroups={handleReorderGroups}
           onRenameGroup={handleRenameGroup}
           onDeleteGroup={handleDeleteGroup}
         />

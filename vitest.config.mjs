@@ -5,6 +5,12 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  // 强制 react / react-dom 单一实例：项目里 react 装在 client/node_modules、
+  // react-dom 装在根 node_modules，Vitest 默认会各解析一份 → 经典
+  // "Invalid hook call / React is null" 误报。dedupe + 内联依赖合并为同一份。
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   test: {
     environment: 'jsdom',
     globals: true,
@@ -15,5 +21,10 @@ export default defineConfig({
       'test/**/*.{test,spec}.js',
     ],
     css: false,
+    server: {
+      deps: {
+        inline: ['react', 'react-dom', 'react-dom/client'],
+      },
+    },
   },
 });

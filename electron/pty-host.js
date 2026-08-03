@@ -19,6 +19,7 @@
  */
 
 const os = require('os');
+const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const pty = require('node-pty');
 const { createLogger } = require('../shared/logger');
@@ -99,6 +100,12 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
   sessions.set(sessionId, { term, execId, scriptId });
   execToSession.set(execId, sessionId);
 
+  // 完成探测哨兵：脚本首条输入之后写一行唯一 marker；渲染层在输出流里识别该 token
+  // 即判定"脚本已结束"（shell 仍常驻、可继续交互）。marker 命令会被终端回显，
+  // 渲染层会连同其输出一并剔除，终端保持干净。token 随机且带前缀，不会与用户输出重合。
+  const doneToken = 'EASYOPS_DONE_' + crypto.randomBytes(16).toString('hex');
+  const doneMarker = 'echo ' + JSON.stringify(doneToken);
+
   term.onData((data) => bus.emit('data', { execId, data }));
   term.onExit(({ exitCode, signal }) => {
     ctxLogger.info('PTY 会话结束', { sessionId, exitCode, signal });
@@ -122,8 +129,17 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
     }
   }
 
+  // 完成探测哨兵：脚本首条输入之后写一行唯一 marker；渲染层在输出流里识别该 token
+  // 即判定"脚本已结束"（shell 仍常驻、可继续交互）。marker 命令会被终端回显，
+  // 渲染层会连同其输出一并剔除，终端保持干净。
+  try {
+    term.write('\n' + doneMarker + '\n');
+  } catch {
+    /* 会话异常时写入可能抛错，忽略 */
+  }
+
   ctxLogger.info('PTY 会话已创建（交互式）', { sessionId, interpreter });
-  return { sessionId, interpreter, args: [] };
+  return { sessionId, doneToken, doneMarker, interpreter, args: [] };
 }
 
 function write(sessionId, data) {

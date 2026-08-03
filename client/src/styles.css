@@ -137,6 +137,15 @@ body {
   background: var(--bg-muted);
   color: #374151;
 }
+.icon-btn.is-active {
+  background: var(--c-blue);
+  color: #fff;
+}
+.icon-btn.is-active:hover {
+  background: var(--c-blue);
+  color: #fff;
+  opacity: 0.88;
+}
 
 /* ------------ Tooltip (custom, 150ms; shown below the icon) ------------ */
 .tooltip-wrap {
@@ -254,8 +263,31 @@ body {
 } /* 左右内距对齐滚动条宽度(8px)，上14px 下10px */
 
 /* ------------ Script List ------------ */
+.script-group {
+  position: relative; /* 插入指示线（::before/::after）定位锚点 */
+}
 .script-group + .script-group {
   margin-top: 18px;
+}
+
+/* 拖拽排序：分组插入指示线（蓝色细线，before=顶部 / after=底部）
+   不占布局空间，避免列表抖动。仅分组拖拽（is-drop-*）时显示。 */
+.script-group.is-drop-before::before,
+.script-group.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  background: var(--c-blue);
+  border-radius: 2px;
+  z-index: 3;
+}
+.script-group.is-drop-before::before {
+  top: -2px;
+}
+.script-group.is-drop-after::after {
+  bottom: -2px;
 }
 
 .script-group__head {
@@ -361,7 +393,33 @@ body {
   background: rgba(37, 99, 235, 0.06);
 }
 
+/* 分组拖拽排序：抓手图标 + 拖拽态反馈 */
+.script-group__grip {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0.55;
+  margin-right: 2px;
+  transition: opacity 0.15s ease;
+}
+.script-group__grip:hover {
+  opacity: 1;
+}
+.script-group__head {
+  cursor: grab;
+}
+.script-group__head:active {
+  cursor: grabbing;
+}
+.script-group.is-group-dragging {
+  opacity: 0.5;
+}
+.script-group.is-group-dragging .script-group__head {
+  cursor: grabbing;
+}
+
 .script-row {
+  position: relative; /* 插入指示线（::before/::after）定位锚点 */
   display: grid;
   grid-template-columns: 22px 22px minmax(0, 1fr) 180px;
   gap: 8px;
@@ -374,6 +432,25 @@ body {
 }
 .script-row.is-dragging {
   opacity: 0.45;
+}
+
+/* 拖拽排序：脚本行插入指示线（蓝色细线，before=顶部 / after=底部），不占布局空间 */
+.script-row.is-drop-before::before,
+.script-row.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  background: var(--c-blue);
+  border-radius: 2px;
+  z-index: 2;
+}
+.script-row.is-drop-before::before {
+  top: -1px;
+}
+.script-row.is-drop-after::after {
+  bottom: -1px;
 }
 .script-row__drag:active {
   cursor: grabbing;
@@ -606,6 +683,14 @@ body {
 .exec-card__status--err .exec-card__status-dot {
   background: #dc2626;
 }
+.exec-card__status--complete {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+.exec-card__status--complete .exec-card__status-dot {
+  background: #2563eb;
+}
 @keyframes exec-status-pulse {
   0%,
   100% {
@@ -627,6 +712,25 @@ body {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+}
+
+/* 脚本已结束（Completed）时的"结束会话"按钮：会话仍常驻、终端可继续交互，
+   点它才真正 kill 整个 PTY 会话。复用 close 的尺寸与形态，仅配色略带提示。 */
+.exec-card__end {
+  height: 22px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.exec-card__end:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
 }
 .exec-card__close:hover {
   background: var(--bg-muted);
@@ -1020,6 +1124,14 @@ input[type='checkbox'] {
 }
 :root[data-theme='dark'] .exec-card__status--err .exec-card__status-dot {
   background: #f87171;
+}
+:root[data-theme='dark'] .exec-card__status--complete {
+  color: #60a5fa;
+  border-color: #1e3a5f;
+  background: #0e1f33;
+}
+:root[data-theme='dark'] .exec-card__status--complete .exec-card__status-dot {
+  background: #60a5fa;
 }
 
 :root[data-theme='dark'] .pill--white {

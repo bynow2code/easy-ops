@@ -15,6 +15,7 @@
  *                                          批量导入（只需 name+content，归入默认分组）
  *   POST   /api/groups                 { name }  新增分组（去重）
  *   PATCH  /api/groups                 { oldName, newName }  重命名分组
+ *   PATCH  /api/groups/reorder         { order: string[] }  重排分组顺序（含默认分组，可落任意位置）
  *   DELETE /api/groups                 { name, deleteScripts? }
  *                                          移除分组；默认分组不可删；
  *                                          deleteScripts=false（默认）其下脚本挪到默认分组，
@@ -52,6 +53,12 @@ function registerScriptsRoutes(app) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const group = typeof body.group === 'string' ? body.group.trim() : '';
     if (!name) return badRequest(res, 'Script name is required');
+    if (name.length < store.SCRIPT_NAME_MIN || name.length > store.SCRIPT_NAME_MAX) {
+      return badRequest(
+        res,
+        `Script name must be ${store.SCRIPT_NAME_MIN}-${store.SCRIPT_NAME_MAX} characters`,
+      );
+    }
     if (!group) return badRequest(res, 'Group is required');
 
     const saved = store.upsertScript({
@@ -74,11 +81,12 @@ function registerScriptsRoutes(app) {
     res.json({ ok: true, id });
   });
 
-  // 批量导入脚本（只需 name + content）
+  // 批量导入脚本（只需 name + content）：兼容裸数组 [{name,content,...}] 与包装 {scripts:[...]}
   app.post('/api/scripts/import', (req, res) => {
     const body = req.body || {};
-    if (!Array.isArray(body.scripts)) return badRequest(res, 'scripts array is required');
-    const repo = store.importScripts(body.scripts);
+    const incoming = Array.isArray(body) ? body : body.scripts;
+    if (!Array.isArray(incoming)) return badRequest(res, 'scripts array is required');
+    const repo = store.importScripts(incoming);
     replyRepo(res, repo);
   });
 
@@ -88,8 +96,15 @@ function registerScriptsRoutes(app) {
     if (typeof name !== 'string' || !name.trim()) {
       return badRequest(res, 'Group name is required');
     }
-    const groups = store.addGroup(name.trim());
-    if (!groups) return badRequest(res, 'Group name is required');
+    const trimmed = name.trim();
+    if (trimmed.length < store.GROUP_NAME_MIN || trimmed.length > store.GROUP_NAME_MAX) {
+      return badRequest(
+        res,
+        `Group name must be ${store.GROUP_NAME_MIN}-${store.GROUP_NAME_MAX} characters`,
+      );
+    }
+    const groups = store.addGroup(trimmed);
+    if (!groups) return badRequest(res, 'Group already exists');
     res.json({ ok: true, groups });
   });
 
@@ -102,10 +117,30 @@ function registerScriptsRoutes(app) {
     if (typeof newName !== 'string' || !newName.trim()) {
       return badRequest(res, 'newName is required');
     }
-    const repo = store.renameGroup(oldName, newName.trim());
+    const trimmedNew = newName.trim();
+    if (trimmedNew.length < store.GROUP_NAME_MIN || trimmedNew.length > store.GROUP_NAME_MAX) {
+      return badRequest(
+        res,
+        `Group name must be ${store.GROUP_NAME_MIN}-${store.GROUP_NAME_MAX} characters`,
+      );
+    }
+    const repo = store.renameGroup(oldName, trimmedNew);
     if (!repo) return badRequest(res, 'Cannot rename group (invalid or duplicate name)');
     // 注意：renameGroup 会同步该分组下所有脚本的 group 字段，故需把 scripts
     // 一并返回，否则前端拿不到更新后的脚本分组（重命名后脚本"消失"）。
+    replyRepo(res, repo);
+  });
+
+  // 重排分组顺序：PATCH /api/groups/reorder { order: string[] }
+  //   order 须为当前全部分组名（同集合、无重复），默认分组可落任意位置；
+  //   原样采用传入顺序。非法顺序（缺项/重复/含未知分组）→ 400，不写盘。
+  app.patch('/api/groups/reorder', (req, res) => {
+    const order = req.body && req.body.order;
+    if (!Array.isArray(order) || order.length === 0) {
+      return badRequest(res, 'order array is required');
+    }
+    const repo = store.reorderGroups(order);
+    if (!repo) return badRequest(res, 'Invalid group order');
     replyRepo(res, repo);
   });
 

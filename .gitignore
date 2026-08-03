@@ -12,6 +12,10 @@ scripts.json
 dist/
 dist-electron/
 
+# 临时产物（esbuild 检查/打包残留于 client/tmp，无源码引用，勿提交）
+client/tmp/
+client/dist/
+
 # 日志
 *.log
 

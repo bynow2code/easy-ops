@@ -45,7 +45,7 @@ jobs:
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: 24.18.1  # 锁定具体补丁版本：保证 CI（Win/macOS）与本地开发者 Node 完全一致，避免 24.x 漂移导致 node-pty / 原生模块重建行为差异
 
       - name: 同步版本号与 tag
         shell: pwsh
@@ -96,7 +96,7 @@ jobs:
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: 24.18.1  # 锁定具体补丁版本：保证 CI（Win/macOS）与本地开发者 Node 完全一致，避免 24.x 漂移导致 node-pty / 原生模块重建行为差异
 
       - name: 同步版本号与 tag
         run: |

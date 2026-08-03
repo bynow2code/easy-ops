@@ -96,13 +96,12 @@ export default function SettingsModal({ open, onClose }) {
     setTimeout(() => setFlash((f) => (f && f.text === text ? null : f)), 1800);
   };
 
-  // 把路径转成 shell 可直接粘贴的写法：除 a-zA-Z0-9 / . _ - : @ + , 之外的字符
-  // 用反斜杠前缀转义（POSIX shell 转义规则）。
-  // 例：/Users/x/Application Support/a.log -> /Users/x/Application\ Support/a.log
+  // 把路径中的空格转义（仅此一项），方便直接粘贴到终端/命令行使用。
+  // 例：C:\Users\x\Application Support\a.log -> C:\Users\x\Application\ Support/a.log
   const shellQuote = (p) => {
     const s = String(p ?? '');
     if (!s || s === '—') return s;
-    return s.replace(/([^a-zA-Z0-9/._\-:@+,])/g, '\\$1');
+    return s.replace(/ /g, '\\ ');
   };
 
   // 仅负责写入剪贴板，返回是否成功；成功反馈由各自按钮就地显示，
@@ -305,6 +304,7 @@ export default function SettingsModal({ open, onClose }) {
     ? shellState.shells.find((s) => s.path === shellState.activeShellPath)
     : shellState.shells[0];
   const scriptsConfig = appInfo?.paths?.scriptsConfig || '—';
+  const shellConfig = appInfo?.paths?.shellConfig || '—';
   const logFile = appInfo?.paths?.logFile || '—';
 
   return (
@@ -392,7 +392,7 @@ export default function SettingsModal({ open, onClose }) {
                       <li
                         key={s.path}
                         className={`settings-shell-card ${active ? 'is-active' : ''}`}
-                        onClick={() => !s.custom && onSetActive(s.path)}
+                        onClick={() => onSetActive(s.path)}
                         title={
                           s.custom
                             ? active
@@ -472,6 +472,13 @@ export default function SettingsModal({ open, onClose }) {
               <div className="settings-path-row">
                 <code className="settings-path">{shellQuote(scriptsConfig)}</code>
                 <CopyButton text={shellQuote(scriptsConfig)} onCopy={copy} />
+              </div>
+            </Section>
+
+            <Section label="Shell Config">
+              <div className="settings-path-row">
+                <code className="settings-path">{shellQuote(shellConfig)}</code>
+                <CopyButton text={shellQuote(shellConfig)} onCopy={copy} />
               </div>
             </Section>
 

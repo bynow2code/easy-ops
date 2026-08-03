@@ -97,6 +97,21 @@ export function importIntoRepo(repo, incoming) {
   return { scripts, groups: repo.groups || [], defaultGroup };
 }
 
+// 无后端时在前端本地复刻后端分组重排（与 server/scripts-store 的 applyReorderGroups 同源语义）。
+// 校验通过返回 {...repo, groups: 新顺序}，否则返回 null（拒绝，不写盘）。
+export function reorderGroupsInRepo(repo, orderedNames) {
+  if (!Array.isArray(orderedNames)) return null;
+  const names = orderedNames.map((n) => (typeof n === 'string' ? n : ''));
+  if (names.some((n) => !n)) return null; // 含非字符串 / 空串 → 拒绝（与后端同源）
+  const unique = [...new Set(names)];
+  if (unique.length !== names.length) return null; // 有重复 → 拒绝
+  const set = new Set(repo?.groups || []);
+  if (unique.length !== (repo?.groups || []).length) return null; // 集合大小不一致 → 拒绝
+  if (!unique.every((n) => set.has(n))) return null; // 含未知分组 → 拒绝
+  // 原样采用传入顺序（默认分组可落任意位置），与后端 applyReorderGroups 同源语义。
+  return { ...repo, groups: names };
+}
+
 export function readFrontendScripts() {
   return read();
 }

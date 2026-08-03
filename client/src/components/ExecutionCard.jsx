@@ -3,9 +3,10 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { IconRefresh, IconExpand, IconStop } from './Icons.jsx';
-import { resolveShellPath } from '../shellUtils.js';
+import { resolveDisplayShell } from '../shellUtils.js';
 import { mockOutputFor } from '../data/mockScripts.js';
 import { ptyClient } from '../ptyClient.js';
+import { filterSentinelChunk } from '../sentinelFilter.js';
 
 // Xterm 配色：跟随应用主题（dark / light），采用 VS Code 风格 ANSI 色板，
 // 保证深色 / 浅色下 ANSI 转义色都可读，不再写死黑底。
@@ -93,9 +94,16 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
   const usingXterm = exec.mode === 'pty' && ptyClient.available;
 
   // —— 运行状态自治：status / lines 由本卡自己维护，App 不再持有 ——
-  const [status, setStatus] = useState('running'); // running | exited
+  const [status, setStatus] = useState('running'); // running | completed | exited
   const [lines, setLines] = useState([]); // mock 模式的流式输出
   const stoppedRef = useRef(false); // mock 流停止标记（Stop 点击 / 卸载时置位）
+
+  // 完成探测：PTY 主机在脚本首条输入后写入唯一哨兵 token，渲染层识别即翻 Completed。
+  // 下列 ref 在 onData 回调里读取最新值，避免闭包陈旧。
+  const doneTokenRef = useRef(exec.doneToken || null); // 哨兵 token（每会话唯一）
+  const filterBufRef = useRef(''); // 跨 chunk 重组哨兵用的不完整尾行
+  const detectedRef = useRef(false); // 是否已识别哨兵（脚本结束）
+  const statusRef = useRef(status); // 回调里读最新 status
 
   // 订阅 PTY 退出事件：仅当与当前会话一致才翻 exited，忽略"重跑杀旧会话"的残留 exit
   useEffect(() => {
@@ -109,6 +117,17 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
     });
     return off;
   }, [exec.id]);
+
+  // 同步最新 doneToken 到 ref：startPtySession 异步返回后 exec.doneToken 才就位，
+  // 而 onData 回调闭包无法感知后续渲染，故用 ref 持有最新值。
+  useEffect(() => {
+    doneTokenRef.current = exec.doneToken || null;
+  }, [exec.doneToken]);
+
+  // 回调里读取最新 status，避免闭包陈旧导致 completed 误判/漏判
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   // mock 模式：模拟输出流自管。依赖 exec.sessionId（运行实例 id）——初次挂载与重跑
   // 都会触发新实例从而重启流；bootError 存在时直接显示错误并以 exited 结束。
@@ -193,8 +212,23 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
 
     const offData = ptyClient.onData(({ execId, data }) => {
       if (execId !== exec.id) return;
-      // 仅写入数据；是否跟随由 xterm 自然行为决定（见上方说明）。
-      term.write(data);
+      // 完成探测：识别哨兵 token 即翻 Completed，并剔除哨兵回显/输出行，保持终端干净。
+      const token = doneTokenRef.current;
+      if (!token) {
+        term.write(data);
+        return;
+      }
+      const { text, buf: nextBuf, detected } = filterSentinelChunk(
+        data,
+        token,
+        filterBufRef.current,
+      );
+      filterBufRef.current = nextBuf;
+      if (text) term.write(text);
+      if (detected && !detectedRef.current) {
+        detectedRef.current = true;
+        if (statusRef.current === 'running') setStatus('completed');
+      }
     });
 
     // 输入回环：屏幕上的按键 → 进程（交互支持）。
@@ -232,6 +266,8 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
     prevSessionRef.current = exec.sessionId;
     if (!usingXterm) return; // mock 由上方 mock effect 管 running/exited
     setStatus('running'); // 新会话 / 重跑：回到运行中（PTY 自治）
+    detectedRef.current = false; // 重跑是"新一次脚本"，重置哨兵识别
+    filterBufRef.current = '';
     if (!term) return;
     if (prev != null && exec.sessionId && prev !== exec.sessionId) {
       term.reset();
@@ -254,6 +290,13 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
     });
     return () => observer.disconnect();
   }, [usingXterm]);
+
+  // 停止/退出后终端不再接受输入，光标也不应闪烁（仅运行中闪烁）。
+  // status 运行中为 'running'、停止或自然退出为 'exited'，随其切换 cursorBlink。
+  useEffect(() => {
+    if (!usingXterm || !termObj.current) return;
+    termObj.current.options.cursorBlink = status === 'running';
+  }, [status, usingXterm]);
 
   // 容器尺寸变化：同步 cols/rows 给主进程会话
   useEffect(() => {
@@ -284,17 +327,21 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
   // 统一只显示具体解释器名称（移除原 'global' 概念；旧 'global' 数据经 resolveShellPath 仍解析为全局壳）。
   // 找不到匹配名称时，从路径取 basename（如 /bin/zsh → zsh），而非显示完整路径；
   // 完整路径保留在 title 上便于溯源。
-  const effectivePath = resolveShellPath(exec.shell, globalShellPath);
+  // 展示用解释器冻结为运行时解析路径（exec.shellPath），切换全局默认不影响已打开窗口
+  const effectivePath = resolveDisplayShell(exec.shell, exec.shellPath, globalShellPath);
   const matchedShell = effectivePath ? shells.find((s) => s.path === effectivePath) : null;
   const shellName =
     matchedShell?.name || (effectivePath ? effectivePath.split(/[\\/]/).pop() : 'system default');
 
-  // 标题栏状态指示：bootError 视为 Error，否则按 running/exited 显示。
+  // 标题栏状态指示：bootError 视为 Error；否则 running / completed / exited。
+  // completed = 脚本已结束、会话未关，终端仍可继续交互。
   const statusInfo = exec.bootError
     ? { label: 'Error', tone: 'err' }
     : status === 'running'
       ? { label: 'Running', tone: 'run' }
-      : { label: 'Exited', tone: 'done' };
+      : status === 'completed'
+        ? { label: 'Completed', tone: 'complete' }
+        : { label: 'Exited', tone: 'done' };
 
   return (
     <article className={`exec-card ${exec.maximized ? 'is-max' : ''}`}>
@@ -325,7 +372,16 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
               <IconStop />
             </button>
           )}
-          <button className="icon-btn" title="Maximize" onClick={() => onRerun(exec.id, 'max')}>
+          {status === 'completed' && (
+            <button className="exec-card__end" title="End Session" onClick={handleStop}>
+              End Session
+            </button>
+          )}
+          <button
+            className={`icon-btn ${exec.maximized ? 'is-active' : ''}`}
+            title={exec.maximized ? 'Restore' : 'Maximize'}
+            onClick={() => onRerun(exec.id, 'max')}
+          >
             <IconExpand />
           </button>
           <button className="exec-card__close" onClick={() => onClose(exec.id)}>

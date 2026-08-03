@@ -6,6 +6,9 @@
   "main": "electron/main.js",
   "author": "Arthur",
   "license": "MIT",
+  "engines": {
+    "node": ">=24.18.1"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/bynow2code/easy-ops.git"
