@@ -55,8 +55,8 @@ export default function SettingsModal({ open, onClose }) {
       // 通过 HTTP 拉取后端检测到的 shell（Electron 走端口、纯 dev 走代理）；
       // 后端不可达时退化到 localStorage 的前端态
       try {
-        const st = await shellApi.list();
-        if (!cancelled) setShellState(st);
+        const shellList = await shellApi.list();
+        if (!cancelled) setShellState(shellList);
       } catch {
         if (!cancelled) {
           setShellState({

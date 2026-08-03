@@ -122,9 +122,9 @@ export default function App() {
 
   // 仅把变更写入前端 localStorage（用于「内存已乐观更新、只差落盘」的脚本级操作）。
   const persistLocal = (mutate) => {
-    const fe = readFrontendScripts();
-    mutate(fe);
-    writeFrontendScripts(fe);
+    const localRepo = readFrontendScripts();
+    mutate(localRepo);
+    writeFrontendScripts(localRepo);
   };
 
   // 把 'global' / 脚本指定解释器解析成实际路径，统一 runScript / handleRerun 的解析逻辑
@@ -299,8 +299,8 @@ export default function App() {
     // 持久化：逐条 DELETE /api/scripts/:id；后端不可达时回退 localStorage（与单删一致）
     ids.forEach((id) => {
       scriptsApi.remove(id).catch(() =>
-        persistLocal((fe) => {
-          fe.scripts = fe.scripts.filter((s) => s.id !== id);
+        persistLocal((localRepo) => {
+          localRepo.scripts = localRepo.scripts.filter((s) => s.id !== id);
         }),
       );
     });
@@ -338,11 +338,11 @@ export default function App() {
 
     // 持久化：优先后端 /api/scripts；失败回退 localStorage
     scriptsApi.save(record).catch(() =>
-      persistLocal((fe) => {
-        const exists = fe.scripts.some((s) => s.id === finalId);
-        fe.scripts = exists
-          ? fe.scripts.map((s) => (s.id === finalId ? record : s))
-          : [...fe.scripts, record];
+      persistLocal((localRepo) => {
+        const exists = localRepo.scripts.some((s) => s.id === finalId);
+        localRepo.scripts = exists
+          ? localRepo.scripts.map((s) => (s.id === finalId ? record : s))
+          : [...localRepo.scripts, record];
       }),
     );
 
@@ -394,8 +394,8 @@ export default function App() {
     // 持久化换组结果（移动只改 group）：优先后端，失败回退 localStorage
     if (movedRecord) {
       scriptsApi.save(movedRecord).catch(() =>
-        persistLocal((fe) => {
-          fe.scripts = fe.scripts.map((s) => (s.id === movedRecord.id ? movedRecord : s));
+        persistLocal((localRepo) => {
+          localRepo.scripts = localRepo.scripts.map((s) => (s.id === movedRecord.id ? movedRecord : s));
         }),
       );
     }
@@ -411,8 +411,8 @@ export default function App() {
         if (res && Array.isArray(res.groups)) setGroups(res.groups);
       })
       .catch(() =>
-        persistLocal((fe) => {
-          if (!fe.groups.includes(name)) fe.groups.push(name);
+        persistLocal((localRepo) => {
+          if (!localRepo.groups.includes(name)) localRepo.groups.push(name);
         }),
       );
     setAddGroupOpen(false);
@@ -433,7 +433,7 @@ export default function App() {
     // 优先后端；失败回退 localStorage（本地复刻后端变换）
     persistWithFallback(
       scriptsApi.removeGroup(name, deleteScripts),
-      (fe) => removeGroupFromRepo(fe, name, deleteScripts),
+      (localRepo) => removeGroupFromRepo(localRepo, name, deleteScripts),
       applyRepo,
     );
   };
@@ -453,7 +453,7 @@ export default function App() {
     // 故用 applyRepo 按字段全量回填 scripts/groups/defaultGroup，保持与后端一致。
     persistWithFallback(
       scriptsApi.renameGroup(oldName, newName),
-      (fe) => renameGroupInRepo(fe, oldName, newName),
+      (localRepo) => renameGroupInRepo(localRepo, oldName, newName),
       applyRepo,
     );
   };
@@ -504,7 +504,7 @@ export default function App() {
       // 优先后端批量导入；失败回退 localStorage（本地复刻后端变换）
       persistWithFallback(
         scriptsApi.importScripts(records),
-        (fe) => importIntoRepo(fe, records),
+        (localRepo) => importIntoRepo(localRepo, records),
         applyRepo,
       );
     } catch {
@@ -523,8 +523,8 @@ export default function App() {
     setScripts((prev) => prev.filter((s) => s.id !== script.id));
     // 持久化：优先后端 DELETE /api/scripts；失败回退 localStorage
     scriptsApi.remove(script.id).catch(() =>
-      persistLocal((fe) => {
-        fe.scripts = fe.scripts.filter((s) => s.id !== script.id);
+      persistLocal((localRepo) => {
+        localRepo.scripts = localRepo.scripts.filter((s) => s.id !== script.id);
       }),
     );
   };

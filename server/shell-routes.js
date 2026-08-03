@@ -57,6 +57,11 @@ function registerShellRoutes(app) {
   // userData 目录延迟读取：允许调用方在 require 之前通过 env 注入
   const userDataDir = () => config.getUserDataDir();
 
+  // 统一的 shell 列表响应构造：回传 noShellMode / shells / activeShellPath。
+  function replyShells(res) {
+    res.json({ ok: true, ...loadShells(userDataDir()) });
+  }
+
   app.get('/api/shells', (_req, res) => {
     res.json(loadShells(userDataDir()));
   });
@@ -88,13 +93,7 @@ function registerShellRoutes(app) {
       return res.status(409).json({ ok: false, error: 'Cannot remove the active shell' });
     }
     shellCfg.removeShell(userDataDir(), p);
-    const st = loadShells(userDataDir());
-    res.json({
-      ok: true,
-      noShellMode: st.noShellMode,
-      shells: st.shells,
-      activeShellPath: st.activeShellPath,
-    });
+    replyShells(res);
   });
 
   app.post('/api/shells/active', (req, res) => {
@@ -107,13 +106,7 @@ function registerShellRoutes(app) {
       c.activeShellPath = p || null; // 跟随默认
       c.noShellMode = false; // 显式选 shell 自动退出无 shell 模式
     });
-    const st = loadShells(userDataDir());
-    res.json({
-      ok: true,
-      noShellMode: st.noShellMode,
-      shells: st.shells,
-      activeShellPath: st.activeShellPath,
-    });
+    replyShells(res);
   });
 
   app.post('/api/shells/no-shell-mode', (req, res) => {
@@ -122,13 +115,7 @@ function registerShellRoutes(app) {
       c.noShellMode = value;
       if (value) c.activeShellPath = null; // 切到无 shell 时清掉当前
     });
-    const st = loadShells(userDataDir());
-    res.json({
-      ok: true,
-      noShellMode: st.noShellMode,
-      shells: st.shells,
-      activeShellPath: st.activeShellPath,
-    });
+    replyShells(res);
   });
 }
 

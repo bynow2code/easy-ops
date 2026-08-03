@@ -29,16 +29,21 @@ function badRequest(res, error) {
   return res.status(400).json({ ok: false, error });
 }
 
+// 统一的仓库响应构造：回传脚本/分组/默认分组三项，供多个写操作后复用。
+function replyRepo(res, repo) {
+  res.json({
+    ok: true,
+    scripts: repo.scripts,
+    groups: repo.groups,
+    defaultGroup: repo.defaultGroup,
+  });
+}
+
 function registerScriptsRoutes(app) {
   // 列出全部脚本与分组
   app.get('/api/scripts', (_req, res) => {
     const repo = store.read();
-    res.json({
-      ok: true,
-      scripts: repo.scripts,
-      groups: repo.groups,
-      defaultGroup: repo.defaultGroup,
-    });
+    replyRepo(res, repo);
   });
 
   // 新增 / 更新一条脚本（按 id 判重）
@@ -74,12 +79,7 @@ function registerScriptsRoutes(app) {
     const body = req.body || {};
     if (!Array.isArray(body.scripts)) return badRequest(res, 'scripts array is required');
     const repo = store.importScripts(body.scripts);
-    res.json({
-      ok: true,
-      scripts: repo.scripts,
-      groups: repo.groups,
-      defaultGroup: repo.defaultGroup,
-    });
+    replyRepo(res, repo);
   });
 
   // 新增分组
@@ -106,12 +106,7 @@ function registerScriptsRoutes(app) {
     if (!repo) return badRequest(res, 'Cannot rename group (invalid or duplicate name)');
     // 注意：renameGroup 会同步该分组下所有脚本的 group 字段，故需把 scripts
     // 一并返回，否则前端拿不到更新后的脚本分组（重命名后脚本"消失"）。
-    res.json({
-      ok: true,
-      scripts: repo.scripts,
-      groups: repo.groups,
-      defaultGroup: repo.defaultGroup,
-    });
+    replyRepo(res, repo);
   });
 
   // 移除分组（默认分组不可删；脚本可一并删除或挪到默认分组）
@@ -121,12 +116,7 @@ function registerScriptsRoutes(app) {
     const deleteScripts = Boolean(req.body && req.body.deleteScripts);
     const repo = store.removeGroup(name, { deleteScripts });
     if (!repo) return badRequest(res, 'Default group cannot be deleted');
-    res.json({
-      ok: true,
-      scripts: repo.scripts,
-      groups: repo.groups,
-      defaultGroup: repo.defaultGroup,
-    });
+    replyRepo(res, repo);
   });
 }
 

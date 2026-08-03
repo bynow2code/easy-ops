@@ -165,7 +165,9 @@ function addGroup(name) {
  *  - deleteScripts=true：连同该组脚本一并删除。
  */
 function applyRemoveGroup(repo, name, deleteScripts = false) {
-  if (typeof name !== 'string' || !name) return repo;
+  // 非法 name（非字符串/空）一律拒绝，返回 null——与前端镜像 removeGroupFromRepo 语义一致，
+  // 避免被调用方当成"成功（无变更）"而误写盘。
+  if (typeof name !== 'string' || !name) return null;
   if (name === repo.defaultGroup) return null; // 默认分组不可删
   const scripts = deleteScripts
     ? repo.scripts.filter((s) => s.group !== name)
