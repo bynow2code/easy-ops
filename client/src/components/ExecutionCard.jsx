@@ -102,6 +102,7 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
   // 下列 ref 在 onData 回调里读取最新值，避免闭包陈旧。
   const doneTokenRef = useRef(exec.doneToken || null); // 哨兵 token（每会话唯一）
   const filterBufRef = useRef(''); // 跨 chunk 重组哨兵用的不完整尾行
+  const filterConsumeRef = useRef(0); // 哨兵吸收模式剩余吸收完整行数（跨 chunk 续传）
   const detectedRef = useRef(false); // 是否已识别哨兵（脚本结束）
   const statusRef = useRef(status); // 回调里读最新 status
 
@@ -218,12 +219,14 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
         term.write(data);
         return;
       }
-      const { text, buf: nextBuf, detected } = filterSentinelChunk(
+      const { text, buf: nextBuf, detected, consumeLines } = filterSentinelChunk(
         data,
         token,
         filterBufRef.current,
+        { consumeLines: filterConsumeRef.current },
       );
       filterBufRef.current = nextBuf;
+      filterConsumeRef.current = consumeLines;
       if (text) term.write(text);
       if (detected && !detectedRef.current) {
         detectedRef.current = true;
@@ -268,6 +271,7 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
     setStatus('running'); // 新会话 / 重跑：回到运行中（PTY 自治）
     detectedRef.current = false; // 重跑是"新一次脚本"，重置哨兵识别
     filterBufRef.current = '';
+    filterConsumeRef.current = 0;
     if (!term) return;
     if (prev != null && exec.sessionId && prev !== exec.sessionId) {
       term.reset();

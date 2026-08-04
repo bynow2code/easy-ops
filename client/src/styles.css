@@ -7,6 +7,10 @@
   --bg-panel: #ffffff;
   --bg-soft: #fafbfc;
   --bg-muted: #f3f4f6;
+  /* 列表项/分组头 hover 高亮底色（"当前项"反馈）。亮色比 --bg-soft 略深、暗色比 --bg-panel 略亮，
+     让鼠标浮上去有明显但不刺眼的反馈；被 .script-row:hover / .script-group__head:hover /
+     .script-group__toggle:hover / .script-group__action:hover 共用，统一语义 */
+  --bg-hover: #eef0f3;
   --exec-term-bg: #ffffff; /* 浅色主题下终端容器背景（避免 xterm-viewport #000 黑边露出） */
   --border: #e5e7eb;
   --border-soft: #eef0f3;
@@ -261,13 +265,17 @@ body {
   min-width: 0;
 }
 .panel--list {
-  padding: 14px 14px 16px;
+  /* 左右内距统一 2px，与右侧脚本输出（终端）面板一致，两列在水平方向视觉齐平；
+     上下保留 14/16 给顶部工具条与底部留白 */
+  padding: 14px 2px 16px;
   overflow-y: auto;
   overflow-x: hidden;
 }
 .panel--exec {
-  padding: 14px 8px 10px 8px;
-} /* 左右内距对齐滚动条宽度(8px)，上14px 下10px */
+  /* 左右内距统一 2px，与左侧脚本列表面板一致，两列在水平方向视觉齐平；
+     上下保持 14/10 */
+  padding: 14px 2px 10px 2px;
+}
 
 /* ------------ Script List ------------ */
 .script-group {
@@ -305,6 +313,11 @@ body {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
+  /* 左右内边距 4px：WMS 标题与图标到面板边缘留出对称的呼吸距离；
+     注意：要让 WMS 文字视觉对齐到下方列头/脚本行的"Name 列起始位置"
+     （panel padding 2 + col padding-left 24 + grid col1 22 + gap 8 = 56px），
+     不能让 WMS 落在 panel 左边缘——那会让"分组合脚本"的层级关系看着脱节。
+     对齐差值在 .script-group__title 的 margin-left:9px 补齐（见下）。 */
   padding: 0 4px 8px;
 }
 .script-group__toggle {
@@ -338,6 +351,12 @@ body {
   align-items: center;
   gap: 8px;
   flex: 1 1 auto;
+  /* 关键对齐：让 WMS 文字（位于 title 内 checkbox 之后）落在 panel 内部 56px 起，
+     与下方列头"Name"、脚本行"脚本名"严格同列。
+     算式：name 列起点 = panel 2 + col padding 24 + col1 22 + gap 8 = 56px；
+     WMS 当前位置 = panel 2 + head padding 4 + toggle 18 + margin 2 + checkbox 13 + gap 8 = 47px；
+     差 9px 由本 margin-left 补齐。删除此项 WMS 会与 Name 列错开 9px，层级关系看着脱节。 */
+  margin-left: 9px;
 }
 .script-group__count {
   color: var(--text-faint);
@@ -384,7 +403,9 @@ body {
   align-items: center;
   color: var(--text-faint);
   font-size: 11px;
-  padding: 6px 4px 4px;
+  /* 缩进：相对分组头额外左移 22px，让"分组合脚本"的嵌套层级视觉一目了然；
+     左右内边距为 0，由 .panel--list 统一提供 2px，与右侧脚本输出区对齐 */
+  padding: 6px 0 4px 24px;
 }
 
 .script-group__rows {
@@ -404,6 +425,13 @@ body {
 /* 拖拽排序：分组头整列可拖（去掉独立拖把），光标给 grab 提示；无专属抓手图标。 */
 .script-group__head {
   cursor: grab;
+  /* hover 高亮：整条分组头浮上去给"当前分组"反馈（底色 + 圆角聚焦），
+     过渡与 .script-row 一致，让浮动手感统一 */
+  border-radius: 6px;
+  transition: background 0.12s ease;
+}
+.script-group__head:hover {
+  background: var(--bg-hover);
 }
 .script-group__head:active {
   cursor: grabbing;
@@ -422,15 +450,19 @@ body {
   grid-template-columns: 22px minmax(0, 1fr) 180px;
   gap: 8px;
   align-items: center;
-  padding: 6px 4px;
+  /* 缩进：相对分组头额外左移 22px（与列头对齐），"分组合脚本"的嵌套层级一目了然；
+     左右内边距为 0，由 .panel--list 统一提供 2px，与右侧脚本输出区对齐 */
+  padding: 6px 0 6px 24px;
   border-bottom: 1px solid var(--border-row);
   cursor: grab;
+  /* hover 高亮底色过渡：让"当前项"反馈平滑出现/消失，不突兀 */
+  transition: background 0.12s ease;
 }
 .script-row:active {
   cursor: grabbing;
 }
 .script-row:hover {
-  background: #fbfcfd;
+  background: var(--bg-hover);
 }
 .script-row.is-dragging {
   opacity: 0.45;
@@ -569,7 +601,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  /* 左右内距 2px，与 .panel--exec 统一，整张输出卡（头+终端）水平方向一致 */
+  padding: 8px 2px;
   border-bottom: 1px solid var(--border-soft);
   background: var(--bg-soft);
   gap: 12px;
@@ -1074,6 +1107,8 @@ input[type='checkbox'] {
   --bg-panel: #25262a;
   --bg-soft: #1f2024;
   --bg-muted: #2a2b2f;
+  /* hover 高亮底色（详见亮色 --bg-hover 说明）；比 --bg-panel 略亮，浮上去反馈明显 */
+  --bg-hover: #313237;
   --exec-term-bg: #1e1e1e; /* 深色主题下终端容器背景 */
   --border: #3a3b40;
   --border-soft: #2e2f33;
@@ -1183,10 +1218,6 @@ input[type='checkbox'] {
 :root[data-theme='dark'] .badge--4 {
   background: #78350f;
   color: #fcd34d;
-}
-/* 脚本列表行 hover (硬编码 #fbfcfd) */
-:root[data-theme='dark'] .script-row:hover {
-  background: #2a2b2f;
 }
 :root[data-theme='dark'] .script-row.is-running {
   background: rgba(37, 99, 235, 0.12);
@@ -1576,7 +1607,9 @@ input[type='checkbox'] {
   flex: 1 1 auto;
   min-height: 160px;
   overflow: hidden;
-  padding: 8px 10px;
+  /* 左右内边距为 0，由 .panel--exec 统一提供 2px，与左侧脚本列表行（+分组头/列头）
+     的内边距一致，让两列在水平方向上视觉齐平；纵向保留 8px 以免文字贴边。 */
+  padding: 8px 0;
   background: var(--exec-term-bg);
   border-radius: 0 0 6px 6px;
 }

@@ -104,7 +104,6 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
   // 即判定"脚本已结束"（shell 仍常驻、可继续交互）。marker 命令会被终端回显，
   // 渲染层会连同其输出一并剔除，终端保持干净。token 随机且带前缀，不会与用户输出重合。
   const doneToken = 'EASYOPS_DONE_' + crypto.randomBytes(16).toString('hex');
-  const doneMarker = 'echo ' + JSON.stringify(doneToken);
 
   term.onData((data) => bus.emit('data', { execId, data }));
   term.onExit(({ exitCode, signal }) => {
@@ -130,13 +129,22 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
     }
   }
 
-  // 完成探测哨兵：脚本首条输入被 shell 执行完毕并打印 PS1 之后，**直接**写一行
-  // 唯一 marker 让 shell 在 PS1 第二行（`$ ` 之后）回显并执行。注意：不要在前面
-  // 再多写一个 `\n` —— 那会让 shell 误以为用户提交了一行空输入，从而在脚本结束
-  // 的 PS1 之外**额外**输出一遍 PS1 + 一个空行，终端上就会出现"多余换行 + 多余
-  // 提示符"。渲染层识别 token 即翻 Completed，并连同回显 + echo 输出一起剔除，
-  // 终端上只剩"脚本输出 → PS1（脚本结束）→ PS1（哨兵后）"两个提示符，中间不再
-  // 多出空行/提示符。
+  // 完成探测哨兵：脚本首条输入被 shell 执行完毕并打印 PS1 之后，写入一段"自擦除"的
+  // 哨兵命令（一次性写入，bash 按字符 echo + 整体提交 + 执行）：
+  //   `\x1b[2K\r\x1b[2K; echo "<TOKEN>"`
+  //   - 前导 `\x1b[2K\r\x1b[2K`：ANSI 清当前行（PS1 第二行 `$ `）+ 回行首 + 再清当前行。
+  //     让哨兵段的"清行操作"在终端上立即生效，原 PS1 第二行的 `$ ` 视觉上消失，
+  //     避免出现"额外 PS1 / 多余换行 / 光标错位"。
+  //   - `; echo "<TOKEN>"`：bash 提交后执行，输出唯一哨兵 token；
+  //     渲染层 sentinelFilter 整段 drop（回显行 + 输出行）。
+  //   整体语义：哨兵执行后，bash 会输出"新 PS1"（正常 `$ ` 提示符），sentinelFilter
+  //   已剔除整段哨兵段，终端视觉上等于"脚本输出 → 原 PS1 → 干净的新 PS1"，光标
+  //   自然停在 `$ ` 之后等待用户输入。配合 sentinelFilter 严格 drop 哨兵段 + 透传
+  //   清行 ANSI 操作，彻底消除"多个 PS1 / 多余换行 / 光标错位"的所有副作用。
+  //   故意不写 `PROMPT_COMMAND='PS1='; PS1=`：那会永久把 PS1 改成空（PROMPT_COMMAND
+  //   会在之后每次显示 PS1 前都把 PS1 置空），让交互态下的提示符永远看不见——对
+  //   交互体验是反向劣化。这里依靠 sentinelFilter 把哨兵段"无痕"擦掉就够了。
+  const doneMarker = `\x1b[2K\r\x1b[2K; echo "${doneToken}"`;
   try {
     term.write(doneMarker + '\n');
   } catch {
