@@ -216,9 +216,12 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
   term.onExit(({ exitCode, signal }) => {
     ctxLogger.info('PTY 会话结束', { sessionId, exitCode, signal });
     sessions.delete(sessionId);
-    if (execToSession.get(execId) === sessionId) execToSession.delete(execId);
-    // 清理本次会话的临时脚本文件（失败不致命）
-    if (scriptBashPath) removeScriptFile(execId);
+    const isCurrentSession = execToSession.get(execId) === sessionId;
+    if (isCurrentSession) execToSession.delete(execId);
+    // 清理本次会话的临时脚本文件。Re-run 会用同一个 execId 开新会话并覆盖映射，
+    // 旧会话的 onExit 必须确认自己仍是当前 execId 对应会话才能删文件，
+    // 否则会把新会话刚写入的脚本文件误删，导致 source 报 No such file or directory。
+    if (scriptBashPath && isCurrentSession) removeScriptFile(execId);
     bus.emit('exit', {
       execId,
       scriptId,

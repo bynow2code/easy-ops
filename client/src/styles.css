@@ -272,9 +272,9 @@ body {
   overflow-x: hidden;
 }
 .panel--exec {
-  /* 左右内距统一 2px，与左侧脚本列表面板一致，两列在水平方向视觉齐平；
-     上下保持 14/10 */
-  padding: 14px 2px 10px 2px;
+  /* 上下保留 14/10；左右内距交给 .exec-head(标题) 与 .exec-card(卡片) 各自 2px 控制，
+     避免"面板 2px + 卡片 margin 2px"叠加成 4px。卡片距面板边缘正好 2px。 */
+  padding: 14px 0 10px 0;
 }
 
 /* ------------ Script List ------------ */
@@ -539,7 +539,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 12px;
+  padding: 0 2px 12px;
   margin-bottom: 10px;
   border-bottom: 1px solid var(--border-soft);
 }
@@ -586,6 +586,9 @@ body {
   flex-direction: column;
   position: relative;
   overflow: hidden;
+  /* 输出小窗在输出列表里的左右边距各 2px（面板已取消左右内距，由本卡片自行控制），
+     与 .exec-head 标题左右 2px 对齐，整列水平方向视觉齐平。 */
+  margin: 0 2px;
   /* 多张卡：按内容尺寸堆叠，超出面板高度由 .exec-list 纵向滚动（瀑布流）。
      仅一张卡时（:only-child）改为撑满整列高度，避免"单个输出窗口没占满高度"；
      最大化场景由 .exec-list.has-max .exec-card.is-max 覆盖为 flex:1 1 auto 占满。 */
