@@ -244,7 +244,6 @@ export default function ScriptList({
                 {items.length > 0 && (
                   <div className="script-group__cols">
                     <span />
-                    <span />
                     <span className="col-name">Name</span>
                     <span className="col-actions">Actions</span>
                   </div>

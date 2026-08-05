@@ -8,68 +8,32 @@ import { mockOutputFor } from '../data/mockScripts.js';
 import { ptyClient } from '../ptyClient.js';
 import { filterSentinelChunk } from '../sentinelFilter.js';
 
-// Xterm 配色：跟随应用主题（dark / light），采用 VS Code 风格 ANSI 色板，
-// 保证深色 / 浅色下 ANSI 转义色都可读，不再写死黑底。
-const XTERM_THEME = {
-  dark: {
-    background: '#1e1e1e',
-    foreground: '#d4d4d4',
-    cursor: '#d4d4d4',
-    cursorAccent: '#1e1e1e',
-    selectionBackground: '#264f78',
-    black: '#000000',
-    red: '#cd3131',
-    green: '#0dbc79',
-    yellow: '#e5e510',
-    blue: '#2472c8',
-    magenta: '#bc3fbc',
-    cyan: '#11a8cd',
-    white: '#e5e5e5',
-    brightBlack: '#666666',
-    brightRed: '#f14c4c',
-    brightGreen: '#23d18b',
-    brightYellow: '#f5f543',
-    brightBlue: '#3b8eea',
-    brightMagenta: '#d670d6',
-    brightCyan: '#29b8db',
-    brightWhite: '#ffffff',
-    scrollbarSliderBackground: '#d1d5db',
-    scrollbarSliderHoverBackground: '#9ca3af',
-    scrollbarSliderActiveBackground: '#6b7280',
-  },
-  light: {
-    background: '#ffffff',
-    foreground: '#1f2937',
-    cursor: '#1f2937',
-    cursorAccent: '#ffffff',
-    selectionBackground: '#add6ff',
-    black: '#000000',
-    red: '#cd3131',
-    green: '#0dbc79',
-    yellow: '#948b12',
-    blue: '#0451a5',
-    magenta: '#bc05bc',
-    cyan: '#0598bc',
-    white: '#e5e5e5',
-    brightBlack: '#666666',
-    brightRed: '#cd3131',
-    brightGreen: '#14ceb8',
-    brightYellow: '#948b12',
-    brightBlue: '#0451a5',
-    brightMagenta: '#bc05bc',
-    brightCyan: '#0598bc',
-    brightWhite: '#ffffff',
-    scrollbarSliderBackground: '#d1d5db',
-    scrollbarSliderHoverBackground: '#9ca3af',
-    scrollbarSliderActiveBackground: '#6b7280',
-  },
+// Git Bash / mintty 风格调色板：鲜艳的 16 色 ANSI + 黑底浅灰前景。
+// 终端里彩色的提示符（user@host 绿、路径蓝）、彩色 ls 列表，全靠这套 ANSI 色板——
+// 否则即使 shell 输出了 ANSI 转义码，xterm 也只按默认灰白上色，“花花绿绿”出不来。
+const GITBASH_THEME = {
+  background: '#000000',
+  foreground: '#bfbfbf',
+  cursor: '#bfbfbf',
+  cursorAccent: '#000000',
+  selectionBackground: '#555555',
+  black: '#000000',
+  red: '#cd0000',
+  green: '#00cd00',
+  yellow: '#cdcd00',
+  blue: '#0000ee',
+  magenta: '#cd00cd',
+  cyan: '#00cdcd',
+  white: '#e5e5e5',
+  brightBlack: '#555555',
+  brightRed: '#ff0000',
+  brightGreen: '#00ff00',
+  brightYellow: '#ffff00',
+  brightBlue: '#0000ff',
+  brightMagenta: '#ff00ff',
+  brightCyan: '#00ffff',
+  brightWhite: '#ffffff',
 };
-
-// 读取当前生效主题（useTheme 已把真实 dark/light 写到 <html data-theme>）
-function readDomTheme() {
-  if (typeof document === 'undefined') return 'light';
-  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
-}
 
 /**
  * 单个脚本的执行输出卡：
@@ -177,12 +141,14 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
   useEffect(() => {
     if (!usingXterm || !termRef.current) return undefined;
     const hostEl = termRef.current; // 整个 effect 生命周期内稳定，统一用它挂/卸监听
+    // Git Bash / mintty 风格：Consolas 字体 + 鲜艳 ANSI 调色板 + 闪烁方块光标，
+    // 与平时在 Git Bash 窗口里看到的“花花绿绿”一致。
     const term = new Terminal({
-      fontSize: 12,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      fontFamily: 'Consolas, "Cascadia Code", "Courier New", monospace',
+      fontSize: 14,
       lineHeight: 1.2,
       cursorBlink: true,
-      theme: XTERM_THEME[readDomTheme()],
+      theme: GITBASH_THEME,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -277,23 +243,6 @@ export default function ExecutionCard({ exec, globalShellPath, shells, onClose, 
       term.reset();
     }
   }, [exec.sessionId, usingXterm]);
-
-  // 主题跟随：监听 <html data-theme> 变化（含手动切换与 system 跟随 OS），
-  // 实时更新已挂载 xterm 的配色；不重建终端，仅改 options.theme。
-  useEffect(() => {
-    if (!usingXterm) return undefined;
-    const apply = () => {
-      const t = readDomTheme();
-      if (termObj.current) termObj.current.options.theme = XTERM_THEME[t];
-    };
-    apply();
-    const observer = new MutationObserver(apply);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-    return () => observer.disconnect();
-  }, [usingXterm]);
 
   // 停止/退出后终端不再接受输入，光标也不应闪烁（仅运行中闪烁）。
   // status 运行中为 'running'、停止或自然退出为 'exited'，随其切换 cursorBlink。
