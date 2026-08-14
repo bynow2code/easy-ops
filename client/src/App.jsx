@@ -18,6 +18,7 @@ import {
   renameGroupInRepo,
   reorderGroupsInRepo,
   importIntoRepo,
+  newScriptId,
 } from './scriptsStore.js';
 import { DEFAULT_GROUP } from './constants.js';
 import { readSplit, writeSplit } from './uiStore.js';
@@ -324,7 +325,7 @@ export default function App() {
 
   const handleSaveScript = ({ id, name, group, content, shell }) => {
     // 规整后的数据记录（仅持久化字段，不含运行期 status）
-    const finalId = id || `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const finalId = id || newScriptId();
     const record = {
       id: finalId,
       name,

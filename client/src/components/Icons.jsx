@@ -62,9 +62,6 @@ export const IconStop = (p) => (
   </svg>
 );
 
-// 拖动把手：已统一为"整行/整个分组头都可拖"，不再使用独立抓手图标。
-// 该 IconDrag 组件被移除以保持代码清洁（无引用即删）。
-
 // 主题切换图标：sun=light, moon=dark, contrast=follow system
 export const IconSun = (p) => (
   <svg {...base} {...p}>

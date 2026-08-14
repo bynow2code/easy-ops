@@ -1,23 +1,22 @@
-# 依赖
+# Dependencies
 node_modules/
 
-# 运行时产物
+# Runtime products
 logs/
 port.txt
+*.log
 
-# 脚本数据（按需保留或忽略，这里忽略本地数据）
+# App data (local runtime config written by the app)
 scripts.json
+shell-config.json
+.codebuddy/
 
-# 构建产物
+# Build outputs
 dist/
 dist-electron/
-
-# 临时产物（esbuild 检查/打包残留于 client/tmp，无源码引用，勿提交）
 client/tmp/
 client/dist/
 
-# 日志
-*.log
-
-# 编辑器
+# Editor / OS
 .idea/
+.DS_Store

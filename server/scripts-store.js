@@ -161,7 +161,6 @@ function read({ correct = true } = {}) {
 }
 
 function write(repo) {
-  const safe = normalize(repo);
   // 目录可能尚不存在（首次运行），先确保存在再写入
   fs.mkdirSync(path.dirname(getPath()), { recursive: true });
   fs.writeFileSync(

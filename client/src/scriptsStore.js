@@ -6,6 +6,11 @@ import { DEFAULT_GROUP } from './constants.js';
 
 const KEY = 'easy-ops.frontend-scripts';
 
+// 生成新脚本 id（与后端 scripts-store.newId 同形；前端兜底新增时使用）
+export function newScriptId() {
+  return `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 function read() {
   try {
     const raw = localStorage.getItem(KEY);
@@ -81,10 +86,7 @@ export function importIntoRepo(repo, incoming) {
     const name = it && typeof it.name === 'string' ? it.name.trim() : '';
     if (!name) continue;
     const rec = {
-      id:
-        it && typeof it.id === 'string' && it.id
-          ? it.id
-          : `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id: it && typeof it.id === 'string' && it.id ? it.id : newScriptId(),
       name,
       group: defaultGroup,
       content: it && typeof it.content === 'string' ? it.content : '',

@@ -10,9 +10,11 @@ const PORT_RETRY_DELAY = 150;
 // 纯 Vite dev（无 Electron）：返回 ''，请求走相对路径 /api（由 vite 代理）。
 export async function resolveBaseUrl() {
   if (!api?.backend?.getPort) return '';
-  for (let i = 0; i < MAX_PORT_RETRIES; i++) {
+  let attempt = 0;
+  while (attempt < MAX_PORT_RETRIES) {
     const port = await api.backend.getPort();
     if (port) return `http://127.0.0.1:${port}`;
+    attempt += 1;
     await new Promise((r) => setTimeout(r, PORT_RETRY_DELAY));
   }
   return '';

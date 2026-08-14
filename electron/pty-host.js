@@ -20,6 +20,8 @@
  */
 
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const pty = require('node-pty');
@@ -73,8 +75,6 @@ let cachedInitWinPath = null;
 function ensureBashInitFile() {
   if (cachedInitWinPath) return cachedInitWinPath;
   const dir = config.getUserDataDir();
-  const fs = require('fs');
-  const path = require('path');
   const p = path.join(dir, 'easyops-shell-init.sh');
   const content = [
     '# EasyOps runtime init (auto-generated — do not edit)',
@@ -105,8 +105,6 @@ function ensureBashInitFile() {
 // 不把多行内容直接喂给交互式 bash，避免 bash 每读一行不完整命令就打印 PS2（`>`）空行。
 function ensureScriptFile(execId, content, interpreter) {
   const dir = config.getUserDataDir();
-  const fs = require('fs');
-  const path = require('path');
   const winPath = path.join(dir, `easyops-script-${execId}.sh`);
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -120,8 +118,6 @@ function ensureScriptFile(execId, content, interpreter) {
 // 删除临时脚本文件（会话结束时清理）
 function removeScriptFile(execId) {
   const dir = config.getUserDataDir();
-  const fs = require('fs');
-  const path = require('path');
   const winPath = path.join(dir, `easyops-script-${execId}.sh`);
   try {
     fs.unlinkSync(winPath);
@@ -207,6 +203,11 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
   sessions.set(sessionId, { term, execId, scriptId });
   execToSession.set(execId, sessionId);
 
+  // 提前声明：term.onExit 闭包需在会话结束时可靠读到本次会话的临时脚本文件路径，
+  // 故提升到函数作用域顶部，避免依赖变量提升的隐式行为。
+  let scriptBashPath = null;
+  let doneMarker = null;
+
   // 完成探测哨兵：脚本首条输入之后写一行唯一 marker；渲染层在输出流里识别该 token
   // 即判定"脚本已结束"（shell 仍常驻、可继续交互）。marker 命令会被终端回显，
   // 渲染层会连同其输出一并剔除，终端保持干净。token 随机且带前缀，不会与用户输出重合。
@@ -239,8 +240,6 @@ function openSession({ execId, scriptId, content, shell, cwd, env }) {
   //    `stty -echo` 已关掉命令回显，因此 `source ...` 这一行本身也不会显示。
   //    哨兵 echo 与恢复回显接在同一行，确保只输出一个可交互提示符。
   //  - 非 bash 家族：沿用旧方案（脚本 + 独立哨兵行，由 sentinelFilter 处理回显/清行）。
-  let doneMarker = null;
-  let scriptBashPath = null;
   if (content) {
     try {
       if (bashLike) {
