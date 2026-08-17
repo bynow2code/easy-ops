@@ -51,7 +51,7 @@ EasyOps 把这些脚本统一管起来：
 
 - **Windows**：下载安装包（`.exe`，NSIS）双击安装；或下载 ZIP 便携版解压即用。
 - **macOS**：下载 `.dmg` 安装（同时提供 Intel 与 Apple Silicon 版本）。
-- **Linux**：（按需提供对应包体）
+- **Linux**：提供 `.AppImage`（通用便携）、`.deb`（Debian / Ubuntu）、`.rpm`（Fedora / CentOS）、`.snap`（Snapcraft）包体，按发行版选择。
 
 > 安装完成后，应用图标会出现在开始菜单 / 应用程序 / 任务栏中。
 
@@ -122,7 +122,7 @@ EasyOps 把这些脚本统一管起来：
 | Windows 10/11 | ✅ | NSIS 安装包 + ZIP 便携版 |
 | macOS（Intel） | ✅ | `.dmg` |
 | macOS（Apple Silicon） | ✅ | `.dmg` |
-| Linux | 🔧 | 按构建配置提供 |
+| Linux（x64 / arm64） | ✅ | `.AppImage` / `.deb` / `.rpm` / `.snap` |
 
 Windows 上应用会自动识别 **Git Bash / WSL** 作为执行环境，无需手动配置。
 
