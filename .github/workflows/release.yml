@@ -138,3 +138,63 @@ jobs:
             dist-electron/*.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===================== Linux 发布作业 =====================
+  release-linux:
+    name: 构建并发布 Linux ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    needs: create-release
+    permissions:
+      contents: write
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: 同步版本号与 tag
+        run: |
+          ver="${{ github.ref_name }}"
+          ver="${ver#v}"
+          npm version "$ver" --no-git-tag-version --allow-same-version
+
+      - name: 安装系统构建依赖（rpm / snap）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+      - name: 安装根目录依赖
+        run: npm ci
+
+      - name: 安装前端依赖
+        working-directory: client
+        run: npm ci
+
+      - name: 安装后端依赖
+        working-directory: server
+        run: npm ci
+
+      - name: 构建并打包 Linux 安装包
+        run: npm run electron-build-linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 上传 Linux 产物到 Release
+        uses: softprops/action-gh-release@v3
+        if: success()
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: |
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/*.rpm
+            dist-electron/*.snap
+            dist-electron/latest-linux.yml
+            dist-electron/*.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
