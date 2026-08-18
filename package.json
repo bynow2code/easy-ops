@@ -20,11 +20,11 @@
     "electron-build-mac-intel": "npm run build && npm run build:server && electron-builder --mac --x64",
     "electron-build-mac-arm": "npm run build && npm run build:server && electron-builder --mac --arm64",
     "electron-build-mac": "npm run build && npm run build:server && electron-builder --mac --x64 --arm64",
-    "electron-build-linux": "npm run build && npm run build:server && electron-builder --linux --x64 --arm64 AppImage deb rpm",
-    "electron-build-linux-deb": "npm run build && npm run build:server && electron-builder --linux --x64 --arm64 deb",
-    "electron-build-linux-appimage": "npm run build && npm run build:server && electron-builder --linux --x64 --arm64 AppImage",
-    "electron-build-linux-rpm": "npm run build && npm run build:server && electron-builder --linux --x64 --arm64 rpm",
-    "electron-build-linux-snap": "npm run build && npm run build:server && electron-builder --linux --x64 --arm64 snap",
+    "electron-build-linux": "npm run build && npm run build:server && electron-builder --linux=AppImage,deb,rpm --x64 --arm64",
+    "electron-build-linux-deb": "npm run build && npm run build:server && electron-builder --linux=deb --x64 --arm64",
+    "electron-build-linux-appimage": "npm run build && npm run build:server && electron-builder --linux=AppImage --x64 --arm64",
+    "electron-build-linux-rpm": "npm run build && npm run build:server && electron-builder --linux=rpm --x64 --arm64",
+    "electron-build-linux-snap": "npm run build && npm run build:server && electron-builder --linux=snap --x64 --arm64",
     "start": "electron ."
   },
   "devDependencies": {
