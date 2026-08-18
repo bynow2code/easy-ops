@@ -188,12 +188,11 @@ jobs:
         if: success()
         with:
           tag_name: ${{ github.ref_name }}
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: |
             dist-electron/*.AppImage
             dist-electron/*.deb
             dist-electron/*.rpm
             dist-electron/latest-linux.yml
-            dist-electron/*.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
