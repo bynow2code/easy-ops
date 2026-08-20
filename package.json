@@ -83,7 +83,7 @@
         "deb",
         "rpm"
       ],
-      "icon": "client/public/logo-1024.png",
+      "icon": "client/public/logo.png",
       "category": "Development",
       "maintainer": "EasyOps",
       "description": "EasyOps - Script Manager Desktop App",
@@ -94,7 +94,8 @@
         "entry": {
           "Name": "EasyOps",
           "Comment": "集中管理、随手执行 Shell 脚本的桌面小工具",
-          "Categories": "Development;Utility;"
+          "Categories": "Development;Utility;",
+          "Icon": "easyops"
         }
       }
     },
