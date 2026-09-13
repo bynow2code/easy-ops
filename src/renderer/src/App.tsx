@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Segmented, Space, Typography } from 'antd'
+import { Segmented, Typography } from 'antd'
 import type { ThemeMode } from '../../shared/types'
 import { ThemeProvider, useTheme } from './theme/provider'
 import { Sidebar } from './components/Sidebar'
@@ -66,10 +66,10 @@ export default function App(): JSX.Element {
 
   return (
     <ThemeProvider mode={mode} onModeChange={handleModeChange}>
-      <Space direction="vertical" size={0} style={{ height: '100vh', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100%' }}>
         <TopBar />
         <Workspace />
-      </Space>
+      </div>
       <GroupFormModal />
       <ScriptFormModal />
     </ThemeProvider>
