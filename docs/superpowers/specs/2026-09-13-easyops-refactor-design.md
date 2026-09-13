@@ -125,6 +125,21 @@ interface Settings {
   checkUpdateOnLaunch: boolean
   migrated: boolean               // 是否已完成旧数据迁移
 }
+
+interface CustomShell {
+  id: string            // 'custom:<path>'
+  name: string          // 展示名
+  path: string
+}
+
+interface ShellInfo {
+  id: string            // 'zsh' | 'bash' | 'gitbash:<path>' | 'wsl:<distro>' | 'custom:<path>'
+  name: string
+  path: string
+  args: string[]        // 启动参数,如 ['-i']
+  version?: string
+  source: 'detected' | 'custom'
+}
 ```
 
 **关于「分组不必选」**:新建脚本时分组的默认值为「未分组」(`groupId = null`),即分组是可选概念,但未分组不等于校验失败。
@@ -134,6 +149,8 @@ interface Settings {
 ## 6. 数据迁移(旧版兼容)
 
 **触发方式**:设置面板提供「导入旧版配置」按钮;首次启动若在 `userData` 下检测到旧 `scripts.json` 且 `settings.migrated === false`,弹出一次性提示(不自动覆盖)。
+
+**前置条件(重要)**:新版 `appId` 必须保持为 **`com.easyops.app`**、`productName` 保持 **`EasyOps`**,以复用与旧版相同的 `userData` 目录,从而自动定位旧 `scripts.json`。若将来变更 appId,迁移流程必须改为由用户手动选择旧 `scripts.json` 文件路径。此外,若旧版仍安装在机器上,需提示用户先退出旧版再导入,避免两边同时写同一份数据。
 
 **识别逻辑**:兼容两种旧格式:
 
@@ -227,9 +244,10 @@ interface Settings {
 ### 8.1 启动与脚本投喂(方案 B)
 
 1. `pty:start` 时,主进程把脚本内容写入 `app.getPath('temp')` 下的唯一临时文件 `easyops-<runId>.sh`。
-2. 以用户选定 shell(或全局默认)在该临时文件的父目录为 cwd 启动 PTY:交互 shell 启动后执行该脚本文件。
-3. 脚本执行完毕后 shell 保持在提示符,用户可继续交互(满足「终端支持交互输入」)。
-4. `runId` 结束时删除临时文件(异常退出时在 app 退出钩子中清理残留)。
+2. PTY 以**交互模式**启动用户选定 shell(或全局默认),即 `<shellPath> -i`,cwd 取用户主目录。
+3. shell 就绪后,主进程向 PTY 写入一行 `source '<临时文件绝对路径>'\n`(路径加单引号包裹以容忍空格)。脚本由此在**当前 shell 上下文**中执行,环境变量、别名、PATH 与用户自己的终端完全一致。
+4. 脚本执行完毕后 shell 停在提示符,用户可继续交互(满足「终端支持交互输入」)。
+5. `runId` 结束时删除临时文件;进程异常退出时,在 app 退出钩子中清理 `easyops-*.sh` 残留。
 
 **选择方案 B 的理由**:多行结构化脚本(`if/fi`、heredoc、函数定义)若逐行写入交互 shell 会被提前解析;落文件执行可保证语义 100% 正确,同时不牺牲交互能力。
 
@@ -248,7 +266,7 @@ pty.onExit → send('pty:exit') → 终端标记退出码
 
 | 层级 | 动作 | 超时 |
 |---|---|---|
-| 1 · 终端语义软停止 | 向 PTY 写入 `\x03`(Ctrl+C)中断当前命令,再写 `exit` 让 shell 退出 | 等待 800ms 收 `onExit` |
+| 1 · 终端语义软停止 | 写入 `\x03`(Ctrl+C)中断当前前台命令;延迟 200ms 后写入 `exit\n` 让 shell 自行退出 | 等待 800ms 收 `onExit` |
 | 2 · SIGTERM 兜底 | `ptyProcess.kill('SIGTERM')`;Unix 作用于进程组,Windows 由 node-pty 遍历进程树 | 等待 500ms |
 | 3 · SIGKILL 强杀 | `ptyProcess.kill('SIGKILL')`;Windows 可回落 `taskkill /PID <pid> /T /F` | — |
 
@@ -329,6 +347,8 @@ pty.onExit → send('pty:exit') → 终端标记退出码
 - `electron-builder` 配置 `asarUnpack: ['**/node_modules/node-pty/**']`,并把 `node-pty` 列入 `dependencies`(非 devDependencies)。
 - 安装后执行 `electron-builder install-app-deps` 针对 Electron 37 ABI 重建原生模块。
 - 主进程保持 CJS 输出(避免与 `electron-store@8` 的 CJS 形态冲突)。
+- `appId` 固定 `com.easyops.app`、`productName` 固定 `EasyOps`(理由见 §6);产物命名保持 `EasyOps-<version>-<arch>.<ext>` / `EasyOps-Setup-<version>.<ext>`。
+- 需新增 `.gitignore`(当前分支缺失),至少忽略 `node_modules/`、`out/`、`dist/`、`release/`、`.idea/`。
 
 ## 16. 验收标准
 
