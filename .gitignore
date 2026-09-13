@@ -4,6 +4,7 @@ dist/
 release/
 .DS_Store
 *.log
+electron.vite.config*.mjs
 .idea/
 .vscode/
 .superpowers/
