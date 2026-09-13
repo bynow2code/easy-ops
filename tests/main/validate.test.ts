@@ -36,6 +36,14 @@ describe('validateScriptName', () => {
   it('中文按字符计数:31 个汉字被拒', () => {
     expect(validateScriptName('测'.repeat(31)).ok).toBe(false)
   })
+
+  it('emoji 代理对按字符计数:30 个通过', () => {
+    expect(validateScriptName('😀'.repeat(30)).ok).toBe(true)
+  })
+
+  it('emoji 代理对按字符计数:31 个被拒', () => {
+    expect(validateScriptName('😀'.repeat(31)).ok).toBe(false)
+  })
 })
 
 describe('validateGroupName', () => {

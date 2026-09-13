@@ -1,9 +1,17 @@
 /*
  * 自研样式统一消费由 ThemeProvider 注入的 CSS 变量(与 AntD token 对齐,设计 §11)。
- * 变量名与默认值需同时对应 antd 的 colorBgContainer / colorText,
+ * 变量名与默认值需同时对应 antd 的 colorBgContainer / colorText /
+ * colorBorderSecondary / controlItemBgActive,
  * 默认值用于 ThemeVariables 挂载前的那一帧,避免闪白。
  */
+:root {
+  --color-bg-container: #ffffff;
+  --color-text: rgba(0, 0, 0, 0.88);
+  --color-border-secondary: #f0f0f0;
+  --color-control-item-bg-active: rgba(0, 0, 0, 0.04);
+}
+
 body {
-  background-color: var(--color-bg-container, #ffffff);
-  color: var(--color-text, rgba(0, 0, 0, 0.88));
+  background-color: var(--color-bg-container);
+  color: var(--color-text);
 }

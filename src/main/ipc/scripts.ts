@@ -8,9 +8,14 @@ export function registerScriptIpc(store: ScriptsStore): void {
     store.createScript(input)
   )
 
-  ipcMain.handle('script:update', (_event, payload: { id: string; patch: Record<string, unknown> }) =>
-    store.updateScript(payload.id, payload.patch)
-  )
+  ipcMain.handle('script:update', (_event, payload: { id: string; patch: Record<string, unknown> }) => {
+    const allowed = ['name', 'content', 'groupId', 'shellId'] as const
+    const patch: Record<string, unknown> = {}
+    for (const key of allowed) {
+      if (key in payload.patch) patch[key] = payload.patch[key]
+    }
+    return store.updateScript(payload.id, patch as Parameters<typeof store.updateScript>[1])
+  })
 
   ipcMain.handle('script:delete', (_event, payload: { id: string }) => {
     store.deleteScript(payload.id)

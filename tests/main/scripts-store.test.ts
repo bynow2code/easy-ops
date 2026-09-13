@@ -37,6 +37,16 @@ describe('分组', () => {
     expect(store.listScripts()[0].groupId).toBeNull()
     expect(data.groups).toHaveLength(0)
   })
+
+  it('更新分组名称超长被拒', () => {
+    const g = store.createGroup('A')
+    expect(() => store.updateGroup(g.id, 'a'.repeat(16))).toThrowError(/15/)
+    expect(data.groups[0].name).toBe('A')
+  })
+
+  it('更新不存在的分组抛错', () => {
+    expect(() => store.updateGroup('nope', 'X')).toThrowError(/不存在/)
+  })
 })
 
 describe('脚本', () => {

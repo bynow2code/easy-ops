@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Form, Input, Modal, message } from 'antd'
+import { App, Form, Input, Modal } from 'antd'
 import { GROUP_NAME_MAX, validateGroupName } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 
 export function GroupFormModal(): JSX.Element | null {
+  const { message } = App.useApp()
   const form = useAppStore((s) => s.form)
   const closeForm = useAppStore((s) => s.closeForm)
   const reload = useAppStore((s) => s.reload)

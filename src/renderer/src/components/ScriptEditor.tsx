@@ -51,7 +51,7 @@ export function ScriptEditor({
   )
 
   return (
-    <div style={{ border: '1px solid rgba(5,5,5,0.15)', borderRadius: 6, overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--color-border-secondary)', borderRadius: 6, overflow: 'hidden' }}>
       <CodeMirror
         value={value}
         height={height}

@@ -23,7 +23,7 @@ function TopBar(): JSX.Element {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '10px 16px',
-        borderBottom: '1px solid rgba(5,5,5,0.06)'
+        borderBottom: '1px solid var(--color-border-secondary)'
       }}
     >
       <Typography.Text strong>EasyOps v{version}</Typography.Text>
@@ -49,7 +49,7 @@ function Workspace(): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      <aside style={{ width: 320, borderRight: '1px solid rgba(5,5,5,0.06)', padding: 12, overflow: 'hidden' }}>
+      <aside style={{ width: 320, borderRight: '1px solid var(--color-border-secondary)', padding: 12, overflow: 'hidden' }}>
         <Sidebar />
       </aside>
       <main style={{ flex: 1, padding: 16, overflow: 'auto' }}>

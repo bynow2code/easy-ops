@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { Button, Empty, Input, Modal, Space, Tag, Tooltip, Typography, message } from 'antd'
+import { App, Button, Empty, Input, Space, Tag, Tooltip, Typography } from 'antd'
 import { DeleteOutlined, EditOutlined, FolderAddOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import type { Group, Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
@@ -12,6 +12,7 @@ function matches(script: Script, keyword: string): boolean {
 
 export function Sidebar(): JSX.Element {
   const { scripts, groups, selectedScriptId, search, reload, selectScript, openForm, setSearch } = useAppStore()
+  const { modal, message } = App.useApp()
 
   useEffect(() => {
     void reload()
@@ -31,7 +32,7 @@ export function Sidebar(): JSX.Element {
   }, [visible, groups])
 
   const handleDeleteScript = (script: Script): void => {
-    Modal.confirm({
+    modal.confirm({
       title: '删除脚本',
       content: `确定删除「${script.name}」吗?此操作不可撤销。`,
       okText: '删除',
@@ -49,7 +50,7 @@ export function Sidebar(): JSX.Element {
   }
 
   const handleDeleteGroup = (group: Group): void => {
-    Modal.confirm({
+    modal.confirm({
       title: '删除分组',
       content: `确定删除分组「${group.name}」吗?组内脚本会变为未分组,不会被删除。`,
       okText: '删除',
@@ -78,7 +79,7 @@ export function Sidebar(): JSX.Element {
         padding: '6px 8px',
         borderRadius: 6,
         cursor: 'pointer',
-        background: selectedScriptId === script.id ? 'rgba(22,119,255,0.12)' : 'transparent'
+        background: selectedScriptId === script.id ? 'var(--color-control-item-bg-active)' : 'transparent'
       }}
     >
       <Typography.Text

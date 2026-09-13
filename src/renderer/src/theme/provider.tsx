@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
-import { ConfigProvider, theme as antdTheme } from 'antd'
+import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd'
 import type { ThemeMode } from '../../../shared/types'
 import { resolveTheme, useSystemPrefersDark } from './useResolvedTheme'
 
@@ -26,12 +26,16 @@ function ThemeVariables(): null {
   const { token } = antdTheme.useToken()
   const bgContainer = token.colorBgContainer
   const text = token.colorText
+  const borderSecondary = token.colorBorderSecondary
+  const controlItemBgActive = token.controlItemBgActive
 
   useEffect(() => {
     const root = document.documentElement
     root.style.setProperty('--color-bg-container', bgContainer)
     root.style.setProperty('--color-text', text)
-  }, [bgContainer, text])
+    root.style.setProperty('--color-border-secondary', borderSecondary)
+    root.style.setProperty('--color-control-item-bg-active', controlItemBgActive)
+  }, [bgContainer, text, borderSecondary, controlItemBgActive])
 
   return null
 }
@@ -60,7 +64,7 @@ export function ThemeProvider({
           algorithm: resolved === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm
         }}
       >
-        {children}
+        <AntdApp>{children}</AntdApp>
         <ThemeVariables />
       </ConfigProvider>
     </ThemeContext.Provider>

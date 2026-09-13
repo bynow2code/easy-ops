@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Form, Input, Modal, Select, message } from 'antd'
+import { App, Form, Input, Modal, Select } from 'antd'
 import { SCRIPT_NAME_MAX, validateScriptContent, validateScriptName } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { ScriptEditor } from './ScriptEditor'
 
 export function ScriptFormModal(): JSX.Element | null {
+  const { message } = App.useApp()
   const form = useAppStore((s) => s.form)
   const groups = useAppStore((s) => s.groups)
   const closeForm = useAppStore((s) => s.closeForm)
