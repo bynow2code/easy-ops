@@ -209,12 +209,12 @@ interface ShellInfo {
 | `pty:start` | `{ scriptId }` | `{ runId, title }` |
 | `pty:write` | `{ runId, data }` | `void` |
 | `pty:resize` | `{ runId, cols, rows }` | `void` |
-| `pty:stop` | `{ runId }` | `void` |
-| `pty:stopAll` | — | `void` |
-| `pty:close` | `{ runId }` | `void`(停止并移除终端视图) |
+| `pty:stop` | `{ runId }` | `void`(中止脚本执行:写 Ctrl+C,`run → stopped`,**会话保留**) |
+| `pty:close` | `{ runId }` | `void`(终止会话并移除终端面板) |
+| `pty:closeAll` | — | `void`(批量关闭全部终端) |
 | `pty:list` | — | `TerminalSessionSnapshot[]`(渲染重载后恢复会话用,见 §8.5) |
 
-**主 → 渲染事件**:`pty:data` `{ runId, chunk }`、`pty:exit` `{ runId, exitCode, signal }`
+**主 → 渲染事件**:`pty:data` `{ runId, chunk }`、`pty:runStatus` `{ runId, run, exitCode }`(脚本执行状态变更)、`pty:exit` `{ runId, exitCode, signal }`(会话终止)
 
 **设置 / Shell / 配置**
 
@@ -246,7 +246,7 @@ interface ShellInfo {
 
 1. `pty:start` 时,主进程把脚本内容写入 `app.getPath('temp')` 下的唯一临时文件 `easyops-<runId>.sh`。
 2. PTY 以**交互模式**启动用户选定 shell(或全局默认),即 `<shellPath> -i`,cwd 取用户主目录。
-3. shell 就绪后,主进程向 PTY 写入一行 `source '<临时文件绝对路径>'\n`(路径加单引号包裹以容忍空格)。脚本由此在**当前 shell 上下文**中执行,环境变量、别名、PATH 与用户自己的终端完全一致。
+3. shell 就绪后,主进程向 PTY 写入一行:`source '<临时文件绝对路径>'; printf '\033]1338;EasyOps;D;%s;%s\007' "$?" '<nonce>'`(路径加单引号包裹以容忍空格)。脚本由此在**当前 shell 上下文**中执行(环境变量、别名、PATH 与用户自己的终端一致);结尾的 `printf` 是**结束哨兵**,用于判定脚本执行边界与退出码 —— 方案 B 下 shell 不会主动上报「source 结束」,该哨兵是必需的,详见 §8.5。
 4. 脚本执行完毕后 shell 停在提示符,用户可继续交互(满足「终端支持交互输入」)。
 5. `runId` 结束时删除临时文件;进程异常退出时,在 app 退出钩子中清理 `easyops-*.sh` 残留。
 
@@ -263,7 +263,9 @@ pty.onExit → send('pty:exit') → 终端标记退出码
 
 每个运行实例对应一个 PTY 会话与一个 xterm 实例,终端标题 = 脚本名称。
 
-### 8.3 停止策略(三层降级)
+### 8.3 会话终止策略(三层降级)
+
+本节策略服务于「**关闭**」动作(终止整个会话)。若只是想中止当前脚本执行(「停止」),只需其中的 Ctrl+C 一步,会话保留 —— 见 §8.5。
 
 | 层级 | 动作 | 超时 |
 |---|---|---|
@@ -281,48 +283,102 @@ pty.onExit → send('pty:exit') → 终端标记退出码
 
 - 交互输入(经 xterm `onData`)
 - 单个最大化(大窗 / 全屏)、还原
-- 单个关闭
-- 批量关闭(全部关闭)
-- 标题显示脚本名称 + 运行状态(运行中 / 已退出 码)
+- **「停止」**:中止脚本执行,会话保留(仅 `run=executing` 时可用)
+- **「关闭」**:终止会话并移除面板(仅 `session=running` 时可用)
+- **批量关闭**:一次性关闭全部终端
+- 标题显示脚本名称;标题旁徽标显示脚本执行状态(§8.5)
 - 自动 `fit`(addon-fit)+ 链接可点击(addon-web-links)
 
-### 8.5 终端状态机与可靠性
+### 8.5 双重状态:会话状态与脚本执行状态
 
-**状态定义**(「未启动」即会话不存在,不作为持久状态):
+**为什么必须分两层**:方案 B 中 shell 执行完脚本后**仍停留在提示符**(这是「终端支持交互输入」的前提)。因此「shell 进程是否存活」与「脚本是否仍在执行」是两个彼此独立的维度。若只用一层状态,会出现「脚本早已跑完、界面却一直显示运行中」的错误。
 
 ```ts
-type TerminalStatus = 'starting' | 'running' | 'stopping' | 'exited' | 'error'
+// 会话状态:PTY / shell 进程的生命周期 —— 决定终端是否可输入、关闭语义
+type SessionStatus = 'starting' | 'running' | 'stopping' | 'terminated' | 'error'
+
+// 脚本执行状态:单次脚本运行的生命周期 —— 决定标题徽标、停止按钮、退出码展示
+type RunStatus = 'pending' | 'executing' | 'succeeded' | 'failed' | 'stopped' | 'unknown'
 
 interface TerminalSessionSnapshot {
   runId: string
   scriptId: string
   title: string
-  status: TerminalStatus
+  session: SessionStatus
+  run: RunStatus
   exitCode: number | null
   signal: number | null
   buffer: string          // 最近输出,截断至 100 KB
 }
 ```
 
+**会话状态(SessionStatus)**
+
 | 状态 | 进入条件 | 终端面板表现 |
 |---|---|---|
-| `starting` | `pty.spawn()` 已调用,尚未确认就绪 | 标题显示「启动中」 |
-| `running` | spawn 成功 | 标题显示「运行中」,停止按钮可用 |
-| `stopping` | 用户触发停止,三层降级进行中 | 标题显示「停止中」,禁用重复触发 |
-| `exited` | 收到 `onExit` | 标题显示「已退出 (code)」,保留输出 |
+| `starting` | `pty.spawn()` 已调用,尚未确认就绪 | 标题显示「启动中」,输入禁用 |
+| `running` | spawn 成功 | 终端可输入,「关闭」可用 |
+| `stopping` | 会话终止流程中(三层降级) | 标题显示「关闭中」,禁用重复触发 |
+| `terminated` | 收到 `onExit` | 标题显示「已结束 (code)」,输入禁用,保留输出 |
 | `error` | `spawn` 抛错或 pty 设备异常 | 标题显示「启动失败」+ 原因 |
+
+**脚本执行状态(RunStatus)**
+
+| 状态 | 进入条件 | 标题徽标 |
+|---|---|---|
+| `pending` | 会话已创建,脚本尚未开始执行 | 「待执行」 |
+| `executing` | 已写入脚本,尚未命中结束哨兵 | 「执行中」,「停止」可用 |
+| `succeeded` | 哨兵命中且退出码为 0 | 「成功」 |
+| `failed` | 哨兵命中且退出码非 0 | 「失败 (code)」 |
+| `stopped` | 用户点击「停止」中止执行 | 「已停止」 |
+| `unknown` | 会话在哨兵命中前终止,或哨兵失效 | 「结果未知」 |
+
+**两层如何配合(典型时间线)**
+
+1. `pty:start` → `session=starting`,`run=pending`
+2. spawn 成功 → `session=running`
+3. 写入脚本与哨兵 → `run=executing`
+4. **哨兵命中 → `run=succeeded|failed`;此时 `session` 仍为 `running`,用户可继续在终端交互**
+5. 用户 `exit` 或点击「关闭」→ `session=stopping` → `terminated`
+6. 用户点击「停止」→ `run=stopped`(**会话保留**)
+
+**「停止」与「关闭」是两个不同动作**
+
+- **停止**(`pty:stop`):仅中止脚本执行,向 PTY 写入 `\x03`(Ctrl+C),`run → stopped`,**会话保留**,用户可继续使用终端。
+- **关闭**(`pty:close`):终止整个会话,走 §8.3 三层降级,`session → terminated`,并移除终端面板。
+- **批量关闭**(`pty:closeAll`):对所有活动会话执行「关闭」。
+
+**脚本执行边界的检测(结束哨兵)**
+
+`source` 执行时 shell 不会主动上报「脚本已结束」,因此需要显式哨兵。写入 PTY 的实际内容为:
+
+```sh
+source '<临时文件绝对路径>'; printf '\033]1338;EasyOps;D;%s;%s\007' "$?" '<nonce>'
+```
+
+- **主进程**在 pty 输出流中扫描 `OSC 1338;EasyOps;D;<exitCode>;<nonce>` 序列。
+- 命中后提取退出码(`0 → succeeded`,非 0 → `failed`),并**从输出流中剥离该序列**,不污染 xterm 显示。
+- `<nonce>` 为每次运行生成的随机串,防止用户脚本自身输出被误判。
+- 采用 OSC 转义序列而非普通文本标记,避免影响终端渲染。
+- 与 VS Code Shell Integration(OSC 633)同源,但更轻量 —— 仅标记单次脚本的结束边界。
+
+**哨兵失效时的兜底**
+
+- 脚本内含 `exit` → shell 直接退出,由 `onExit` 判定,`run` 依退出码归入 `succeeded` / `failed`。
+- 会话在哨兵命中前崩溃 → `run=unknown`,界面标记「执行结果未知」。
+- 用户主动中止 → `run=stopped`。
 
 **可靠性设计(五条硬性要求)**
 
-1. **单一权威源**:pty 实例仅存在于主进程 `PtyManager`(`Map<runId, PtySession>`)。渲染进程的 xterm 只是视图与输入源,**不持有状态真相**;状态只能由主进程依据真实事件推进,故不存在两进程状态分裂的可能。
+1. **单一权威源**:pty 实例仅存在于主进程 `PtyManager`(`Map<runId, PtySession>`)。渲染进程的 xterm 只是视图与输入源,**不持有状态真相**;会话状态与脚本执行状态都只能由主进程依据真实事件推进,故不存在两进程状态分裂的可能。
 
 2. **渲染重载可恢复**(必须实现,否则出现幽灵终端):dev 模式 HMR 或用户刷新会重建 xterm,而 pty 仍在主进程运行。为此主进程须为每个会话保留**输出回滚缓冲**(保留最近 100 KB,超出后截断头部),渲染进程启动时先调 `pty:list` 拉取全部会话快照,逐个重建 xterm 并重放 `buffer`,再挂载增量监听。缺少此机制会导致「界面里终端消失、进程仍在后台运行且无法停止」的幽灵态。
 
-3. **不依赖事件时序**:主进程自 `spawn` 起即把输出写入会话缓冲;渲染进程在调用 `pty:start` **之前**先注册全局 `pty:data` / `pty:exit` 监听。即使数据早于 `start` 的 Promise 返回,也能由缓冲补全,不丢 chunk。
+3. **不依赖事件时序**:主进程自 `spawn` 起即把输出写入会话缓冲;渲染进程在调用 `pty:start` **之前**先注册全局 `pty:data` / `pty:runStatus` / `pty:exit` 监听。即使数据早于 `start` 的 Promise 返回,也能由缓冲补全,不丢 chunk。
 
 4. **生命周期清理**:在 `window.on('closed')` 与 `app.on('before-quit')` 中调用 `ptyManager.disposeAll()`,确保窗口关闭或应用退出时所有 PTY 会话被终止(避免子进程变孤儿),同时清理临时脚本文件。
 
-5. **异常隔离**:`pty.spawn()` 与 `onData` 回调以 try/catch 包裹,异常归入 `error` 状态并经 `pty:exit` 广播,绝不让异常冒泡导致主进程崩溃。
+5. **异常隔离**:`pty.spawn()` 与 `onData` 回调以 try/catch 包裹,异常归入会话 `error` 状态并经 `pty:exit` 广播,绝不让异常冒泡导致主进程崩溃。
 
 > 说明:以上机制是「IPC 事件推送」这一朴素实现之外的必需补充。只做事件推送而不做快照恢复与生命周期清理,必然在多平台联调中暴露幽灵终端与进程泄漏问题。
 
@@ -395,8 +451,8 @@ interface TerminalSessionSnapshot {
 
 1. `npm run dev` 可启动应用,三进程正常;`npm run build` 产出无错误。
 2. 脚本可新增(名称超 30 字被拒)、编辑、删除、执行;分组可增删改(名称超 15 字被拒),脚本可跨组移动。
-3. 执行脚本后出现交互式终端,标题为脚本名;可在其中键入选中的命令并看到交互反馈(`sudo` / `read` 等提示可响应)。
-4. 点击停止可终止脚本;WSL 与 Git Bash 环境下确认子进程被回收(无残留)。
+3. 执行脚本后出现交互式终端,标题为脚本名;可在其中键入命令并看到交互反馈(`sudo` / `read` 等提示可响应)。**脚本执行结束后状态徽标转为「成功」或「失败(退出码)」,而终端会话保持运行、仍可继续输入**(验证会话状态与执行状态相互独立)。
+4. 点击「停止」可中止脚本执行且**会话保留**(终端仍可输入);点击「关闭」可终止会话,并在 WSL 与 Git Bash 环境下确认子进程被回收(无残留)。
 5. 终端可单个最大化、单个关闭、批量关闭,且关闭后 PTY 会话被销毁(无泄漏)。
 6. 开发模式下刷新渲染进程或触发 HMR 后,运行中的终端能自动恢复(标题、状态、已输出内容一致),不停留在幽灵态。
 7. 关闭主窗口后所有 PTY 会话被终止:用 `ps` / 任务管理器确认无脚本子进程残留。
