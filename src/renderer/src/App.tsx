@@ -78,7 +78,7 @@ function Workspace(): JSX.Element {
             <Typography.Text type="secondary">从左侧选择一个脚本查看详情</Typography.Text>
           )}
         </div>
-        <div style={{ flex: 1, borderTop: '1px solid rgba(5,5,5,0.06)', minHeight: 0 }}>
+        <div style={{ flex: 1, borderTop: '1px solid var(--color-border-secondary)', minHeight: 0 }}>
           <TerminalDock />
         </div>
       </main>

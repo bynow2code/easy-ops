@@ -177,7 +177,8 @@ export async function isValidShellPath(
   probe: ShellProbe
 ): Promise<ShellPathValidation> {
   if (!(await probe.fileExists(shellPath))) {
-    return { valid: false, reason: '文件不存在' }
+    // fileExists 实为 X_OK 校验,故不可执行的文件也会落在此分支,文案需覆盖两种原因
+    return { valid: false, reason: '文件不存在或不可执行' }
   }
   const version = await safeVersion(probe, shellPath)
   if (!version) {

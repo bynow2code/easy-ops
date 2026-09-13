@@ -107,7 +107,7 @@ export function TerminalDock(): JSX.Element {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '4px 8px',
-          borderBottom: '1px solid rgba(5,5,5,0.06)'
+          borderBottom: '1px solid var(--color-border-secondary)'
         }}
       >
         <Typography.Text strong style={{ fontSize: 12 }}>
@@ -172,7 +172,7 @@ export function TerminalDock(): JSX.Element {
           isMaximized
             ? // 最大化:包装层作为 column flex,activePanel 的 flex:1 才能撑满(与原直接子级等价)
               { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
-            : { flex: 1, minHeight: 0, borderTop: '1px solid rgba(5,5,5,0.06)' }
+            : { flex: 1, minHeight: 0, borderTop: '1px solid var(--color-border-secondary)' }
         }
       >
         {activePanel}
