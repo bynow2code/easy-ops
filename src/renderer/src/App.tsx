@@ -2,23 +2,12 @@ import { useEffect, useState } from 'react'
 import { Segmented, Space, Typography } from 'antd'
 import type { ThemeMode } from '../../shared/types'
 import { ThemeProvider, useTheme } from './theme/provider'
+import { Sidebar } from './components/Sidebar'
+import { ScriptFormModal } from './components/ScriptFormModal'
+import { GroupFormModal } from './components/GroupFormModal'
 
-function ThemeSwitch(): JSX.Element {
+function TopBar(): JSX.Element {
   const { mode, setMode } = useTheme()
-  return (
-    <Segmented
-      value={mode}
-      onChange={(value) => setMode(value as ThemeMode)}
-      options={[
-        { label: '浅色', value: 'light' },
-        { label: '深色', value: 'dark' },
-        { label: '跟随系统', value: 'system' }
-      ]}
-    />
-  )
-}
-
-function Shell(): JSX.Element {
   const [version, setVersion] = useState('')
 
   useEffect(() => {
@@ -26,13 +15,39 @@ function Shell(): JSX.Element {
   }, [])
 
   return (
-    <div style={{ padding: 24 }}>
-      <Space direction="vertical" size="large">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          EasyOps v{version}
-        </Typography.Title>
-        <ThemeSwitch />
-      </Space>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 16px',
+        borderBottom: '1px solid rgba(5,5,5,0.06)'
+      }}
+    >
+      <Typography.Text strong>EasyOps v{version}</Typography.Text>
+      <Segmented
+        size="small"
+        value={mode}
+        onChange={(value) => setMode(value as ThemeMode)}
+        options={[
+          { label: '浅色', value: 'light' },
+          { label: '深色', value: 'dark' },
+          { label: '跟随系统', value: 'system' }
+        ]}
+      />
+    </div>
+  )
+}
+
+function Workspace(): JSX.Element {
+  return (
+    <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <aside style={{ width: 320, borderRight: '1px solid rgba(5,5,5,0.06)', padding: 12, overflow: 'hidden' }}>
+        <Sidebar />
+      </aside>
+      <main style={{ flex: 1, padding: 16 }}>
+        <Typography.Text type="secondary">从左侧选择一个脚本查看详情</Typography.Text>
+      </main>
     </div>
   )
 }
@@ -51,7 +66,12 @@ export default function App(): JSX.Element {
 
   return (
     <ThemeProvider mode={mode} onModeChange={handleModeChange}>
-      <Shell />
+      <Space direction="vertical" size={0} style={{ height: '100vh', width: '100%' }}>
+        <TopBar />
+        <Workspace />
+      </Space>
+      <GroupFormModal />
+      <ScriptFormModal />
     </ThemeProvider>
   )
 }
