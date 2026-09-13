@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { createMainWindow } from './window'
+import { probePty } from './pty/probe'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -14,15 +15,27 @@ if (!gotLock) {
     }
   })
 
-  app.whenReady().then(() => {
-    mainWindow = createMainWindow()
-    mainWindow.on('closed', () => {
+  const spawnMainWindow = (): void => {
+    const win = createMainWindow()
+    win.on('closed', () => {
       mainWindow = null
     })
+    mainWindow = win
+  }
+
+  app.whenReady().then(async () => {
+    const probe = await probePty()
+    if (probe.ok) {
+      console.log('[EasyOps] node-pty 可用,输出:', probe.output.trim())
+    } else {
+      console.error('[EasyOps] node-pty 不可用:', probe.error ?? `退出码 ${probe.exitCode}`)
+    }
+
+    spawnMainWindow()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        mainWindow = createMainWindow()
+        spawnMainWindow()
       }
     })
   })
