@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar'
 import { ScriptFormModal } from './components/ScriptFormModal'
 import { GroupFormModal } from './components/GroupFormModal'
 import { ScriptEditor } from './components/ScriptEditor'
+import { TerminalDock } from './components/TerminalDock'
 import { useAppStore } from './store/useAppStore'
 
 function TopBar(): JSX.Element {
@@ -52,22 +53,27 @@ function Workspace(): JSX.Element {
       <aside style={{ width: 320, borderRight: '1px solid var(--color-border-secondary)', padding: 12, overflow: 'hidden' }}>
         <Sidebar />
       </aside>
-      <main style={{ flex: 1, padding: 16, overflow: 'auto' }}>
-        {selected ? (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space>
-              <Typography.Title level={5} style={{ margin: 0 }}>
-                {selected.name}
-              </Typography.Title>
-              <Button size="small" onClick={() => openForm({ type: 'script-edit', script: selected })}>
-                编辑
-              </Button>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+        <div style={{ flex: '0 0 40%', padding: 16, overflow: 'auto', minHeight: 0 }}>
+          {selected ? (
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space>
+                <Typography.Title level={5} style={{ margin: 0 }}>
+                  {selected.name}
+                </Typography.Title>
+                <Button size="small" onClick={() => openForm({ type: 'script-edit', script: selected })}>
+                  编辑
+                </Button>
+              </Space>
+              <ScriptEditor value={selected.content} readOnly height="220px" />
             </Space>
-            <ScriptEditor value={selected.content} readOnly height="420px" />
-          </Space>
-        ) : (
-          <Typography.Text type="secondary">从左侧选择一个脚本查看详情</Typography.Text>
-        )}
+          ) : (
+            <Typography.Text type="secondary">从左侧选择一个脚本查看详情</Typography.Text>
+          )}
+        </div>
+        <div style={{ flex: 1, borderTop: '1px solid rgba(5,5,5,0.06)', minHeight: 0 }}>
+          <TerminalDock />
+        </div>
       </main>
     </div>
   )

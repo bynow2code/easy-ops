@@ -1,18 +1,15 @@
 import { ipcMain } from 'electron'
 import type { PtyManager } from '../pty/manager'
+import { createShellResolver } from '../pty/shellResolver'
 import type { ShellInfo } from '../../shared/types'
 import type { SettingsStore } from '../store/settings'
 
 export function registerPtyIpc(manager: PtyManager, settings: SettingsStore, detect: () => Promise<ShellInfo[]>): void {
-  const resolveShell = async (scriptShellId: string | null): Promise<ShellInfo> => {
-    const shells = await detect()
-    const wanted = scriptShellId ?? settings.get().shellId
-    const found = wanted ? shells.find((s) => s.id === wanted) : undefined
-    if (found) return found
-    const fallback = shells[0]
-    if (!fallback) throw new Error('未检测到可用的 shell,请在设置中配置')
-    return fallback
-  }
+  const resolveShell = createShellResolver({
+    detect,
+    getCustomShells: () => settings.get().customShells,
+    getPreferredShellId: () => settings.get().shellId
+  })
 
   ipcMain.handle(
     'pty:start',

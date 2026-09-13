@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react'
 import { App, Button, Empty, Input, Space, Tag, Tooltip, Typography } from 'antd'
-import { DeleteOutlined, EditOutlined, FolderAddOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, FolderAddOutlined, PlayCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import type { Group, Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
+import { terminalActions } from '../store/useTerminalStore'
 
 function matches(script: Script, keyword: string): boolean {
   if (!keyword) return true
@@ -30,6 +31,20 @@ export function Sidebar(): JSX.Element {
     }
     return byGroup
   }, [visible, groups])
+
+  const handleRun = async (script: Script): Promise<void> => {
+    try {
+      const { runId, title } = await window.api.pty.start({
+        scriptId: script.id,
+        scriptName: script.name,
+        content: script.content,
+        shellId: script.shellId
+      })
+      terminalActions.add({ runId, title, scriptId: script.id })
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   const handleDeleteScript = (script: Script): void => {
     modal.confirm({
@@ -89,6 +104,17 @@ export function Sidebar(): JSX.Element {
         {script.name}
       </Typography.Text>
       <Space size={2}>
+        <Tooltip title="执行">
+          <Button
+            type="text"
+            size="small"
+            icon={<PlayCircleOutlined />}
+            onClick={(e) => {
+              e.stopPropagation()
+              void handleRun(script)
+            }}
+          />
+        </Tooltip>
         <Tooltip title="编辑">
           <Button
             type="text"
