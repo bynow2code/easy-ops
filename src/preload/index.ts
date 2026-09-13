@@ -27,6 +27,28 @@ const api = {
       ipcRenderer.invoke('shell:validate', { path }),
     browse: (): Promise<string | null> => ipcRenderer.invoke('shell:browse')
   },
+  pty: {
+    start: (input: { scriptId: string; scriptName: string; content: string; shellId: string | null }): Promise<{
+      runId: string
+      title: string
+    }> => ipcRenderer.invoke('pty:start', input),
+    write: (runId: string, data: string): Promise<void> => ipcRenderer.invoke('pty:write', { runId, data }),
+    resize: (runId: string, cols: number, rows: number): Promise<void> =>
+      ipcRenderer.invoke('pty:resize', { runId, cols, rows }),
+    close: (runId: string): Promise<void> => ipcRenderer.invoke('pty:close', { runId }),
+    closeAll: (): Promise<void> => ipcRenderer.invoke('pty:closeAll'),
+    onData: (listener: (payload: { runId: string; chunk: string }) => void): (() => void) => {
+      const handler = (_e: unknown, payload: { runId: string; chunk: string }): void => listener(payload)
+      ipcRenderer.on('pty:data', handler)
+      return () => ipcRenderer.removeListener('pty:data', handler)
+    },
+    onExit: (listener: (payload: { runId: string; exitCode: number; signal: number | null }) => void): (() => void) => {
+      const handler = (_e: unknown, payload: { runId: string; exitCode: number; signal: number | null }): void =>
+        listener(payload)
+      ipcRenderer.on('pty:exit', handler)
+      return () => ipcRenderer.removeListener('pty:exit', handler)
+    }
+  },
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
     update: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('settings:update', { patch })

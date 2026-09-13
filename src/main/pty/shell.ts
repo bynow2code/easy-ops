@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { createHash } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -69,6 +70,17 @@ async function safeVersion(probe: ShellProbe, shellPath: string): Promise<string
   }
 }
 
+export function dedupeShellIds(shells: ShellInfo[]): ShellInfo[] {
+  const seen = new Map<string, number>()
+  return shells.map((shell) => {
+    const count = seen.get(shell.id) ?? 0
+    seen.set(shell.id, count + 1)
+    if (count === 0) return shell
+    const hash = createHash('sha1').update(shell.path).digest('hex').slice(0, 6)
+    return { ...shell, id: `${shell.id}-${hash}` }
+  })
+}
+
 async function detectPosix(probe: ShellProbe): Promise<ShellInfo[]> {
   let candidates: string[] = []
 
@@ -98,7 +110,8 @@ async function detectPosix(probe: ShellProbe): Promise<ShellInfo[]> {
     results.sort((a, b) => Number(b.name === 'bash') - Number(a.name === 'bash'))
   }
 
-  return results
+  // 同 basename 的多个路径(如 /bin/zsh 与 /usr/bin/zsh)会用 basename 撞 id,追加路径短 hash 去重
+  return dedupeShellIds(results)
 }
 
 async function detectWindows(probe: ShellProbe): Promise<ShellInfo[]> {

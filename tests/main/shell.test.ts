@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildShellInfo,
+  dedupeShellIds,
   detectShells,
   isValidShellPath,
   parseEtcShells,
@@ -131,6 +132,36 @@ describe('detectShells — windows', () => {
     })
     const shells = await detectShells(probe)
     expect(shells.some((s) => s.id.startsWith('gitbash:'))).toBe(true)
+  })
+})
+
+describe('dedupeShellIds', () => {
+  const shell = (id: string, shellPath: string) => ({
+    id,
+    name: id,
+    path: shellPath,
+    args: ['-i'],
+    source: 'detected' as const
+  })
+
+  it('无撞车时 id 原样保留', () => {
+    const shells = [shell('zsh', '/bin/zsh'), shell('bash', '/bin/bash')]
+    expect(dedupeShellIds(shells).map((s) => s.id)).toEqual(['zsh', 'bash'])
+  })
+
+  it('同 basename 多路径时后续项 id 追加路径短 hash', () => {
+    const shells = [shell('zsh', '/bin/zsh'), shell('zsh', '/usr/bin/zsh')]
+    const deduped = dedupeShellIds(shells)
+    expect(deduped[0].id).toBe('zsh')
+    expect(deduped[1].id.startsWith('zsh-')).toBe(true)
+    expect(deduped[1].id).not.toBe(deduped[0].id)
+    expect(deduped[1].path).toBe('/usr/bin/zsh')
+  })
+
+  it('同路径重复出现时 id 仍然唯一', () => {
+    const shells = [shell('zsh', '/bin/zsh'), shell('zsh', '/bin/zsh')]
+    const deduped = dedupeShellIds(shells)
+    expect(deduped[0].id).not.toBe(deduped[1].id)
   })
 })
 
