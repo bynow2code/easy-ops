@@ -6,6 +6,7 @@ import { registerGroupIpc } from './groups'
 import { registerConfigIpc } from './config'
 import { registerScriptIpc } from './scripts'
 import { registerShellIpc } from './shell'
+import { registerUpdaterIpc } from './updater'
 
 export interface IpcContext {
   scripts: ScriptsStore
@@ -14,7 +15,7 @@ export interface IpcContext {
   repoUrl: string
 }
 
-export function registerIpc(ctx: IpcContext): void {
+export function registerIpc(ctx: IpcContext): { updaterHandle: ReturnType<typeof registerUpdaterIpc> } {
   registerScriptIpc(ctx.scripts)
   registerGroupIpc(ctx.scripts)
   registerShellIpc(ctx.getWindow, ctx.settings)
@@ -33,4 +34,7 @@ export function registerIpc(ctx: IpcContext): void {
 
   ipcMain.handle('settings:get', () => ctx.settings.get())
   ipcMain.handle('settings:update', (_event, payload: { patch: Partial<Settings> }) => ctx.settings.update(payload.patch))
+
+  const updaterHandle = registerUpdaterIpc(ctx.getWindow)
+  return { updaterHandle }
 }

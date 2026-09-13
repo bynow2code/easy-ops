@@ -47,7 +47,7 @@ if (!gotLock) {
       const scriptsStore = createScriptsStore(scriptsPersistence)
       const settingsStore = createSettingsStore(settingsPersistence)
 
-      registerIpc({
+      const { updaterHandle } = registerIpc({
         scripts: scriptsStore,
         settings: settingsStore,
         getWindow: () => mainWindow,
@@ -74,6 +74,10 @@ if (!gotLock) {
       registerPtyIpc(ptyManager, settingsStore, () => detectShells(createNodeShellProbe()))
 
       spawnMainWindow()
+
+      if (settingsStore.get().checkUpdateOnLaunch) {
+        setTimeout(() => updaterHandle.checkOnLaunch(), 3000)
+      }
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

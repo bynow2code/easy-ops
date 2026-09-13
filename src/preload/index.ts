@@ -53,6 +53,16 @@ const api = {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
     update: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('settings:update', { patch })
   },
+  update: {
+    check: (): Promise<void> => ipcRenderer.invoke('update:check'),
+    download: (): Promise<void> => ipcRenderer.invoke('update:download'),
+    install: (): Promise<void> => ipcRenderer.invoke('update:install'),
+    onEvent: (listener: (event: unknown) => void): (() => void) => {
+      const handler = (_e: unknown, event: unknown): void => listener(event)
+      ipcRenderer.on('update:event', handler)
+      return () => ipcRenderer.removeListener('update:event', handler)
+    }
+  },
   config: {
     export: (): Promise<{ canceled: boolean; path?: string }> => ipcRenderer.invoke('config:export'),
     import: (mode: 'v2' | 'legacy'): Promise<{

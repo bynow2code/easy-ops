@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { App, Button, Divider, Input, List, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
 import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, HistoryOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { Script, ShellInfo } from '../../../shared/types'
+import { UpdatePanel } from './UpdatePanel'
 import { useTheme } from '../theme/provider'
 import { useAppStore } from '../store/useAppStore'
 import {
@@ -276,6 +277,13 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             <Typography.Text type="secondary">启动时检查更新</Typography.Text>
             <Switch size="small" checked={checkOnLaunch} onChange={handleToggleCheckOnLaunch} />
           </Space>
+        </div>
+
+        <div>
+          <Typography.Text type="secondary">软件更新</Typography.Text>
+          <div style={{ marginTop: 4 }}>
+            <UpdatePanel />
+          </div>
         </div>
 
         <Divider style={{ margin: '8px 0' }} />
