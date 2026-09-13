@@ -94,13 +94,20 @@ export function createPtyManager(deps: PtyManagerDeps): PtyManager {
         EASYOPS_RUN_ID: runId
       }
 
-      const pty = deps.spawn(input.shell.path, input.shell.args, {
-        name: 'xterm-256color',
-        cols: 80,
-        rows: 24,
-        cwd: deps.homeDir,
-        env
-      })
+      let pty: PtyLike
+      try {
+        pty = deps.spawn(input.shell.path, input.shell.args, {
+          name: 'xterm-256color',
+          cols: 80,
+          rows: 24,
+          cwd: deps.homeDir,
+          env
+        })
+      } catch (err) {
+        // spawn 失败时回收已写出的临时脚本,并以中文前缀上抛(保留原始信息便于诊断)
+        await deps.cleanupTempScript(tempFile)
+        throw new Error(`终端启动失败: ${err instanceof Error ? err.message : String(err)}`)
+      }
 
       const session: Session = { runId, scriptId: input.scriptId, title, pty, tempFile, dataDisposers: [], exitDisposer: null }
       sessions.set(runId, session)

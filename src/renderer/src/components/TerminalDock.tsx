@@ -149,28 +149,34 @@ export function TerminalDock(): JSX.Element {
     </div>
   ) : null
 
-  if (isMaximized) {
-    return (
+  // 最大化与普通态共用同一棵树(仅根 div 的 style 不同),避免 React 按位置协调
+  // 导致 TerminalView 全量卸载重挂、xterm 滚动缓冲丢失
+  return (
+    <div
+      style={
+        isMaximized
+          ? {
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1000,
+              background: 'var(--color-bg-base, #fff)',
+              display: 'flex',
+              flexDirection: 'column'
+            }
+          : { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }
+      }
+    >
+      {tabBar}
       <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 1000,
-          background: 'var(--color-bg-base, #fff)',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
+        style={
+          isMaximized
+            ? // 最大化:包装层作为 column flex,activePanel 的 flex:1 才能撑满(与原直接子级等价)
+              { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
+            : { flex: 1, minHeight: 0, borderTop: '1px solid rgba(5,5,5,0.06)' }
+        }
       >
-        {tabBar}
         {activePanel}
       </div>
-    )
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {tabBar}
-      <div style={{ flex: 1, minHeight: 0, borderTop: '1px solid rgba(5,5,5,0.06)' }}>{activePanel}</div>
     </div>
   )
 }

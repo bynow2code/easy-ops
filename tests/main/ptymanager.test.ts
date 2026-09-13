@@ -106,6 +106,31 @@ describe('启动会话', () => {
     expect(fake.last()!.written[0]).toBe(`source '/tmp/easyops-test/easyops-${runId}.sh'\n`)
   })
 
+  it('spawn 抛错时清理临时文件并以中文前缀上抛', async () => {
+    const cleaned: string[] = []
+    const failingSpawn: PtySpawnFn = () => {
+      throw new Error("spawn /bin/badshell ENOENT")
+    }
+    const m = createPtyManager({
+      spawn: failingSpawn,
+      tempDir: '/tmp/easyops-test',
+      homeDir: '/Users/test',
+      writeTempScript: async (_dir, runId) => `/tmp/easyops-test/easyops-${runId}.sh`,
+      cleanupTempScript: async (filePath) => {
+        cleaned.push(filePath)
+      },
+      emit: () => {},
+      env: {},
+      platform: 'darwin'
+    })
+    await expect(m.start({ scriptId: 's1', scriptName: 'a', content: 'echo hi', shell: SHELL })).rejects.toThrowError(
+      /^终端启动失败: .*/
+    )
+    expect(cleaned).toHaveLength(1)
+    expect(cleaned[0]).toMatch(/^\/tmp\/easyops-test\/easyops-.+\.sh$/)
+    expect(m.list()).toHaveLength(0)
+  })
+
   it('cwd 使用传入的 homeDir', async () => {
     let usedCwd = ''
     const capturingSpawn: PtySpawnFn = (_file, _args, options) => {

@@ -30,7 +30,7 @@ if (!gotLock) {
   })
 
   const spawnMainWindow = (): void => {
-    const win = createMainWindow()
+    const win = createMainWindow(ptyManagerRef ?? undefined)
     win.on('closed', () => {
       void ptyManagerRef?.disposeAll()
       mainWindow = null
