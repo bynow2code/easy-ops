@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Group, Script, Settings } from '../shared/types'
+import type { Group, Script, Settings, ShellInfo } from '../shared/types'
 
 const api = {
   app: {
@@ -20,6 +20,12 @@ const api = {
     update: (id: string, name: string): Promise<Group> => ipcRenderer.invoke('group:update', { id, name }),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('group:delete', { id }),
     reorder: (ids: string[]): Promise<void> => ipcRenderer.invoke('group:reorder', { ids })
+  },
+  shell: {
+    detect: (): Promise<ShellInfo[]> => ipcRenderer.invoke('shell:detect'),
+    validate: (path: string): Promise<{ valid: boolean; version?: string; reason?: string }> =>
+      ipcRenderer.invoke('shell:validate', { path }),
+    browse: (): Promise<string | null> => ipcRenderer.invoke('shell:browse')
   },
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),

@@ -4,6 +4,7 @@ import type { ScriptsStore } from '../store/scripts'
 import type { SettingsStore } from '../store/settings'
 import { registerGroupIpc } from './groups'
 import { registerScriptIpc } from './scripts'
+import { registerShellIpc } from './shell'
 
 export interface IpcContext {
   scripts: ScriptsStore
@@ -15,6 +16,7 @@ export interface IpcContext {
 export function registerIpc(ctx: IpcContext): void {
   registerScriptIpc(ctx.scripts)
   registerGroupIpc(ctx.scripts)
+  registerShellIpc(ctx.getWindow, ctx.settings)
 
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
