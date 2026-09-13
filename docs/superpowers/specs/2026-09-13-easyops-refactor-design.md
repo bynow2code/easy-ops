@@ -30,7 +30,7 @@ EasyOps 是一个脚本管理器桌面应用。旧版(v0.7.15,位于 master 分�
 | 构建 | Vite | 5.4.21 | 满足 electron-vite 4 的 `vite ^5` peer |
 | 语言 | TypeScript | 5.x | 三进程统一 |
 | 前端 | React / react-dom | 18.2.0 | 需求指定(旧版为 19) |
-| UI | Ant Design / @ant-design/icons | 5.29.3 / 6.3.4 | `ConfigProvider` 切换主题 |
+| UI | Ant Design / @ant-design/icons | 5.29.3 / 5.6.1 | `ConfigProvider` 切换主题;图标版本与 antd 5 的内部依赖(`^5.6.1`)对齐,避免双份安装 |
 | 状态 | zustand | 5.x | 轻量替代 2411 行单文件 |
 | 终端 | node-pty | 1.1.0 | 主进程 spawn,支持交互 |
 | 终端 UI | @xterm/xterm + addon-fit + addon-web-links | 5.5.0 / 0.10.0 | 选 5.x 而非 6.0,生态更稳 |
