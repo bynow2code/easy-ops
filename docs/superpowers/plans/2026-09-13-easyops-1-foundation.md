@@ -896,7 +896,10 @@ export interface Persistence<T> {
   write: (next: T) => void
 }
 
-export function createElectronStore<T extends Record<string, unknown>>(
+// 约束放宽为 Record<string, any> 而非 Record<string, unknown>:ScriptsData 与 Settings 都是
+// interface,TypeScript 不为 interface 推断隐式索引签名,用 unknown 会让调用点报 TS2345。
+// electron-store 自身的泛型约束口径也是 Record<string, any>。
+export function createElectronStore<T extends Record<string, any>>(
   name: string,
   defaults: T,
   key: string
@@ -1370,7 +1373,9 @@ export function registerIpc(ctx: IpcContext): void {
 
 - [ ] **步骤 4:在主进程装配 store 与 IPC**
 
-将 `src/main/index.ts` 替换为:
+> ⚠️ **不要对 `src/main/index.ts` 做整体替换。** 下面的代码基于任务 1 的初始形态编写;若照抄覆盖,会**回退任务 2 引入的两项已审查通过的修复**:① `spawnMainWindow()` 助手(macOS `activate` 分支重建窗口未挂 `closed` 监听的缺陷修复);② 探测收敛为「窗口创建之后、仅 `!app.isPackaged` 时执行、非阻塞」。请**只把新增内容合并进现有文件**:顶部新增的导入,以及 `whenReady` 回调内新增的 store 装配与 `registerIpc(...)` 调用。凡是与现有文件冲突的部分(尤其是窗口创建与探测的组织方式),**以现有文件为准**。
+
+作为对照,合并后的完整形态应为:
 
 ```ts
 import { app, BrowserWindow } from 'electron'
@@ -1397,38 +1402,51 @@ if (!gotLock) {
     }
   })
 
-  app.whenReady().then(async () => {
-    const scriptsPersistence = createElectronStore<ScriptsData>('easyops-scripts', { scripts: [], groups: [] }, 'data')
-    const settingsPersistence = createElectronStore<Settings>('easyops-settings', DEFAULT_SETTINGS, 'data')
-
-    const scriptsStore = createScriptsStore(scriptsPersistence)
-    const settingsStore = createSettingsStore(settingsPersistence)
-
-    registerIpc({
-      scripts: scriptsStore,
-      settings: settingsStore,
-      getWindow: () => mainWindow,
-      repoUrl: REPO_URL
-    })
-
-    const probe = await probePty()
-    if (probe.ok) {
-      console.log('[EasyOps] node-pty 可用')
-    } else {
-      console.error('[EasyOps] node-pty 不可用:', probe.error ?? `退出码 ${probe.exitCode}`)
-    }
-
-    mainWindow = createMainWindow()
-    mainWindow.on('closed', () => {
+  const spawnMainWindow = (): void => {
+    const win = createMainWindow()
+    win.on('closed', () => {
       mainWindow = null
     })
+    mainWindow = win
+  }
 
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        mainWindow = createMainWindow()
+  app
+    .whenReady()
+    .then(() => {
+      const scriptsPersistence = createElectronStore<ScriptsData>('easyops-scripts', { scripts: [], groups: [] }, 'data')
+      const settingsPersistence = createElectronStore<Settings>('easyops-settings', DEFAULT_SETTINGS, 'data')
+
+      const scriptsStore = createScriptsStore(scriptsPersistence)
+      const settingsStore = createSettingsStore(settingsPersistence)
+
+      registerIpc({
+        scripts: scriptsStore,
+        settings: settingsStore,
+        getWindow: () => mainWindow,
+        repoUrl: REPO_URL
+      })
+
+      spawnMainWindow()
+
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          spawnMainWindow()
+        }
+      })
+
+      if (!app.isPackaged) {
+        void probePty().then((probe) => {
+          if (probe.ok) {
+            console.log('[EasyOps] node-pty 可用')
+          } else {
+            console.error('[EasyOps] node-pty 不可用:', probe.error ?? `退出码 ${probe.exitCode}`)
+          }
+        })
       }
     })
-  })
+    .catch((err: unknown) => {
+      console.error('[EasyOps] 主进程启动失败:', err)
+    })
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
