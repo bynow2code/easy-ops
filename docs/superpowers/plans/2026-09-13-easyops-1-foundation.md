@@ -43,7 +43,6 @@
 | `src/main/ipc/index.ts` | IPC 注册中心,按域调用各 handler 模块 |
 | `src/main/ipc/scripts.ts` | 脚本域 IPC handler 注册 |
 | `src/main/ipc/groups.ts` | 分组域 IPC handler 注册 |
-| `src/main/store/validate.ts` | 名称与字段校验(纯函数,可测) |
 | `src/main/store/scripts.ts` | 脚本与分组的数据读写(纯逻辑,可测) |
 | `src/main/store/settings.ts` | 设置读写(纯逻辑,可测) |
 | `src/main/store/persistence.ts` | electron-store 实例与原子写入封装 |
@@ -574,8 +573,7 @@ git commit -m "feat: 增加 node-pty 原生模块启动探测"
 ## 任务 3:校验逻辑与数据层
 
 **文件:**
-- 创建:`src/shared/types.ts`
-- 创建:`src/main/store/validate.ts`
+- 创建:`src/shared/types.ts`(数据模型、常量与三个 `validate*` 函数 —— 校验必须放在 `shared/` 下才能被渲染层复用,以满足"双侧校验"约束)
 - 创建:`src/main/store/persistence.ts`
 - 创建:`src/main/store/scripts.ts`
 - 创建:`src/main/store/settings.ts`
