@@ -1,7 +1,7 @@
 # EasyOps 重构设计规格
 
 - 日期:2026-09-13
-- 状态:待用户审查
+- 状态:已按用户评审意见修订(待最终确认)
 - 仓库:https://github.com/bynow2code/easy-ops
 - 目标分支:`feature/new`(master 保留旧版 v0.7.15 作为对照)
 
@@ -48,9 +48,10 @@ EasyOps 是一个脚本管理器桌面应用。旧版(v0.7.15,位于 master 分�
 **非目标(明确排除)**:
 
 - 不再保留独立 HTTP server 进程;所有能力经 IPC 直连。
+- **不做多选批量执行**:仅支持单个脚本执行(需求原文为「单个脚本执行」;旧版的多选 Execute Selected 不迁移)。
 - 不做云端同步 / 多设备。
 - 不改变现有 Release 仓库与 tag 命名(`v*`)。
-- 不引入 `tree-kill` 等额外杀进程包(理由见 §8.3)。
+- 不引入 `tree-kill` 等额外杀进程包(见 §8.5 取舍说明)。
 
 ## 4. 目录结构
 
@@ -122,7 +123,6 @@ interface Settings {
   shellId: string | null          // 全局默认 shell
   customShells: CustomShell[]     // 自定义 shell 路径
   checkUpdateOnLaunch: boolean
-  migrated: boolean               // 是否已完成旧数据迁移
 }
 
 interface CustomShell {
@@ -147,9 +147,9 @@ interface ShellInfo {
 
 ## 6. 数据迁移(旧版兼容)
 
-**触发方式**:设置面板提供「导入旧版配置」按钮;首次启动若在 `userData` 下检测到旧 `scripts.json` 且 `settings.migrated === false`,弹出一次性提示(不自动覆盖)。
+**触发方式**:**仅**在设置面板提供「导入旧版配置」按钮,由用户按需手动触发。**不做启动时自动扫描与弹窗** —— 那会引入额外的启动检测逻辑,且旧版仍在使用时容易误判。
 
-**前置条件(重要)**:新版 `appId` 必须保持为 **`com.easyops.app`**、`productName` 保持 **`EasyOps`**,以复用与旧版相同的 `userData` 目录,从而自动定位旧 `scripts.json`。若将来变更 appId,迁移流程必须改为由用户手动选择旧 `scripts.json` 文件路径。此外,若旧版仍安装在机器上,需提示用户先退出旧版再导入,避免两边同时写同一份数据。
+**前置条件(重要)**:新版 `appId` 必须保持为 **`com.easyops.app`**、`productName` 保持 **`EasyOps`**,以复用与旧版相同的 `userData` 目录,把旧 `scripts.json` 作为「导入旧版配置」的默认文件位置。若将来变更 appId,则该按钮改为让用户手动选择旧 `scripts.json` 的路径。导入前需提示用户先退出旧版(若仍在使用),避免两边同时写同一份数据。
 
 **识别逻辑**:兼容两种旧格式:
 
@@ -200,6 +200,7 @@ interface ShellInfo {
 | `group:create` | `{ name }` | `Group` |
 | `group:update` | `{ id, name }` | `Group` |
 | `group:delete` | `{ id }` | `void`(其下脚本 `groupId` 置 `null`) |
+| `group:reorder` | `{ ids: string[] }` | `void`(与 `Group.order` 字段对应) |
 
 **终端**
 
@@ -223,9 +224,7 @@ interface ShellInfo {
 | `shell:validate` | `{ path }` | `{ valid, version?, reason? }` |
 | `shell:browse` | — | `string \| null`(原生文件对话框) |
 | `config:export` | — | `{ canceled, path? }` |
-| `config:import` | `{ mode: 'v2' \| 'legacy' }` | `{ canceled, stats? }` |
-| `migration:scan` | — | `{ found, path?, count }` |
-| `migration:apply` | — | `{ imported, skipped, warnings }` |
+| `config:import` | `{ mode: 'v2' \| 'legacy' }` | `{ canceled, stats? }`(`legacy` 走 §6 迁移路径) |
 
 **应用 / 更新**
 
@@ -282,7 +281,7 @@ pty.onExit        → send('pty:exit')      → 终端显示「会话已结束�
 - 单个最大化(大窗 / 全屏)、还原
 - 单个关闭
 - 批量关闭
-- 标题显示脚本名称
+- 标题显示脚本名称;同一脚本多次执行时追加序号 `(2)`、`(3)` 以区分
 - 自动 `fit`(addon-fit)+ 链接可点击(addon-web-links)
 
 ### 8.5 刻意不做的设计(明确取舍)
@@ -315,14 +314,14 @@ pty.onExit        → send('pty:exit')      → 终端显示「会话已结束�
 | Linux | `bash`(及 `/etc/shells` 中的其它) | 解析 `/etc/shells` + `which` |
 | Windows | Git Bash、WSL | Git Bash 走常见安装路径候选 + `where`;WSL 走 `wsl.exe -l -q` |
 
-**自定义路径**:经原生文件对话框选择,主进程校验「文件可执行」且能返回版本号(执行 `--version` 探测);Windows 上拒绝 GUI 程序(解析 PE Subsystem,避免误选)。
+**自定义路径**:经原生文件对话框选择,主进程校验「文件存在且可执行」,并执行 `--version` 探测能否正常启动。**不做** PE Subsystem 之类的二进制格式解析(旧版有此逻辑)—— 若误选了 GUI 程序,`--version` 探测会自然失败并被拒。
 
 **切换**:设置面板选择全局默认 shell(`settings.shellId`);单个脚本可覆盖(`script.shellId`),未覆盖时跟随全局。
 
 ## 10. 脚本编辑器
 
 - CodeMirror 6 + `@codemirror/legacy-modes/mode/shell` 提供 shell 语法高亮。
-- `@codemirror/autocomplete` 提供关键字候选:内置 shell 内建命令、常用命令及常用参数的关键字表。
+- `@codemirror/autocomplete` 提供关键字候选,**范围限定**为:shell 内建命令(`cd` / `echo` / `export` / `set` / `source` / `alias` …)+ 少量常用命令(`ls` / `grep` / `awk` / `git` / `npm` …),以一份精简内置词表实现。**不读取**用户别名或命令历史。
 - 行号、代码折叠、括号匹配与自动闭合。
 - 名称输入框:实时校验 1–30 字符并提示剩余长度。
 
@@ -336,7 +335,8 @@ pty.onExit        → send('pty:exit')      → 终端显示「会话已结束�
 
 - **导出**:脚本 + 分组 + 设置,写为 v2 格式 JSON,经原生保存对话框落盘。
 - **导入 v2**:校验结构与 `name` / 长度约束后全量覆盖(二次确认)。
-- **导入旧版**:走 §6 迁移路径。
+- **机器相关设置的处理**:`settings.customShells`(含绝对路径)与 `shellId` 在导入时逐项校验,目标在本机不存在则丢弃该项并计入 `warnings`,不阻断导入 —— 避免换机器后选中无效 shell。
+- **导入旧版**:设置面板「导入旧版配置」按钮触发,走 §6 迁移路径。
 - 主进程为唯一写入方,导入失败时保持原有数据不变(先解析校验、后原子替换)。
 
 ## 13. 自动更新(无签名)
@@ -346,6 +346,10 @@ pty.onExit        → send('pty:exit')      → 终端显示「会话已结束�
 | Windows / Linux | `electron-updater`,`autoDownload: false`,`provider: github`(`bynow2code/easy-ops`) |
 | macOS | 无签名无法使用 Squirrel.Mac,**自研**:GitHub API 取 `releases/latest` → 比对版本 → 下载对应 arch 的 `zip` → `ditto -x -k` 解压 → 写后台脚本,待主进程退出后替换 `/Applications` 中的应用 → `xattr -dr com.apple.quarantine` 去隔离 → 重新 `open` |
 
+- **macOS 自研更新的前提与回退**(必须一并实现,否则会卡住用户):
+  - 假设应用位于 `/Applications`;若实际运行路径不在此目录,回退为「打开 Release 页面引导手动下载」,不做替换。
+  - 替换需要目标目录写权限。若写入失败(权限不足 / 非管理员 / 系统拦截),回退为引导手动下载并给出明确提示,**不得静默失败**。
+  - 依赖 CI 同时产出 macOS `.zip` 产物(见 §14)。
 - 开发模式(`is.dev`)下点击检查更新直接提示「开发模式不支持」。
 - 支持手动检查;`checkUpdateOnLaunch` 控制启动时是否静默检查。
 
@@ -369,6 +373,7 @@ pty.onExit        → send('pty:exit')      → 终端显示「会话已结束�
 - 主进程保持 CJS 输出(避免与 `electron-store@8` 的 CJS 形态冲突)。
 - `appId` 固定 `com.easyops.app`、`productName` 固定 `EasyOps`(理由见 §6);产物命名保持 `EasyOps-<version>-<arch>.<ext>` / `EasyOps-Setup-<version>.<ext>`。
 - 需新增 `.gitignore`(当前分支缺失),至少忽略 `node_modules/`、`out/`、`dist/`、`release/`、`.idea/`。
+- 图标沿用旧版 `master` 分支 `client/public/` 下的 `logo*.png` / `logo.ico`;macOS 打包所需的 `.icns` 由 `iconutil` 从 1024px PNG 生成。
 
 ## 16. 验收标准
 
@@ -380,6 +385,6 @@ pty.onExit        → send('pty:exit')      → 终端显示「会话已结束�
 6. 关闭主窗口后所有 PTY 会话被终止:用 `ps` / 任务管理器确认无脚本子进程残留。
 7. 主题三态切换即时生效,`system` 态随系统变化。
 8. 设置面板正确显示版本号、仓库地址;shell 自动检测结果正确;可添加自定义 shell 路径并切换。
-9. 导出配置再导入可完整还原;可成功导入旧版 `scripts.json` 并生成分组。
-10. 打包产物在 macOS(无签名)上可完成自更新流程;Windows / Linux 可完成 `electron-updater` 流程。
+9. 导出配置再导入可完整还原;在设置面板点「导入旧版配置」可成功导入旧版 `scripts.json` 并生成分组。
+10. Windows / Linux 可完成 `electron-updater` 更新流程;macOS 在应用位于 `/Applications` 且有写权限时可完成自替换更新,权限不足时**正确回退为引导手动下载**(不静默失败)。
 11. 推送 tag 后 CI 三平台均产出预期产物并发布 Release。
