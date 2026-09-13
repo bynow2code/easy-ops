@@ -212,6 +212,7 @@ interface ShellInfo {
 | `pty:stop` | `{ runId }` | `void` |
 | `pty:stopAll` | — | `void` |
 | `pty:close` | `{ runId }` | `void`(停止并移除终端视图) |
+| `pty:list` | — | `TerminalSessionSnapshot[]`(渲染重载后恢复会话用,见 §8.5) |
 
 **主 → 渲染事件**:`pty:data` `{ runId, chunk }`、`pty:exit` `{ runId, exitCode, signal }`
 
@@ -285,6 +286,46 @@ pty.onExit → send('pty:exit') → 终端标记退出码
 - 标题显示脚本名称 + 运行状态(运行中 / 已退出 码)
 - 自动 `fit`(addon-fit)+ 链接可点击(addon-web-links)
 
+### 8.5 终端状态机与可靠性
+
+**状态定义**(「未启动」即会话不存在,不作为持久状态):
+
+```ts
+type TerminalStatus = 'starting' | 'running' | 'stopping' | 'exited' | 'error'
+
+interface TerminalSessionSnapshot {
+  runId: string
+  scriptId: string
+  title: string
+  status: TerminalStatus
+  exitCode: number | null
+  signal: number | null
+  buffer: string          // 最近输出,截断至 100 KB
+}
+```
+
+| 状态 | 进入条件 | 终端面板表现 |
+|---|---|---|
+| `starting` | `pty.spawn()` 已调用,尚未确认就绪 | 标题显示「启动中」 |
+| `running` | spawn 成功 | 标题显示「运行中」,停止按钮可用 |
+| `stopping` | 用户触发停止,三层降级进行中 | 标题显示「停止中」,禁用重复触发 |
+| `exited` | 收到 `onExit` | 标题显示「已退出 (code)」,保留输出 |
+| `error` | `spawn` 抛错或 pty 设备异常 | 标题显示「启动失败」+ 原因 |
+
+**可靠性设计(五条硬性要求)**
+
+1. **单一权威源**:pty 实例仅存在于主进程 `PtyManager`(`Map<runId, PtySession>`)。渲染进程的 xterm 只是视图与输入源,**不持有状态真相**;状态只能由主进程依据真实事件推进,故不存在两进程状态分裂的可能。
+
+2. **渲染重载可恢复**(必须实现,否则出现幽灵终端):dev 模式 HMR 或用户刷新会重建 xterm,而 pty 仍在主进程运行。为此主进程须为每个会话保留**输出回滚缓冲**(保留最近 100 KB,超出后截断头部),渲染进程启动时先调 `pty:list` 拉取全部会话快照,逐个重建 xterm 并重放 `buffer`,再挂载增量监听。缺少此机制会导致「界面里终端消失、进程仍在后台运行且无法停止」的幽灵态。
+
+3. **不依赖事件时序**:主进程自 `spawn` 起即把输出写入会话缓冲;渲染进程在调用 `pty:start` **之前**先注册全局 `pty:data` / `pty:exit` 监听。即使数据早于 `start` 的 Promise 返回,也能由缓冲补全,不丢 chunk。
+
+4. **生命周期清理**:在 `window.on('closed')` 与 `app.on('before-quit')` 中调用 `ptyManager.disposeAll()`,确保窗口关闭或应用退出时所有 PTY 会话被终止(避免子进程变孤儿),同时清理临时脚本文件。
+
+5. **异常隔离**:`pty.spawn()` 与 `onData` 回调以 try/catch 包裹,异常归入 `error` 状态并经 `pty:exit` 广播,绝不让异常冒泡导致主进程崩溃。
+
+> 说明:以上机制是「IPC 事件推送」这一朴素实现之外的必需补充。只做事件推送而不做快照恢复与生命周期清理,必然在多平台联调中暴露幽灵终端与进程泄漏问题。
+
 ## 9. Shell 检测与切换
 
 **自动检测**:
@@ -357,8 +398,10 @@ pty.onExit → send('pty:exit') → 终端标记退出码
 3. 执行脚本后出现交互式终端,标题为脚本名;可在其中键入选中的命令并看到交互反馈(`sudo` / `read` 等提示可响应)。
 4. 点击停止可终止脚本;WSL 与 Git Bash 环境下确认子进程被回收(无残留)。
 5. 终端可单个最大化、单个关闭、批量关闭,且关闭后 PTY 会话被销毁(无泄漏)。
-6. 主题三态切换即时生效,`system` 态随系统变化。
-7. 设置面板正确显示版本号、仓库地址;shell 自动检测结果正确;可添加自定义 shell 路径并切换。
-8. 导出配置再导入可完整还原;可成功导入旧版 `scripts.json` 并生成分组。
-9. 打包产物在 macOS(无签名)上可完成自更新流程;Windows / Linux 可完成 `electron-updater` 流程。
-10. 推送 tag 后 CI 三平台均产出预期产物并发布 Release。
+6. 开发模式下刷新渲染进程或触发 HMR 后,运行中的终端能自动恢复(标题、状态、已输出内容一致),不停留在幽灵态。
+7. 关闭主窗口后所有 PTY 会话被终止:用 `ps` / 任务管理器确认无脚本子进程残留。
+8. 主题三态切换即时生效,`system` 态随系统变化。
+9. 设置面板正确显示版本号、仓库地址;shell 自动检测结果正确;可添加自定义 shell 路径并切换。
+10. 导出配置再导入可完整还原;可成功导入旧版 `scripts.json` 并生成分组。
+11. 打包产物在 macOS(无签名)上可完成自更新流程;Windows / Linux 可完成 `electron-updater` 流程。
+12. 推送 tag 后 CI 三平台均产出预期产物并发布 Release。
