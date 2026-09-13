@@ -188,6 +188,38 @@ describe('config:import', () => {
     expect(settings.get()).toEqual(beforeSettings)
   })
 
+  it('导入结构残缺的 v2 文件时拒绝且不调用 replaceAll', async () => {
+    const brokenFile = path.join(tmpDir, 'broken-v2.json')
+    await fs.writeFile(
+      brokenFile,
+      JSON.stringify({
+        type: 'easyops-config',
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        scripts: [
+          { id: 'ok1', name: 'a', content: 'echo a', groupId: null, shellId: null, order: 0 },
+          { name: '缺 id 的脚本', content: 'echo b', groupId: null, shellId: null, order: 1 }
+        ],
+        groups: [],
+        settings: SETTINGS
+      }),
+      'utf8'
+    )
+
+    const beforeScripts = scripts.listScripts()
+    const beforeGroups = scripts.listGroups()
+    const spy = vi.spyOn(scripts, 'replaceAll')
+
+    mock.__state.canceled = false
+    mock.__state.openPath = brokenFile
+    await expect(call('config:import', { mode: 'v2' })).rejects.toThrow('脚本记录缺少 id')
+
+    expect(spy).not.toHaveBeenCalled()
+    expect(scripts.listScripts()).toEqual(beforeScripts)
+    expect(scripts.listGroups()).toEqual(beforeGroups)
+    spy.mockRestore()
+  })
+
   it('旧数据含非法记录时导入合法部分并回报警告', async () => {
     const legacyFile = path.join(tmpDir, 'legacy-partial.json')
     await fs.writeFile(

@@ -71,6 +71,70 @@ describe('parseImport — v2', () => {
     const result = parseImport(JSON.stringify(payload))
     expect(result.ok).toBe(false)
   })
+
+  it('拒绝缺少 id 的脚本', () => {
+    const raw = JSON.stringify({
+      type: 'easyops-config',
+      version: 2,
+      scripts: [{ name: 'a', content: 'echo a', groupId: null, shellId: null, order: 0 }],
+      groups: []
+    })
+    const result = parseImport(raw)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toContain('id')
+  })
+
+  it('拒绝缺少有效 order 的脚本', () => {
+    const raw = JSON.stringify({
+      type: 'easyops-config',
+      version: 2,
+      scripts: [{ id: 's1', name: 'a', content: 'echo a', groupId: null, shellId: null }],
+      groups: []
+    })
+    const result = parseImport(raw)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toContain('order')
+  })
+
+  it('拒绝 id 重复的脚本', () => {
+    const payload = buildExportPayload(
+      [makeScript({ content: 'echo a' }), makeScript({ name: 'b', content: 'echo b' })],
+      [],
+      SETTINGS
+    )
+    const result = parseImport(JSON.stringify(payload))
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toContain('重复')
+  })
+
+  it('拒绝缺少 id 的分组', () => {
+    const raw = JSON.stringify({
+      type: 'easyops-config',
+      version: 2,
+      scripts: [],
+      groups: [{ name: '后端', order: 0 }]
+    })
+    const result = parseImport(raw)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toContain('id')
+  })
+
+  it('拒绝 id 重复的分组', () => {
+    const payload = buildExportPayload([], [makeGroup(), makeGroup({ name: '前端' })], SETTINGS)
+    const result = parseImport(JSON.stringify(payload))
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toContain('重复')
+  })
+
+  it('分组 id 与脚本 id 相同不算重复', () => {
+    const payload = buildExportPayload([makeScript({ id: 'x1' })], [makeGroup({ id: 'x1' })], SETTINGS)
+    expect(parseImport(JSON.stringify(payload)).ok).toBe(true)
+  })
 })
 
 describe('parseImport — 裸数组(旧版 userData)', () => {

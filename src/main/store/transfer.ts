@@ -85,18 +85,40 @@ export function parseImport(raw: string): ParseResult {
       return { ok: false, reason: '配置文件缺少 scripts 或 groups' }
     }
 
+    const seenScriptIds = new Set<string>()
     for (const script of scripts) {
       if (!isPlainObject(script)) return { ok: false, reason: '脚本记录结构无效' }
       const nameCheck = validateScriptName(script.name)
       if (!nameCheck.ok) return { ok: false, reason: `脚本名称无效:${nameCheck.message}` }
       const contentCheck = validateScriptContent(script.content)
       if (!contentCheck.ok) return { ok: false, reason: `脚本内容无效:${contentCheck.message}` }
+      if (typeof script.id !== 'string' || script.id.length === 0) {
+        return { ok: false, reason: '脚本记录缺少 id' }
+      }
+      if (!Number.isFinite(script.order)) {
+        return { ok: false, reason: `脚本「${script.name}」缺少有效的 order` }
+      }
+      if (seenScriptIds.has(script.id)) {
+        return { ok: false, reason: `脚本 id 重复:${script.id}` }
+      }
+      seenScriptIds.add(script.id)
     }
 
+    const seenGroupIds = new Set<string>()
     for (const group of groups) {
       if (!isPlainObject(group)) return { ok: false, reason: '分组记录结构无效' }
       const nameCheck = validateGroupName(group.name)
       if (!nameCheck.ok) return { ok: false, reason: `分组名称无效:${nameCheck.message}` }
+      if (typeof group.id !== 'string' || group.id.length === 0) {
+        return { ok: false, reason: '分组记录缺少 id' }
+      }
+      if (!Number.isFinite(group.order)) {
+        return { ok: false, reason: `分组「${String(group.name)}」缺少有效的 order` }
+      }
+      if (seenGroupIds.has(group.id)) {
+        return { ok: false, reason: `分组 id 重复:${group.id}` }
+      }
+      seenGroupIds.add(group.id)
     }
 
     const rawSettings = isPlainObject(parsed.settings) ? parsed.settings : {}

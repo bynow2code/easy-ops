@@ -213,10 +213,18 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   }
 
   const handleImportLegacy = async (): Promise<void> => {
-    modal.info({
-      title: '导入旧版配置',
-      content: '请先退出旧版 EasyOps,避免两边同时写入数据。点击「开始导入」后选择旧版导出的 JSON,或选择旧版数据目录下的 scripts.json。'
+    const applied = await new Promise<boolean>((resolve) => {
+      modal.confirm({
+        title: '导入旧版配置',
+        content:
+          '导入会覆盖当前全部脚本与分组。请先退出旧版 EasyOps,避免两边同时写入数据;点击「开始导入」后选择旧版导出的 JSON,或选择旧版数据目录下的 scripts.json。',
+        okText: '开始导入',
+        cancelText: '取消',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false)
+      })
     })
+    if (!applied) return
     try {
       const result = await window.api.config.import('legacy')
       if (!result.canceled) reportStats(result.stats)
