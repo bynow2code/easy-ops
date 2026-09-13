@@ -23,22 +23,30 @@ if (!gotLock) {
     mainWindow = win
   }
 
-  app.whenReady().then(async () => {
-    const probe = await probePty()
-    if (probe.ok) {
-      console.log('[EasyOps] node-pty 可用,输出:', probe.output.trim())
-    } else {
-      console.error('[EasyOps] node-pty 不可用:', probe.error ?? `退出码 ${probe.exitCode}`)
-    }
+  app
+    .whenReady()
+    .then(() => {
+      spawnMainWindow()
 
-    spawnMainWindow()
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          spawnMainWindow()
+        }
+      })
 
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        spawnMainWindow()
+      if (!app.isPackaged) {
+        void probePty().then((probe) => {
+          if (probe.ok) {
+            console.log('[EasyOps] node-pty 可用,输出:', probe.output.trim())
+          } else {
+            console.error('[EasyOps] node-pty 不可用:', probe.error ?? `退出码 ${probe.exitCode}`)
+          }
+        })
       }
     })
-  })
+    .catch((err: unknown) => {
+      console.error('[EasyOps] 主进程启动失败:', err)
+    })
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
