@@ -1,0 +1,10 @@
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    environment: 'node',
+    environmentMatchGlobs: [['tests/renderer/**', 'jsdom']],
+    include: ['tests/**/*.test.{ts,tsx}'],
+    globals: false
+  }
+})
