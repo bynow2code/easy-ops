@@ -1,0 +1,57 @@
+{
+  "name": "easyops",
+  "version": "0.8.0",
+  "description": "EasyOps - Script Manager Desktop App",
+  "main": "./out/main/index.js",
+  "author": "bynow2code",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bynow2code/easy-ops.git"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "electron-builder install-app-deps",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "electron-store": "8.2.0",
+    "electron-updater": "^6.3.9",
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "@ant-design/icons": "^6.3.4",
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/legacy-modes": "^6.5.4",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^15.0.7",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
+    "@uiw/react-codemirror": "^4.25.10",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/addon-web-links": "0.11.0",
+    "@xterm/xterm": "5.5.0",
+    "antd": "^5.29.3",
+    "electron": "37.10.3",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "4.0.1",
+    "jsdom": "^25.0.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "typescript": "^5.7.2",
+    "vite": "5.4.21",
+    "vitest": "^2.1.9",
+    "zustand": "^5.0.2"
+  }
+}
