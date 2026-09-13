@@ -5,7 +5,8 @@ export interface Persistence<T> {
   write: (next: T) => void
 }
 
-export function createElectronStore<T extends Record<string, unknown>>(
+// 约束与 electron-store 自身一致(`Record<string, any>` 允许 interface 类型;`unknown` 不允许)
+export function createElectronStore<T extends Record<string, any>>(
   name: string,
   defaults: T,
   key: string

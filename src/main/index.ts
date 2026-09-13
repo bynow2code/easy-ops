@@ -1,6 +1,13 @@
 import { app, BrowserWindow } from 'electron'
-import { createMainWindow } from './window'
+import { registerIpc } from './ipc'
 import { probePty } from './pty/probe'
+import { createElectronStore } from './store/persistence'
+import { createScriptsStore, type ScriptsData } from './store/scripts'
+import { createSettingsStore, DEFAULT_SETTINGS } from './store/settings'
+import { createMainWindow } from './window'
+import type { Settings } from '../shared/types'
+
+const REPO_URL = 'https://github.com/bynow2code/easy-ops'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -26,6 +33,19 @@ if (!gotLock) {
   app
     .whenReady()
     .then(() => {
+      const scriptsPersistence = createElectronStore<ScriptsData>('easyops-scripts', { scripts: [], groups: [] }, 'data')
+      const settingsPersistence = createElectronStore<Settings>('easyops-settings', DEFAULT_SETTINGS, 'data')
+
+      const scriptsStore = createScriptsStore(scriptsPersistence)
+      const settingsStore = createSettingsStore(settingsPersistence)
+
+      registerIpc({
+        scripts: scriptsStore,
+        settings: settingsStore,
+        getWindow: () => mainWindow,
+        repoUrl: REPO_URL
+      })
+
       spawnMainWindow()
 
       app.on('activate', () => {
