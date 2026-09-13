@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Button, Segmented, Space, Typography } from 'antd'
+import { SettingOutlined } from '@ant-design/icons'
 import type { ThemeMode } from '../../shared/types'
 import { ThemeProvider, useTheme } from './theme/provider'
 import { Sidebar } from './components/Sidebar'
 import { ScriptFormModal } from './components/ScriptFormModal'
 import { GroupFormModal } from './components/GroupFormModal'
+import { SettingsModal } from './components/SettingsModal'
 import { ScriptEditor } from './components/ScriptEditor'
 import { TerminalDock } from './components/TerminalDock'
 import { useAppStore } from './store/useAppStore'
 
-function TopBar(): JSX.Element {
+function TopBar({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element {
   const { mode, setMode } = useTheme()
   const [version, setVersion] = useState('')
 
@@ -28,16 +30,21 @@ function TopBar(): JSX.Element {
       }}
     >
       <Typography.Text strong>EasyOps v{version}</Typography.Text>
-      <Segmented
-        size="small"
-        value={mode}
-        onChange={(value) => setMode(value as ThemeMode)}
-        options={[
-          { label: '浅色', value: 'light' },
-          { label: '深色', value: 'dark' },
-          { label: '跟随系统', value: 'system' }
-        ]}
-      />
+      <Space>
+        <Segmented
+          size="small"
+          value={mode}
+          onChange={(value) => setMode(value as ThemeMode)}
+          options={[
+            { label: '浅色', value: 'light' },
+            { label: '深色', value: 'dark' },
+            { label: '跟随系统', value: 'system' }
+          ]}
+        />
+        <Button size="small" icon={<SettingOutlined />} onClick={onOpenSettings}>
+          设置
+        </Button>
+      </Space>
     </div>
   )
 }
@@ -81,6 +88,7 @@ function Workspace(): JSX.Element {
 
 export default function App(): JSX.Element {
   const [mode, setMode] = useState<ThemeMode>('system')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     window.api.settings.get().then((s) => setMode(s.theme))
@@ -94,11 +102,12 @@ export default function App(): JSX.Element {
   return (
     <ThemeProvider mode={mode} onModeChange={handleModeChange}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100%' }}>
-        <TopBar />
+        <TopBar onOpenSettings={() => setSettingsOpen(true)} />
         <Workspace />
       </div>
       <GroupFormModal />
       <ScriptFormModal />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </ThemeProvider>
   )
 }
