@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Form, Input, Modal, Select, message } from 'antd'
 import { SCRIPT_NAME_MAX, validateScriptContent, validateScriptName } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
+import { ScriptEditor } from './ScriptEditor'
 
 export function ScriptFormModal(): JSX.Element | null {
   const form = useAppStore((s) => s.form)
@@ -101,13 +102,7 @@ export function ScriptFormModal(): JSX.Element | null {
           validateStatus={content.length > 0 && !contentCheck.ok ? 'error' : undefined}
           help={content.length > 0 && !contentCheck.ok ? contentCheck.message : undefined}
         >
-          <Input.TextArea
-            value={content}
-            rows={8}
-            placeholder="echo hello"
-            style={{ fontFamily: 'var(--font-mono, monospace)' }}
-            onChange={(e) => setContent(e.target.value)}
-          />
+          <ScriptEditor value={content} onChange={setContent} />
         </Form.Item>
       </Form>
     </Modal>

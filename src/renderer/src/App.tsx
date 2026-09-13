@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Segmented, Typography } from 'antd'
+import { Button, Segmented, Space, Typography } from 'antd'
 import type { ThemeMode } from '../../shared/types'
 import { ThemeProvider, useTheme } from './theme/provider'
 import { Sidebar } from './components/Sidebar'
 import { ScriptFormModal } from './components/ScriptFormModal'
 import { GroupFormModal } from './components/GroupFormModal'
+import { ScriptEditor } from './components/ScriptEditor'
+import { useAppStore } from './store/useAppStore'
 
 function TopBar(): JSX.Element {
   const { mode, setMode } = useTheme()
@@ -40,13 +42,32 @@ function TopBar(): JSX.Element {
 }
 
 function Workspace(): JSX.Element {
+  const selectedScriptId = useAppStore((s) => s.selectedScriptId)
+  const scripts = useAppStore((s) => s.scripts)
+  const openForm = useAppStore((s) => s.openForm)
+  const selected = scripts.find((s) => s.id === selectedScriptId) ?? null
+
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <aside style={{ width: 320, borderRight: '1px solid rgba(5,5,5,0.06)', padding: 12, overflow: 'hidden' }}>
         <Sidebar />
       </aside>
-      <main style={{ flex: 1, padding: 16 }}>
-        <Typography.Text type="secondary">从左侧选择一个脚本查看详情</Typography.Text>
+      <main style={{ flex: 1, padding: 16, overflow: 'auto' }}>
+        {selected ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Space>
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                {selected.name}
+              </Typography.Title>
+              <Button size="small" onClick={() => openForm({ type: 'script-edit', script: selected })}>
+                编辑
+              </Button>
+            </Space>
+            <ScriptEditor value={selected.content} readOnly height="420px" />
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">从左侧选择一个脚本查看详情</Typography.Text>
+        )}
       </main>
     </div>
   )
