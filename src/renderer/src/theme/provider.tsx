@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { ConfigProvider, theme as antdTheme } from 'antd'
 import type { ThemeMode } from '../../../shared/types'
 import { resolveTheme, useSystemPrefersDark } from './useResolvedTheme'
@@ -15,6 +15,25 @@ export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext)
   if (!ctx) throw new Error('useTheme 必须在 ThemeProvider 内使用')
   return ctx
+}
+
+/**
+ * 把 antd 当前算法算出的 token 暴露为 CSS 变量,供自研样式消费(设计 §11)。
+ * 必须渲染在 ConfigProvider 内部才能用 useToken() 读到当前主题的 token。
+ * 注意 token 每次渲染都是新对象,依赖数组依赖具体的颜色字符串。
+ */
+function ThemeVariables(): null {
+  const { token } = antdTheme.useToken()
+  const bgContainer = token.colorBgContainer
+  const text = token.colorText
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--color-bg-container', bgContainer)
+    root.style.setProperty('--color-text', text)
+  }, [bgContainer, text])
+
+  return null
 }
 
 export function ThemeProvider({
@@ -42,6 +61,7 @@ export function ThemeProvider({
         }}
       >
         {children}
+        <ThemeVariables />
       </ConfigProvider>
     </ThemeContext.Provider>
   )
