@@ -3,6 +3,7 @@ import type { Settings } from '../../shared/types'
 import type { ScriptsStore } from '../store/scripts'
 import type { SettingsStore } from '../store/settings'
 import { registerGroupIpc } from './groups'
+import { registerConfigIpc } from './config'
 import { registerScriptIpc } from './scripts'
 import { registerShellIpc } from './shell'
 
@@ -17,6 +18,7 @@ export function registerIpc(ctx: IpcContext): void {
   registerScriptIpc(ctx.scripts)
   registerGroupIpc(ctx.scripts)
   registerShellIpc(ctx.getWindow, ctx.settings)
+  registerConfigIpc({ getWindow: ctx.getWindow, scripts: ctx.scripts, settings: ctx.settings })
 
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),

@@ -52,6 +52,13 @@ const api = {
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
     update: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('settings:update', { patch })
+  },
+  config: {
+    export: (): Promise<{ canceled: boolean; path?: string }> => ipcRenderer.invoke('config:export'),
+    import: (mode: 'v2' | 'legacy'): Promise<{
+      canceled: boolean
+      stats?: { imported: number; groups: number; warnings: string[] }
+    }> => ipcRenderer.invoke('config:import', { mode })
   }
 }
 

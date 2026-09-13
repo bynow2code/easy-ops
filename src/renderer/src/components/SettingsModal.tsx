@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { App, Button, Divider, Input, List, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
-import { DeleteOutlined, FolderOpenOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, HistoryOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { Script, ShellInfo } from '../../../shared/types'
 import { useTheme } from '../theme/provider'
 import { useAppStore } from '../store/useAppStore'
@@ -19,7 +19,7 @@ interface AppInfo {
 }
 
 export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { mode, setMode } = useTheme()
   const reloadScripts = useAppStore((s) => s.reload)
   const [info, setInfo] = useState<AppInfo | null>(null)
@@ -157,6 +157,76 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
+  const handleExport = async (): Promise<void> => {
+    try {
+      const result = await window.api.config.export()
+      if (!result.canceled) message.success(`已导出到 ${result.path}`)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const reportStats = (stats?: { imported: number; groups: number; warnings: string[] }): void => {
+    if (!stats) return
+    if (stats.warnings.length > 0) {
+      modal.info({
+        title: '导入完成(含警告)',
+        content: (
+          <div>
+            <p>
+              导入脚本 {stats.imported} 个、分组 {stats.groups} 个。
+            </p>
+            <ul>
+              {stats.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )
+      })
+    } else {
+      message.success(`导入完成:脚本 ${stats.imported} 个、分组 ${stats.groups} 个`)
+    }
+  }
+
+  const handleImportV2 = async (): Promise<void> => {
+    const applied = await new Promise<boolean>((resolve) => {
+      modal.confirm({
+        title: '导入配置',
+        content: '导入会覆盖当前全部脚本与分组,确定继续吗?',
+        okText: '覆盖导入',
+        okButtonProps: { danger: true },
+        cancelText: '取消',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false)
+      })
+    })
+    if (!applied) return
+    try {
+      const result = await window.api.config.import('v2')
+      if (!result.canceled) reportStats(result.stats)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      await reloadScripts()
+    }
+  }
+
+  const handleImportLegacy = async (): Promise<void> => {
+    modal.info({
+      title: '导入旧版配置',
+      content: '请先退出旧版 EasyOps,避免两边同时写入数据。点击「开始导入」后选择旧版导出的 JSON,或选择旧版数据目录下的 scripts.json。'
+    })
+    try {
+      const result = await window.api.config.import('legacy')
+      if (!result.canceled) reportStats(result.stats)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      await reloadScripts()
+    }
+  }
+
   const followGlobalHint = globalShellLabel(shells, selectedShellId)
 
   return (
@@ -199,6 +269,23 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             <Switch size="small" checked={checkOnLaunch} onChange={handleToggleCheckOnLaunch} />
           </Space>
         </div>
+
+        <Divider style={{ margin: '8px 0' }} />
+
+        <Space>
+          <Typography.Text strong>配置</Typography.Text>
+        </Space>
+        <Space wrap>
+          <Button icon={<ExportOutlined />} onClick={() => void handleExport()}>
+            导出当前配置
+          </Button>
+          <Button icon={<ImportOutlined />} onClick={() => void handleImportV2()}>
+            导入配置
+          </Button>
+          <Button icon={<HistoryOutlined />} onClick={() => void handleImportLegacy()}>
+            导入旧版配置
+          </Button>
+        </Space>
 
         <Divider style={{ margin: '8px 0' }} />
 
