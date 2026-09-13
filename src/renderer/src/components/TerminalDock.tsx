@@ -25,6 +25,8 @@ export function TerminalDock(): JSX.Element {
   }, [])
 
   usePtyEvents((runId, chunk) => {
+    // 会话已关闭后的迟到 chunk 直接丢弃,避免为死 runId 建无人清理的 pending 缓冲
+    if (!useTerminalStore.getState().sessions.some((s) => s.runId === runId)) return
     const writer = writers.current.get(runId)
     if (writer) {
       writer(chunk)
@@ -154,7 +156,7 @@ export function TerminalDock(): JSX.Element {
           position: 'fixed',
           inset: 0,
           zIndex: 1000,
-          background: 'var(--easyops-terminal-bg, #fff)',
+          background: 'var(--color-bg-base, #fff)',
           display: 'flex',
           flexDirection: 'column'
         }}

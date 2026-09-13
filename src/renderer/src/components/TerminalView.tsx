@@ -46,7 +46,7 @@ export function TerminalView({
 
     const inputDisposable = term.onData((data) => {
       window.api.pty.write(runId, data).catch(() => {
-        // 会话刚被关闭时的写入竞态属预期行为,忽略
+        // 关闭后迟到的 write rejection 静默丢弃:无用户可恢复动作,弹窗是噪音
       })
     })
 
@@ -54,7 +54,7 @@ export function TerminalView({
       try {
         fit.fit()
         window.api.pty.resize(runId, term.cols, term.rows).catch(() => {
-          // 会话刚被关闭时的 resize 竞态属预期行为,忽略
+          // 关闭后迟到的 resize rejection 静默丢弃:无用户可恢复动作,弹窗是噪音
         })
       } catch {
         // 容器尺寸为 0 时 fit 会抛错,忽略即可
@@ -63,7 +63,7 @@ export function TerminalView({
     observer.observe(container)
 
     window.api.pty.resize(runId, term.cols, term.rows).catch(() => {
-      // 会话刚被关闭时的 resize 竞态属预期行为,忽略
+      // 关闭后迟到的 resize rejection 静默丢弃:无用户可恢复动作,弹窗是噪音
     })
 
     return () => {
@@ -85,7 +85,10 @@ export function TerminalView({
     const timer = setTimeout(() => {
       try {
         fitRef.current?.fit()
-        if (termRef.current) void window.api.pty.resize(runId, termRef.current.cols, termRef.current.rows)
+        if (termRef.current)
+          window.api.pty.resize(runId, termRef.current.cols, termRef.current.rows).catch(() => {
+            // 关闭后迟到的 resize rejection 静默丢弃:无用户可恢复动作,弹窗是噪音
+          })
       } catch {
         // 忽略尺寸计算失败
       }

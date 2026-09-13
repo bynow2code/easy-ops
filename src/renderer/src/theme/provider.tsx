@@ -24,6 +24,7 @@ export function useTheme(): ThemeContextValue {
  */
 function ThemeVariables(): null {
   const { token } = antdTheme.useToken()
+  const bgBase = token.colorBgBase
   const bgContainer = token.colorBgContainer
   const text = token.colorText
   const borderSecondary = token.colorBorderSecondary
@@ -31,11 +32,12 @@ function ThemeVariables(): null {
 
   useEffect(() => {
     const root = document.documentElement
+    root.style.setProperty('--color-bg-base', bgBase)
     root.style.setProperty('--color-bg-container', bgContainer)
     root.style.setProperty('--color-text', text)
     root.style.setProperty('--color-border-secondary', borderSecondary)
     root.style.setProperty('--color-control-item-bg-active', controlItemBgActive)
-  }, [bgContainer, text, borderSecondary, controlItemBgActive])
+  }, [bgBase, bgContainer, text, borderSecondary, controlItemBgActive])
 
   return null
 }
