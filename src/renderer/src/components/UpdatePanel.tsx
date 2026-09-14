@@ -10,36 +10,48 @@ type UpdateState =
   | { kind: 'downloaded'; version: string }
   | { kind: 'error'; message: string }
 
+function toUpdateState(raw: unknown): UpdateState | null {
+  const event = raw as { status: string; version?: string; percent?: number; message?: string }
+  switch (event.status) {
+    case 'checking':
+      return { kind: 'checking' }
+    case 'available':
+      return { kind: 'available', version: event.version ?? '' }
+    case 'not-available':
+      return { kind: 'latest' }
+    case 'downloading':
+      return { kind: 'downloading', percent: event.percent ?? 0 }
+    case 'downloaded':
+      return { kind: 'downloaded', version: event.version ?? '' }
+    case 'error':
+      return { kind: 'error', message: event.message ?? '未知错误' }
+    default:
+      return null
+  }
+}
+
 export function UpdatePanel(): JSX.Element {
   const { message } = App.useApp()
   const [state, setState] = useState<UpdateState>({ kind: 'idle' })
 
   useEffect(() => {
+    // 设置面板挂在 antd Modal 里,首次打开前 children 不渲染,启动时(3s 后)推送的事件会丢。
+    // 因此挂载后回放主进程缓存的最近一次事件。顺序是「先订阅、后取快照」:ipcRenderer.on 同步生效,
+    // 取快照(异步 invoke)期间到达的增量事件一定已被接收,不会漏;而快照只在还没有收到过增量事件时
+    // 才应用,保证新结果不被旧缓存覆盖。
+    let gotLiveEvent = false
     const off = window.api.update.onEvent((raw) => {
-      const event = raw as { status: string; version?: string; percent?: number; message?: string }
-      switch (event.status) {
-        case 'checking':
-          setState({ kind: 'checking' })
-          break
-        case 'available':
-          setState({ kind: 'available', version: event.version ?? '' })
-          break
-        case 'not-available':
-          setState({ kind: 'latest' })
-          break
-        case 'downloading':
-          setState({ kind: 'downloading', percent: event.percent ?? 0 })
-          break
-        case 'downloaded':
-          setState({ kind: 'downloaded', version: event.version ?? '' })
-          break
-        case 'error':
-          setState({ kind: 'error', message: event.message ?? '未知错误' })
-          break
-        default:
-          break
-      }
+      gotLiveEvent = true
+      const next = toUpdateState(raw)
+      if (next) setState(next)
     })
+
+    void window.api.update.lastEvent().then((raw) => {
+      if (gotLiveEvent || raw == null) return
+      const next = toUpdateState(raw)
+      if (next) setState(next)
+    })
+
     return off
   }, [])
 

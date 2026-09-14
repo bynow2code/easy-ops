@@ -57,6 +57,7 @@ const api = {
     check: (): Promise<void> => ipcRenderer.invoke('update:check'),
     download: (): Promise<void> => ipcRenderer.invoke('update:download'),
     install: (): Promise<void> => ipcRenderer.invoke('update:install'),
+    lastEvent: (): Promise<unknown> => ipcRenderer.invoke('update:lastEvent'),
     onEvent: (listener: (event: unknown) => void): (() => void) => {
       const handler = (_e: unknown, event: unknown): void => listener(event)
       ipcRenderer.on('update:event', handler)
