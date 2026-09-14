@@ -25,6 +25,11 @@ publish:
   provider: github
   owner: bynow2code
   repo: easy-ops
+  # 必须显式声明:GitHub 发布器的 releaseType 默认取 "draft"(
+  # electron-publish/out/gitHubPublisher.js:55,因为 packager options 里 draft 为 undefined),
+  # 而 draft 发布器遇到「已发布的 Release」会直接 return null 并跳过全部上传(同文件 :69-83),
+  # job 仍然退出码 0 —— 静默失败。只有 info.releaseType 有值时才按配置走(同文件 :46-47)。
+  releaseType: release
 
 mac:
   category: public.app-category.developer-tools

@@ -7,12 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '发布版本号(不含 v 前缀,如 0.8.0);留空则使用 package.json 的 version'
+        description: '发布版本号(不含 v 前缀,如 0.8.0)。留空则自动用 <package.json 版本>-rc.<运行号>,不会在分支 commit 上留下正式 tag'
         required: false
         type: string
 
 permissions:
   contents: write
+
+# 同一 tag/分支重复触发时排队执行,避免并发的 create-release 互相覆盖 Release 资产
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 # 统一使用 bash,避免 Windows runner 默认 pwsh 带来的语法差异
 defaults:
@@ -39,7 +44,9 @@ jobs:
           elif [[ -n "$INPUT_VERSION" ]]; then
             version="$INPUT_VERSION"
           else
-            version="$(node -p "require('./package.json').version")"
+            # workflow_dispatch 试跑会自动建 tag + 已发布 Release,故默认加 rc 后缀,
+            # 避免把 v0.8.0 这类正式 tag 钉在分支 commit 上(真发版用 push tag 触发)
+            version="$(node -p "require('./package.json').version")-rc.${GITHUB_RUN_NUMBER}"
           fi
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::版本号不合法:$version(期望形如 0.8.0)"
@@ -55,7 +62,8 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: EasyOps ${{ steps.version.outputs.tag }}
           draft: false
-          prerelease: false
+          # 带 -rc/-beta 等后缀的版本标为预发布,不会被 GitHub 设成 latest
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
           generate_release_notes: true
 
   build:
@@ -115,6 +123,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 无签名发布:不查找/使用代码签名证书
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Release 发布超过 2 小时后,发布器会跳过上传(gitHubPublisher.js:87-97);
+          # 重跑失败的 job 时必须忽略该时间窗,否则 job 绿但不上传
+          EP_GH_IGNORE_TIME: 'true'
         # --publish always:electron-builder 默认不上传 Release,只写 app-update.yml;
         # 结尾参数会追加到脚本命令末尾(即 electron-builder --<platform> 之后)
         run: npm run ${{ matrix.script }} -- --publish always
