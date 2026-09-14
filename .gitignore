@@ -9,3 +9,5 @@ electron.vite.config*.mjs
 .vscode/
 .superpowers/
 .workbuddy/
+
+*.tsbuildinfo
