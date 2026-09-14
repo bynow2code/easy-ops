@@ -275,6 +275,45 @@ describe('config:import', () => {
     expect(scripts.listScripts().find((s) => s.id === 'kept')!.shellId).toBe(knownIds[0])
   })
 
+  it('导入 v2 时保留指向自定义 shell 的脚本覆盖(knownIds 须含 custom)', async () => {
+    const file = path.join(tmpDir, 'custom-shell-keep.json')
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        type: 'easyops-config',
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        scripts: [
+          {
+            id: 'keep1',
+            name: 'a',
+            content: 'echo a',
+            groupId: null,
+            shellId: 'custom:/bin/sh',
+            order: 0
+          }
+        ],
+        groups: [],
+        settings: {
+          theme: 'dark',
+          shellId: null,
+          customShells: [{ id: 'custom:/bin/sh', name: 'sh', path: '/bin/sh' }],
+          checkUpdateOnLaunch: false
+        }
+      }),
+      'utf8'
+    )
+
+    scripts.replaceAll({ scripts: [], groups: [] })
+    mock.__state.canceled = false
+    mock.__state.openPath = file
+    await call('config:import', { mode: 'v2' })
+
+    // 导入进来的自定义 shell 本身是有效的,脚本对它的覆盖就不能被判为「本机不存在」而清空
+    expect(settings.get().customShells.map((s) => s.id)).toContain('custom:/bin/sh')
+    expect(scripts.listScripts().find((s) => s.id === 'keep1')!.shellId).toBe('custom:/bin/sh')
+  })
+
   it('取消打开对话框时原数据不变', async () => {
     const before = scripts.listScripts()
     mock.__state.canceled = true

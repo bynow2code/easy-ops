@@ -64,7 +64,12 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
 
     const probe = createNodeShellProbe()
     const knownShells = await detectShells(probe)
-    const knownIds = knownShells.map((s) => s.id)
+    // 已知 shell = 检测到的 + 用户自定义。漏掉自定义会导致「同机导出再导入」时
+    // 脚本指向自定义 shell 的覆盖被误判为本机不存在而静默清空。
+    const knownIds = [
+      ...knownShells.map((s) => s.id),
+      ...deps.settings.get().customShells.map((s) => s.id)
+    ]
 
     if (parsed.mode === 'legacy') {
       const migrated = toLegacyMigration(parsed.legacyScripts)
