@@ -1,0 +1,157 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号(不含 v 前缀,如 0.8.0);留空则使用 package.json 的 version'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# 统一使用 bash,避免 Windows runner 默认 pwsh 带来的语法差异
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 解析版本号
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="$INPUT_VERSION"
+          else
+            version="$(node -p "require('./package.json').version")"
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::版本号不合法:$version(期望形如 0.8.0)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: EasyOps ${{ steps.version.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+  build:
+    needs: create-release
+    # node-pty 是原生模块,node-gyp 不支持交叉编译:每个平台必须由对应 OS 的 runner 单独构建,
+    # 否则打进包的 pty.node 架构是错的(启动即崩)。
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # mac 必须一次产出 x64 + arm64:拆成两个 job 时后发布的会覆盖 latest-mac.yml,
+          # 更新清单里就只剩一种架构。
+          - os: macos-latest
+            script: build:mac
+            manifest: latest-mac.yml
+          - os: windows-latest
+            script: build:win
+            manifest: latest.yml
+          - os: ubuntu-latest
+            script: build:linux
+            manifest: latest-linux.yml
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: 解析 npm 缓存目录
+        id: npm-cache
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+
+      - name: 恢复依赖缓存
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          # key 必须带 os:三个 runner 的 node_modules 不能混用
+          key: ${{ matrix.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ matrix.os }}-npm-
+
+      - name: 同步 package.json 版本号
+        run: npm version "${{ needs.create-release.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: 安装依赖
+        # 必须执行 postinstall(electron-builder install-app-deps)重建 node-pty,
+        # 绝不能加 --ignore-scripts:那样产物在本机正常、用户机器上启动即崩。
+        run: npm ci
+
+      - name: 安装 Linux 打包依赖
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: 构建并发布
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 无签名发布:不查找/使用代码签名证书
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        # --publish always:electron-builder 默认不上传 Release,只写 app-update.yml;
+        # 结尾参数会追加到脚本命令末尾(即 electron-builder --<platform> 之后)
+        run: npm run ${{ matrix.script }} -- --publish always
+
+      - name: 校验更新清单已生成
+        run: |
+          set -euo pipefail
+          manifest="release/${{ matrix.manifest }}"
+          if [[ ! -f "$manifest" ]]; then
+            echo "::error::缺少更新清单 $manifest"
+            ls -l release || true
+            exit 1
+          fi
+          echo "--- $manifest ---"
+          cat "$manifest"
+
+  verify-release:
+    needs:
+      - create-release
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 断言三平台更新清单已发布
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          assets="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.assets[].name')"
+          echo "$assets"
+          missing=0
+          for manifest in latest-mac.yml latest.yml latest-linux.yml; do
+            if grep -qx "$manifest" <<< "$assets"; then
+              echo "ok: $manifest"
+            else
+              echo "::error::Release ${TAG} 缺少更新清单 $manifest"
+              missing=1
+            fi
+          done
+          exit "$missing"
