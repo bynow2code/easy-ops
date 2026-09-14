@@ -64,14 +64,21 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
 
     const probe = createNodeShellProbe()
     const knownShells = await detectShells(probe)
-    // 已知 shell = 检测到的 + 用户自定义。漏掉自定义会导致「同机导出再导入」时
-    // 脚本指向自定义 shell 的覆盖被误判为本机不存在而静默清空。
-    const knownIds = [
-      ...knownShells.map((s) => s.id),
-      ...deps.settings.get().customShells.map((s) => s.id)
-    ]
+    const detectedIds = knownShells.map((s) => s.id)
+    const currentCustomIds = deps.settings.get().customShells.map((s) => s.id)
+
+    const exists = (target: string): boolean => {
+      try {
+        // 同步检查即可:仅用于导入时的路径有效性判定
+        syncFs.accessSync(target, syncFs.constants.X_OK)
+        return true
+      } catch {
+        return false
+      }
+    }
 
     if (parsed.mode === 'legacy') {
+      const knownIds = [...detectedIds, ...currentCustomIds]
       const migrated = toLegacyMigration(parsed.legacyScripts)
       const normalized = migrated.scripts.map((s) =>
         s.shellId && !knownIds.includes(s.shellId) ? { ...s, shellId: null } : s
@@ -87,22 +94,25 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
       }
     }
 
-    const { settings, warnings } = filterPortableSettings(parsed.payload.settings, {
-      exists: (p) => {
-        try {
-          // 同步检查即可:仅用于导入时的路径有效性判定
-          syncFs.accessSync(p, syncFs.constants.X_OK)
-          return true
-        } catch {
-          return false
-        }
-      },
-      knownShellIds: knownIds
+    // 文件自带的自定义 shell:路径在本机可用即视为已知。否则换机导入时
+    // 「刚导入进来的 shell」会被判成不存在 —— 既清空脚本覆盖,又对默认 shell 误报警告。
+    const incoming = parsed.payload.settings
+    const incomingCustomIds = Array.isArray(incoming?.customShells)
+      ? incoming.customShells
+          .filter((shell) => shell && typeof shell.path === 'string' && exists(shell.path))
+          .map((shell) => shell.id)
+      : []
+
+    const { settings, warnings } = filterPortableSettings(incoming, {
+      exists,
+      knownShellIds: [...detectedIds, ...incomingCustomIds, ...currentCustomIds]
     })
 
-    // 与 legacy 路径对称:换机导入时旧 shellId 可能在本机不存在,留着会让脚本一运行就报错
+    // 与 legacy 路径对称:换机导入时旧 shellId 可能在本机不存在,留着会让脚本一运行就报错。
+    // 这里用「过滤后真正落盘」的自定义 shell,避免保留指向已失效路径的覆盖。
+    const finalIds = [...detectedIds, ...settings.customShells.map((s) => s.id)]
     const scripts = parsed.payload.scripts.map((s) =>
-      s.shellId && !knownIds.includes(s.shellId) ? { ...s, shellId: null } : s
+      s.shellId && !finalIds.includes(s.shellId) ? { ...s, shellId: null } : s
     )
 
     await deps.scripts.replaceAll({ scripts, groups: parsed.payload.groups })

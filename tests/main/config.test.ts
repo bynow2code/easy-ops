@@ -314,6 +314,48 @@ describe('config:import', () => {
     expect(scripts.listScripts().find((s) => s.id === 'keep1')!.shellId).toBe('custom:/bin/sh')
   })
 
+  it('换机导入:文件自带的自定义 shell 不被判为未知(脚本覆盖与默认 shell 都保留)', async () => {
+    // 换机场景:本地原本没有这个自定义 shell,它是随导入文件一起来的
+    settings.update({ customShells: [], shellId: null })
+    const file = path.join(tmpDir, 'cross-machine.json')
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        type: 'easyops-config',
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        scripts: [
+          {
+            id: 'x1',
+            name: 'a',
+            content: 'echo a',
+            groupId: null,
+            shellId: 'custom:/bin/sh',
+            order: 0
+          }
+        ],
+        groups: [],
+        settings: {
+          theme: 'dark',
+          shellId: 'custom:/bin/sh',
+          customShells: [{ id: 'custom:/bin/sh', name: 'sh', path: '/bin/sh' }],
+          checkUpdateOnLaunch: false
+        }
+      }),
+      'utf8'
+    )
+
+    scripts.replaceAll({ scripts: [], groups: [] })
+    mock.__state.canceled = false
+    mock.__state.openPath = file
+    const result = await call('config:import', { mode: 'v2' })
+
+    expect(settings.get().customShells.map((s) => s.id)).toContain('custom:/bin/sh')
+    expect(scripts.listScripts().find((s) => s.id === 'x1')!.shellId).toBe('custom:/bin/sh')
+    expect(settings.get().shellId).toBe('custom:/bin/sh')
+    expect((result.stats.warnings ?? []).join('\n')).not.toContain('默认 shell')
+  })
+
   it('取消打开对话框时原数据不变', async () => {
     const before = scripts.listScripts()
     mock.__state.canceled = true
