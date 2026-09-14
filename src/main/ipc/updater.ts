@@ -26,5 +26,12 @@ export function registerUpdaterIpc(getWindow: () => BrowserWindow | null): Updat
     updater.install()
   })
 
-  return { updater, checkOnLaunch: () => void updater.check() }
+  return {
+    updater,
+    checkOnLaunch: () => {
+      void updater.check().catch((err: unknown) => {
+        emit({ status: 'error', message: err instanceof Error ? err.message : String(err) })
+      })
+    }
+  }
 }

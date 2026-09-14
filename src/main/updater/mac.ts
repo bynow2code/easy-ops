@@ -6,10 +6,11 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { compareVersions, decideMacUpdateAction } from './version'
+import { compareVersions, decideMacUpdateAction, deriveAppPath, buildReplaceScript } from './version'
 import type { UpdateEvent } from './win-linux'
 
 const REPO = 'bynow2code/easy-ops'
+const WORK_DIR_PREFIX = 'easyops-update-'
 
 interface ReleaseAsset {
   name: string
@@ -54,6 +55,17 @@ function runDitto(source: string, target: string): Promise<void> {
   })
 }
 
+/** 清掉上一轮没装成的残留临时目录,避免 /tmp 里堆积 zip 与解压产物 */
+async function cleanupStaleWorkDirs(): Promise<void> {
+  const tmp = os.tmpdir()
+  const entries = await fs.readdir(tmp).catch(() => [])
+  await Promise.all(
+    entries
+      .filter((name) => name.startsWith(WORK_DIR_PREFIX))
+      .map((name) => fs.rm(path.join(tmp, name), { recursive: true, force: true }).catch(() => undefined))
+  )
+}
+
 export interface MacUpdaterHandle {
   check: () => Promise<void>
   download: () => Promise<void>
@@ -63,6 +75,7 @@ export interface MacUpdaterHandle {
 export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdaterHandle {
   let pendingRelease: Release | null = null
   let extractedAppPath: string | null = null
+  let workDir: string | null = null
 
   const openReleasePage = async (url: string): Promise<void> => {
     await shell.openExternal(url)
@@ -110,7 +123,8 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
         return
       }
 
-      const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'easyops-update-'))
+      await cleanupStaleWorkDirs()
+      workDir = await fs.mkdtemp(path.join(os.tmpdir(), WORK_DIR_PREFIX))
       const zipPath = path.join(workDir, asset.name)
 
       try {
@@ -138,43 +152,44 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
 
     install() {
       void (async () => {
-        if (!pendingRelease) return
-        if (!extractedAppPath) {
-          await openReleasePage(pendingRelease.htmlUrl)
-          return
+        try {
+          if (!pendingRelease) {
+            emit({ status: 'error', message: '请先检查更新' })
+            return
+          }
+          if (!extractedAppPath || !workDir) {
+            await openReleasePage(pendingRelease.htmlUrl)
+            return
+          }
+
+          const appPath = deriveAppPath(app.getAppPath())
+          const targetDir = path.dirname(appPath)
+          const writable = await canWrite(targetDir)
+
+          const action = decideMacUpdateAction({ appPath, canWriteTarget: writable })
+          if (action === 'manual-download') {
+            emit({
+              status: 'error',
+              message: '当前安装位置或权限不支持自动更新,已打开下载页面,请手动替换应用'
+            })
+            await openReleasePage(pendingRelease.htmlUrl)
+            return
+          }
+
+          const script = buildReplaceScript({ appPath, extractedAppPath, workDir })
+          const scriptPath = path.join(os.tmpdir(), `easyops-replace-${Date.now()}.sh`)
+          await fs.writeFile(scriptPath, script, { mode: 0o755 })
+
+          const child = spawn('/bin/sh', [scriptPath], { detached: true, stdio: 'ignore' })
+          child.unref()
+
+          app.quit()
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err)
+          console.error('[EasyOps] 安装更新失败:', detail)
+          emit({ status: 'error', message: `安装更新失败:${detail},已打开下载页面,请手动替换应用` })
+          if (pendingRelease) await openReleasePage(pendingRelease.htmlUrl).catch(() => undefined)
         }
-
-        const appPath = app.getAppPath().replace(/\/Contents\/Resources\/app\.asar$/, '')
-        const targetDir = path.dirname(appPath)
-        const writable = await canWrite(targetDir)
-
-        const action = decideMacUpdateAction({ appPath, canWriteTarget: writable })
-        if (action === 'manual-download') {
-          emit({
-            status: 'error',
-            message: '当前安装位置或权限不支持自动更新,已打开下载页面,请手动替换应用'
-          })
-          await openReleasePage(pendingRelease.htmlUrl)
-          return
-        }
-
-        // 构造后台替换脚本:等待主进程退出 → 替换 → 去隔离 → 重启
-        const script = [
-          '#!/bin/sh',
-          `while pgrep -f "${appPath}" > /dev/null 2>&1; do sleep 1; done`,
-          `rm -rf "${appPath}"`,
-          `ditto "${extractedAppPath}" "${appPath}"`,
-          `xattr -dr com.apple.quarantine "${appPath}" 2>/dev/null || true`,
-          `open "${appPath}"`
-        ].join('\n')
-
-        const scriptPath = path.join(os.tmpdir(), `easyops-replace-${Date.now()}.sh`)
-        await fs.writeFile(scriptPath, script, { mode: 0o755 })
-
-        const child = spawn('/bin/sh', [scriptPath], { detached: true, stdio: 'ignore' })
-        child.unref()
-
-        app.quit()
       })()
     }
   }
