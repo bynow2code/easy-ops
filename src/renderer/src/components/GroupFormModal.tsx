@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { App, Form, Input, Modal } from 'antd'
 import { GROUP_NAME_MAX, validateGroupName } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
+import { toUserMessage } from '../utils/toUserMessage'
 
 export function GroupFormModal(): JSX.Element | null {
   const { message } = App.useApp()
@@ -35,7 +36,7 @@ export function GroupFormModal(): JSX.Element | null {
       await reload()
       closeForm()
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     } finally {
       setSubmitting(false)
     }

@@ -4,6 +4,7 @@ import { CloseOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-
 import { terminalActions, useTerminalStore } from '../store/useTerminalStore'
 import { usePtyEvents } from '../hooks/usePtyEvents'
 import { TerminalView } from './TerminalView'
+import { toUserMessage } from '../utils/toUserMessage'
 
 export function TerminalDock(): JSX.Element {
   const sessions = useTerminalStore((s) => s.sessions)
@@ -41,7 +42,7 @@ export function TerminalDock(): JSX.Element {
     try {
       await window.api.pty.close(runId)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
       return
     }
     writers.current.delete(runId)
@@ -54,7 +55,7 @@ export function TerminalDock(): JSX.Element {
     try {
       await window.api.pty.closeAll()
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
       return
     }
     writers.current.clear()

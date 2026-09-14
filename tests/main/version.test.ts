@@ -125,9 +125,9 @@ describe('buildReplaceScript', () => {
 
   it('先把新版本拷到 .new,成功后再移除旧包并改名', () => {
     const { script, appPath, extractedAppPath } = build()
-    const copyLine = `ditto "${extractedAppPath}" "${appPath}.new"`
-    const removeLine = `rm -rf "${appPath}"`
-    const moveLine = `mv "${appPath}.new" "${appPath}"`
+    const copyLine = `ditto '${extractedAppPath}' '${appPath}.new'`
+    const removeLine = `rm -rf '${appPath}'`
+    const moveLine = `mv '${appPath}.new' '${appPath}'`
 
     expect(script).toContain(copyLine)
     expect(script).toContain(removeLine)
@@ -138,14 +138,14 @@ describe('buildReplaceScript', () => {
 
   it('拷贝失败即退出,不再删除旧包', () => {
     const { script, extractedAppPath, appPath } = build()
-    expect(script).toContain(`ditto "${extractedAppPath}" "${appPath}.new" || exit 1`)
+    expect(script).toContain(`ditto '${extractedAppPath}' '${appPath}.new' || exit 1`)
   })
 
   it('包含去隔离与重启,且顺序为 ditto → xattr → open', () => {
     const { script, appPath } = build()
     const ditto = script.indexOf('ditto ')
-    const xattr = script.indexOf(`xattr -dr com.apple.quarantine "${appPath}"`)
-    const open = script.indexOf(`open "${appPath}"`)
+    const xattr = script.indexOf(`xattr -dr com.apple.quarantine '${appPath}'`)
+    const open = script.indexOf(`open '${appPath}'`)
 
     expect(ditto).toBeGreaterThan(-1)
     expect(xattr).toBeGreaterThan(ditto)
@@ -161,8 +161,35 @@ describe('buildReplaceScript', () => {
 
   it('末尾回收临时目录,且在改名之后', () => {
     const { script, appPath, workDir } = build()
-    const cleanup = script.indexOf(`rm -rf "${workDir}"`)
+    const cleanup = script.indexOf(`rm -rf '${workDir}'`)
     expect(cleanup).toBeGreaterThan(-1)
-    expect(cleanup).toBeGreaterThan(script.indexOf(`mv "${appPath}.new" "${appPath}"`))
+    expect(cleanup).toBeGreaterThan(script.indexOf(`mv '${appPath}.new' '${appPath}'`))
+  })
+
+  it('路径含命令替换/反引号/反斜杠时原样落在单引号内,不被 shell 展开', () => {
+    const extractedAppPath = '/tmp/easyops-update-abc/extract/EasyOps $(touch /tmp/pwned)`id`\\x.app'
+    const script = buildReplaceScript({
+      appPath: '/Applications/EasyOps.app',
+      extractedAppPath,
+      workDir: '/tmp/easyops-update-abc'
+    })
+
+    // 整条路径原样落在单引号内,ditto 行不再出现会被 shell 展开的双引号
+    const dittoLine = script.split('\n').find((line) => line.startsWith('ditto '))!
+    expect(dittoLine).toBe(`ditto '${extractedAppPath}' '/Applications/EasyOps.app.new' || exit 1`)
+    expect(dittoLine).not.toContain('"')
+  })
+
+  it("路径含单引号时按 '\\'' 转义,引号不会提前闭合", () => {
+    const extractedAppPath = "/tmp/easyops-update-abc/extract/EasyOps'; rm -rf ~; '.app"
+    const script = buildReplaceScript({
+      appPath: '/Applications/EasyOps.app',
+      extractedAppPath,
+      workDir: '/tmp/easyops-update-abc'
+    })
+
+    const escaped = `'${extractedAppPath.replace(/'/g, "'\\''")}'`
+    expect(escaped).toContain(`'\\''`)
+    expect(script).toContain(`ditto ${escaped} '/Applications/EasyOps.app.new' || exit 1`)
   })
 })

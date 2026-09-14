@@ -4,6 +4,7 @@ import { DeleteOutlined, EditOutlined, FolderAddOutlined, PlayCircleOutlined, Pl
 import type { Group, Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { terminalActions } from '../store/useTerminalStore'
+import { toUserMessage } from '../utils/toUserMessage'
 
 function matches(script: Script, keyword: string): boolean {
   if (!keyword) return true
@@ -42,7 +43,7 @@ export function Sidebar(): JSX.Element {
       })
       terminalActions.add({ runId, title, scriptId: script.id })
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -58,7 +59,7 @@ export function Sidebar(): JSX.Element {
           await window.api.scripts.remove(script.id)
           await reload()
         } catch (err) {
-          message.error(err instanceof Error ? err.message : String(err))
+          message.error(toUserMessage(err))
         }
       }
     })
@@ -76,7 +77,7 @@ export function Sidebar(): JSX.Element {
           await window.api.groups.remove(group.id)
           await reload()
         } catch (err) {
-          message.error(err instanceof Error ? err.message : String(err))
+          message.error(toUserMessage(err))
         }
       }
     })

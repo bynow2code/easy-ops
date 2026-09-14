@@ -3,6 +3,7 @@ import { App, Form, Input, Modal, Select } from 'antd'
 import { SCRIPT_NAME_MAX, validateScriptContent, validateScriptName } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { ScriptEditor } from './ScriptEditor'
+import { toUserMessage } from '../utils/toUserMessage'
 
 export function ScriptFormModal(): JSX.Element | null {
   const { message } = App.useApp()
@@ -54,7 +55,7 @@ export function ScriptFormModal(): JSX.Element | null {
       }
       closeForm()
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     } finally {
       setSubmitting(false)
     }

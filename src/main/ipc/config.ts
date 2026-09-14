@@ -62,11 +62,12 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
       throw new Error(parsed.reason)
     }
 
+    const probe = createNodeShellProbe()
+    const knownShells = await detectShells(probe)
+    const knownIds = knownShells.map((s) => s.id)
+
     if (parsed.mode === 'legacy') {
       const migrated = toLegacyMigration(parsed.legacyScripts)
-      const probe = createNodeShellProbe()
-      const knownShells = await detectShells(probe)
-      const knownIds = knownShells.map((s) => s.id)
       const normalized = migrated.scripts.map((s) =>
         s.shellId && !knownIds.includes(s.shellId) ? { ...s, shellId: null } : s
       )
@@ -81,8 +82,6 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
       }
     }
 
-    const probe = createNodeShellProbe()
-    const knownShells = await detectShells(probe)
     const { settings, warnings } = filterPortableSettings(parsed.payload.settings, {
       exists: (p) => {
         try {
@@ -93,10 +92,15 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
           return false
         }
       },
-      knownShellIds: knownShells.map((s) => s.id)
+      knownShellIds: knownIds
     })
 
-    await deps.scripts.replaceAll({ scripts: parsed.payload.scripts, groups: parsed.payload.groups })
+    // 与 legacy 路径对称:换机导入时旧 shellId 可能在本机不存在,留着会让脚本一运行就报错
+    const scripts = parsed.payload.scripts.map((s) =>
+      s.shellId && !knownIds.includes(s.shellId) ? { ...s, shellId: null } : s
+    )
+
+    await deps.scripts.replaceAll({ scripts, groups: parsed.payload.groups })
     deps.settings.update(settings)
 
     return {

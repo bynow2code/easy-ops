@@ -12,6 +12,7 @@ import {
   resolveScriptOverride,
   toShellIdPatch
 } from '../settings/shellOverride'
+import { toUserMessage } from '../utils/toUserMessage'
 
 interface AppInfo {
   version: string
@@ -37,32 +38,50 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     return list
   }, [])
 
+  // 导入会整份覆盖脚本/分组/设置,加载逻辑必须可复用,否则界面会停在导入前的状态
+  const loadAll = useCallback(async () => {
+    const [appInfo, settings, list, scriptList] = await Promise.all([
+      window.api.app.info(),
+      window.api.settings.get(),
+      refreshShells(),
+      window.api.scripts.list()
+    ])
+    setInfo(appInfo)
+    setSelectedShellId(settings.shellId ?? list[0]?.id ?? null)
+    setCheckOnLaunch(settings.checkUpdateOnLaunch)
+    setScripts(scriptList)
+  }, [refreshShells])
+
   useEffect(() => {
     if (!open) return
     void (async () => {
       try {
-        const [appInfo, settings, list, scriptList] = await Promise.all([
-          window.api.app.info(),
-          window.api.settings.get(),
-          refreshShells(),
-          window.api.scripts.list()
-        ])
-        setInfo(appInfo)
-        setSelectedShellId(settings.shellId ?? list[0]?.id ?? null)
-        setCheckOnLaunch(settings.checkUpdateOnLaunch)
-        setScripts(scriptList)
+        await loadAll()
       } catch (err) {
-        message.error(err instanceof Error ? err.message : String(err))
+        message.error(toUserMessage(err))
       }
     })()
-  }, [open, refreshShells, message])
+  }, [open, loadAll, message])
+
+  // 导入改写的是磁盘与主进程设置:全局 store 的 reload 只刷新侧边栏,
+  // 本面板的本地 state(主题/开关/覆盖列表)必须重新拉一次才会跟上
+  const syncAfterImport = useCallback(async () => {
+    try {
+      await reloadScripts()
+      const settings = await window.api.settings.get()
+      setMode(settings.theme)
+      await loadAll()
+    } catch (err) {
+      message.error(toUserMessage(err))
+    }
+  }, [reloadScripts, loadAll, setMode, message])
 
   const handleOpenRepo = async (): Promise<void> => {
     if (!info) return
     try {
       await window.api.app.openExternal(info.repo)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -70,7 +89,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     try {
       await refreshShells()
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -79,7 +98,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       const picked = await window.api.shell.browse()
       if (picked) setCustomPath(picked)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -108,7 +127,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       setCustomPath('')
       message.success('已添加自定义 shell')
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     } finally {
       setBusy(false)
     }
@@ -124,7 +143,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
         setSelectedShellId(updated.shellId ?? list[0]?.id ?? null)
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -134,7 +153,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       setSelectedShellId(saved.shellId)
       message.success('已切换默认 shell,对之后新开的终端生效')
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -143,7 +162,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       const saved = await window.api.settings.update({ checkUpdateOnLaunch: checked })
       setCheckOnLaunch(saved.checkUpdateOnLaunch)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -154,7 +173,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       await reloadScripts()
       message.success(updated.shellId ? `已设置「${updated.name}」使用指定 shell` : `已恢复「${updated.name}」跟随全局`)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -163,7 +182,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       const result = await window.api.config.export()
       if (!result.canceled) message.success(`已导出到 ${result.path}`)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -207,9 +226,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       const result = await window.api.config.import('v2')
       if (!result.canceled) reportStats(result.stats)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     } finally {
-      await reloadScripts()
+      await syncAfterImport()
     }
   }
 
@@ -230,9 +249,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       const result = await window.api.config.import('legacy')
       if (!result.canceled) reportStats(result.stats)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     } finally {
-      await reloadScripts()
+      await syncAfterImport()
     }
   }
 

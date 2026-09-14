@@ -26,27 +26,36 @@ export function deriveAppPath(appPath: string): string {
 }
 
 /**
+ * 单引号包裹:双引号内 `$()`、反引号、`\` 仍会被 shell 展开,而路径里可能带有归档条目名等
+ * 外部可控片段(见 mac 更新器对 .app 条目名的读取),必须彻底关掉展开。
+ */
+function shQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
+}
+
+/**
  * 后台替换脚本:等待主进程退出(上限 60 秒)→ 拷到 .new → 移除旧包 → 改名 → 去隔离 → 重启。
  * 拷贝成功前绝不删除旧包,避免 ditto 失败时把应用删成不可用。
  */
 export function buildReplaceScript(input: { appPath: string; extractedAppPath: string; workDir: string }): string {
   const { appPath, extractedAppPath, workDir } = input
   const staged = `${appPath}.new`
+  const q = shQuote
 
   return [
     '#!/bin/sh',
     'WAITED=0',
-    `while pgrep -f "${appPath}" > /dev/null 2>&1; do`,
+    `while pgrep -f ${q(appPath)} > /dev/null 2>&1; do`,
     '  WAITED=$((WAITED + 1))',
     '  if [ "$WAITED" -ge 60 ]; then exit 1; fi',
     '  sleep 1',
     'done',
-    `ditto "${extractedAppPath}" "${staged}" || exit 1`,
-    `rm -rf "${appPath}"`,
-    `mv "${staged}" "${appPath}" || exit 1`,
-    `xattr -dr com.apple.quarantine "${appPath}" 2>/dev/null || true`,
-    `open "${appPath}"`,
-    `rm -rf "${workDir}"`
+    `ditto ${q(extractedAppPath)} ${q(staged)} || exit 1`,
+    `rm -rf ${q(appPath)}`,
+    `mv ${q(staged)} ${q(appPath)} || exit 1`,
+    `xattr -dr com.apple.quarantine ${q(appPath)} 2>/dev/null || true`,
+    `open ${q(appPath)}`,
+    `rm -rf ${q(workDir)}`
   ].join('\n')
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { App, Button, Progress, Space, Typography } from 'antd'
+import { toUserMessage } from '../utils/toUserMessage'
 
 type UpdateState =
   | { kind: 'idle' }
@@ -60,8 +61,8 @@ export function UpdatePanel(): JSX.Element {
     try {
       await window.api.update.check()
     } catch (err) {
-      setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
-      message.error(err instanceof Error ? err.message : String(err))
+      setState({ kind: 'error', message: toUserMessage(err) })
+      message.error(toUserMessage(err))
     }
   }
 
@@ -70,7 +71,7 @@ export function UpdatePanel(): JSX.Element {
     try {
       await window.api.update.download()
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 
@@ -78,7 +79,7 @@ export function UpdatePanel(): JSX.Element {
     try {
       await window.api.update.install()
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err))
+      message.error(toUserMessage(err))
     }
   }
 

@@ -6,6 +6,7 @@ import type { Group, Script, Settings } from '../../src/shared/types'
 import { createScriptsStore, type ScriptsData } from '../../src/main/store/scripts'
 import { createSettingsStore } from '../../src/main/store/settings'
 import { createMemoryPersistence } from '../../src/main/store/persistence'
+import { createNodeShellProbe, detectShells } from '../../src/main/pty/shell'
 
 // 原生文件对话框无法在 Node 环境里真实弹出,这里用可控桩替代,落盘与数据替换仍走真实 fs
 vi.mock('electron', () => {
@@ -240,6 +241,38 @@ describe('config:import', () => {
     expect(result.stats.warnings).toHaveLength(1)
     expect(result.stats.warnings[0]).toContain('第 1 条记录被跳过')
     expect(scripts.listScripts().map((s) => s.name)).toEqual(['ok'])
+  })
+
+  it('导入 v2 时脚本指向本机不存在的 shell 会被置空,与 legacy 路径一致', async () => {
+    const probe = createNodeShellProbe()
+    const knownIds = (await detectShells(probe)).map((s) => s.id)
+    expect(knownIds.length).toBeGreaterThan(0)
+
+    const file = path.join(tmpDir, 'v2-stale-shell.json')
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        type: 'easyops-config',
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        scripts: [
+          { id: 'stale', name: 'stale', content: 'echo stale', groupId: null, shellId: 'custom:/no/such/shell', order: 0 },
+          { id: 'kept', name: 'kept', content: 'echo kept', groupId: null, shellId: knownIds[0], order: 1 }
+        ],
+        groups: [],
+        settings: SETTINGS
+      }),
+      'utf8'
+    )
+
+    scripts.replaceAll({ scripts: [], groups: [] })
+    mock.__state.canceled = false
+    mock.__state.openPath = file
+    const result = await call('config:import', { mode: 'v2' })
+
+    expect(result.stats.imported).toBe(2)
+    expect(scripts.listScripts().find((s) => s.id === 'stale')!.shellId).toBeNull()
+    expect(scripts.listScripts().find((s) => s.id === 'kept')!.shellId).toBe(knownIds[0])
   })
 
   it('取消打开对话框时原数据不变', async () => {
