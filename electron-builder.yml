@@ -1,0 +1,68 @@
+appId: com.easyops.app
+productName: EasyOps
+copyright: Copyright © 2026 bynow2code
+
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - out/**/*
+  - package.json
+
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+
+extraMetadata:
+  main: out/main/index.js
+
+npmRebuild: true
+
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+publish:
+  provider: github
+  owner: bynow2code
+  repo: easy-ops
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false
+
+linux:
+  icon: build/icon.png
+  category: Development
+  # deb 包必须有 maintainer,而 package.json 的 author 没有邮箱
+  maintainer: bynow2code <arthur2code@qq.com>
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}.${ext}
