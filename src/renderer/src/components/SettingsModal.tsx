@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { App, Button, Divider, Input, List, Modal, Space, Switch, Tag, Typography } from 'antd'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { App, Button, Input, List, Modal, Space, Switch, Tag, Typography } from 'antd'
 import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, HistoryOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { ShellInfo } from '../../../shared/types'
 import { UpdatePanel } from './UpdatePanel'
@@ -13,6 +13,52 @@ interface AppInfo {
   repo: string
   platform: string
 }
+
+/** 分节:替代原来靠 Divider 平铺的一长条,给设置面板建立层次 */
+function Section({
+  title,
+  extra,
+  children
+}: {
+  title: string
+  extra?: ReactNode
+  children: ReactNode
+}): JSX.Element {
+  return (
+    <section className="app-section">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          marginBottom: 10
+        }}
+      >
+        <span className="app-section-title">{title}</span>
+        {extra}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** 左标签右内容的一行 */
+function Row({ label, children }: { label: string; children: ReactNode }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 24 }}>
+      <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', flex: '0 0 auto' }}>{label}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    </div>
+  )
+}
+
+const accentTagStyle = {
+  marginInlineEnd: 0,
+  background: 'var(--app-accent-soft)',
+  color: 'var(--app-accent-text)',
+  border: 'none'
+} as const
 
 export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
   const { message, modal } = App.useApp()
@@ -238,120 +284,111 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} width={720} title="设置">
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <div>
-          <Typography.Text type="secondary">版本</Typography.Text>
-          <div>
-            <Typography.Text strong>v{info?.version ?? '—'}</Typography.Text>
-          </div>
-        </div>
-
-        <div>
-          <Typography.Text type="secondary">Git 仓库</Typography.Text>
-          <div>
-            <Typography.Link onClick={() => void handleOpenRepo()}>{info?.repo ?? '—'}</Typography.Link>
-          </div>
-        </div>
-
-        <div>
-          <Space>
-            <Typography.Text type="secondary">启动时检查更新</Typography.Text>
-            <Switch size="small" checked={checkOnLaunch} onChange={handleToggleCheckOnLaunch} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Section title="关于">
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Row label="版本">
+              <Typography.Text style={{ fontSize: 13 }}>v{info?.version ?? '—'}</Typography.Text>
+            </Row>
+            <Row label="Git 仓库">
+              <Typography.Link style={{ fontSize: 13 }} onClick={() => void handleOpenRepo()}>
+                {info?.repo ?? '—'}
+              </Typography.Link>
+            </Row>
           </Space>
-        </div>
+        </Section>
 
-        <div>
-          <Typography.Text type="secondary">软件更新</Typography.Text>
-          <div style={{ marginTop: 4 }}>
+        <Section title="更新">
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            <Row label="启动时检查更新">
+              <Switch size="small" checked={checkOnLaunch} onChange={handleToggleCheckOnLaunch} />
+            </Row>
             <UpdatePanel />
-          </div>
-        </div>
+          </Space>
+        </Section>
 
-        <Divider style={{ margin: '8px 0' }} />
+        <Section title="配置">
+          <Space wrap size={8}>
+            <Button icon={<ExportOutlined />} onClick={() => void handleExport()}>
+              导出当前配置
+            </Button>
+            <Button icon={<ImportOutlined />} onClick={() => void handleImportV2()}>
+              导入配置
+            </Button>
+            <Button icon={<HistoryOutlined />} onClick={() => void handleImportLegacy()}>
+              导入旧版配置
+            </Button>
+          </Space>
+        </Section>
 
-        <Space>
-          <Typography.Text strong>配置</Typography.Text>
-        </Space>
-        <Space wrap>
-          <Button icon={<ExportOutlined />} onClick={() => void handleExport()}>
-            导出当前配置
-          </Button>
-          <Button icon={<ImportOutlined />} onClick={() => void handleImportV2()}>
-            导入配置
-          </Button>
-          <Button icon={<HistoryOutlined />} onClick={() => void handleImportLegacy()}>
-            导入旧版配置
-          </Button>
-        </Space>
-
-        <Divider style={{ margin: '8px 0' }} />
-
-        <Space>
-          <Typography.Text strong>Shell</Typography.Text>
-          <Button size="small" icon={<ReloadOutlined />} onClick={() => void handleRefreshShells()}>
-            重新检测
-          </Button>
-        </Space>
-
-        <List
-          size="small"
-          bordered
-          dataSource={shells}
-          renderItem={(shell) => (
-            <List.Item
-              actions={[
-                selectedShellId === shell.id ? (
-                  <Tag color="blue" key="active">
-                    当前使用
-                  </Tag>
-                ) : (
-                  <Button key="use" size="small" onClick={() => void handleSelectShell(shell.id)}>
-                    使用
-                  </Button>
-                ),
-                shell.source === 'custom' ? (
-                  <Button
-                    key="remove"
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => void handleRemoveCustom(shell.id)}
-                  />
-                ) : null
-              ].filter(Boolean)}
-            >
-              <List.Item.Meta
-                title={
-                  <Space size={6}>
-                    <span>{shell.name}</span>
-                    <Tag>{shell.source === 'custom' ? '自定义' : '检测到'}</Tag>
-                  </Space>
-                }
-                description={
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {shell.path}
-                    {shell.version ? ` · ${shell.version}` : ''}
-                  </Typography.Text>
-                }
-              />
-            </List.Item>
-          )}
-        />
-
-        <Space.Compact style={{ width: '100%' }}>
-          <Input
-            value={customPath}
-            placeholder="自定义 shell 路径,例如 /opt/homebrew/bin/zsh"
-            onChange={(e) => setCustomPath(e.target.value)}
+        <Section
+          title="Shell"
+          extra={
+            <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => void handleRefreshShells()}>
+              重新检测
+            </Button>
+          }
+        >
+          <List
+            size="small"
+            className="app-list-flat"
+            dataSource={shells}
+            renderItem={(shell) => (
+              <List.Item
+                actions={[
+                  selectedShellId === shell.id ? (
+                    <Tag key="active" style={accentTagStyle}>
+                      当前使用
+                    </Tag>
+                  ) : (
+                    <Button key="use" size="small" onClick={() => void handleSelectShell(shell.id)}>
+                      使用
+                    </Button>
+                  ),
+                  shell.source === 'custom' ? (
+                    <Button
+                      key="remove"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => void handleRemoveCustom(shell.id)}
+                    />
+                  ) : null
+                ].filter(Boolean)}
+              >
+                <List.Item.Meta
+                  title={
+                    <Space size={6}>
+                      <span style={{ fontSize: 13 }}>{shell.name}</span>
+                      <Tag style={{ marginInlineEnd: 0 }}>{shell.source === 'custom' ? '自定义' : '检测到'}</Tag>
+                    </Space>
+                  }
+                  description={
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {shell.path}
+                      {shell.version ? ` · ${shell.version}` : ''}
+                    </Typography.Text>
+                  }
+                />
+              </List.Item>
+            )}
           />
-          <Button icon={<FolderOpenOutlined />} onClick={() => void handlePickPath()}>
-            浏览
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} loading={busy} onClick={() => void handleAddCustom()}>
-            添加
-          </Button>
-        </Space.Compact>
-      </Space>
+
+          <Space.Compact style={{ width: '100%', marginTop: 10 }}>
+            <Input
+              value={customPath}
+              placeholder="自定义 shell 路径,例如 /opt/homebrew/bin/zsh"
+              onChange={(e) => setCustomPath(e.target.value)}
+            />
+            <Button icon={<FolderOpenOutlined />} onClick={() => void handlePickPath()}>
+              浏览
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} loading={busy} onClick={() => void handleAddCustom()}>
+              添加
+            </Button>
+          </Space.Compact>
+        </Section>
+      </div>
     </Modal>
   )
 }

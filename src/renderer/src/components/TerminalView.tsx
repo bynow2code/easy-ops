@@ -4,9 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { useTheme } from '../theme/provider'
-
-const LIGHT_THEME = { background: '#ffffff', foreground: '#1f1f1f', cursor: '#1f1f1f' }
-const DARK_THEME = { background: '#141414', foreground: '#e6e6e6', cursor: '#e6e6e6' }
+import { terminalPalette } from '../theme/tokens'
 
 export function TerminalView({
   runId,
@@ -27,11 +25,11 @@ export function TerminalView({
     if (!container) return
 
     const term = new Terminal({
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, 'PingFang SC', monospace",
       fontSize: 13,
       cursorBlink: true,
       convertEol: true,
-      theme: resolved === 'dark' ? DARK_THEME : LIGHT_THEME
+      theme: terminalPalette(resolved)
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -77,7 +75,7 @@ export function TerminalView({
 
   useEffect(() => {
     if (!termRef.current) return
-    termRef.current.options.theme = resolved === 'dark' ? DARK_THEME : LIGHT_THEME
+    termRef.current.options.theme = terminalPalette(resolved)
   }, [resolved])
 
   useEffect(() => {

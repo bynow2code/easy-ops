@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
-import { App, Badge, Button, Empty, Tag, Tooltip, Typography } from 'antd'
-import { CloseOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons'
+import { App, Badge, Button, Tag, Tooltip, Typography } from 'antd'
+import { CloseOutlined, CodeOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons'
 import { terminalActions, useTerminalStore } from '../store/useTerminalStore'
 import { usePtyEvents } from '../hooks/usePtyEvents'
 import { TerminalView } from './TerminalView'
@@ -69,8 +69,20 @@ export function TerminalDock(): JSX.Element {
 
   if (sessions.length === 0) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Empty description="还没有运行中的终端,在左侧脚本上点击「执行」" />
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10
+        }}
+      >
+        <CodeOutlined style={{ fontSize: 26, opacity: 0.35 }} />
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          还没有运行中的终端,在左上角的脚本上点「执行」
+        </Typography.Text>
       </div>
     )
   }
@@ -78,7 +90,7 @@ export function TerminalDock(): JSX.Element {
   const isMaximized = maximizedRunId !== null
 
   return (
-    // 最大化与瀑布流共用同一棵树(卡片始终在同一位置、同一 key,只换 style),
+    // 最大化与列表共用同一棵树(卡片始终在同一位置、同一 key,只换 style),
     // 避免 React 按位置协调导致 TerminalView 卸载重挂、xterm 滚动缓冲丢失
     <div
       style={
@@ -89,7 +101,8 @@ export function TerminalDock(): JSX.Element {
               zIndex: 1000,
               background: 'var(--color-bg-base, #fff)',
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
+              padding: 10
             }
           : { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }
       }
@@ -99,14 +112,26 @@ export function TerminalDock(): JSX.Element {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 10px',
+          gap: 8,
+          padding: isMaximized ? '0 0 8px' : '0 2px 8px',
           flex: '0 0 auto'
         }}
       >
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {sessions.length} 个终端
-        </Typography.Text>
-        <Button size="small" danger onClick={() => void handleCloseAll()}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              background: 'var(--app-primary)',
+              display: 'inline-block'
+            }}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {sessions.length} 个终端
+          </Typography.Text>
+        </span>
+        <Button type="text" size="small" danger onClick={() => void handleCloseAll()}>
           关闭全部
         </Button>
       </div>
@@ -125,13 +150,13 @@ export function TerminalDock(): JSX.Element {
                 gridTemplateColumns: '1fr',
                 gridAutoRows: `${CARD_HEIGHT}px`,
                 alignContent: 'start',
-                gap: 8,
-                padding: 8
+                gap: 10
               }
         }
       >
         {sessions.map((s) => {
           const cardMaximized = s.runId === maximizedRunId
+          const isActive = s.runId === activeRunId
           return (
             <div
               key={s.runId}
@@ -141,10 +166,12 @@ export function TerminalDock(): JSX.Element {
                 flexDirection: 'column',
                 minWidth: 0,
                 height: isMaximized ? '100%' : undefined,
-                border: '1px solid var(--color-border-secondary)',
-                borderRadius: isMaximized ? 0 : 8,
+                border: '1px solid var(--app-hairline)',
+                borderRadius: isMaximized ? 0 : 'var(--app-radius-lg)',
                 overflow: 'hidden',
-                background: 'var(--color-bg-container, #fff)'
+                background: 'var(--color-bg-container)',
+                // 用 inset 阴影标出「输入会落到这个终端」,不影响布局
+                boxShadow: isActive && !cardMaximized ? 'inset 2px 0 0 0 var(--app-primary)' : undefined
               }}
             >
               <div
@@ -152,8 +179,9 @@ export function TerminalDock(): JSX.Element {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: '4px 6px 4px 10px',
-                  borderBottom: '1px solid var(--color-border-secondary)',
+                  padding: '5px 4px 5px 10px',
+                  borderBottom: '1px solid var(--app-hairline)',
+                  background: 'var(--app-subtle-bg)',
                   flex: '0 0 auto'
                 }}
               >
@@ -194,7 +222,7 @@ export function TerminalDock(): JSX.Element {
               >
                 <TerminalView
                   runId={s.runId}
-                  active={s.runId === activeRunId}
+                  active={isActive}
                   onRegisterWriter={registerWriter}
                 />
               </div>

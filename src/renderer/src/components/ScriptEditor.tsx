@@ -50,8 +50,20 @@ export function ScriptEditor({
     []
   )
 
+  // 高度给百分比时表示「撑满父容器」:外层用 .app-editor-fill 把 CodeMirror 根节点顶满,
+  // 因为 @uiw/react-codemirror 不透传 height,单靠 height="100%" 会在它内部断掉
+  const fills = height.endsWith('%')
+
   return (
-    <div style={{ border: '1px solid var(--color-border-secondary)', borderRadius: 6, overflow: 'hidden' }}>
+    <div
+      className={fills ? 'app-editor-fill' : undefined}
+      style={{
+        border: '1px solid var(--app-hairline)',
+        borderRadius: 'var(--app-radius)',
+        overflow: 'hidden',
+        ...(fills ? { height: '100%' } : {})
+      }}
+    >
       <CodeMirror
         value={value}
         height={height}

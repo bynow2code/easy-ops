@@ -1,6 +1,15 @@
 import { useEffect, useMemo } from 'react'
-import { App, Button, Empty, Input, Space, Tag, Tooltip, Typography } from 'antd'
-import { CopyOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, PlayCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { App, Button, Input, Space, Tooltip, Typography } from 'antd'
+import {
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  FolderAddOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  SearchOutlined,
+  SnippetsOutlined
+} from '@ant-design/icons'
 import type { Group, Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { terminalActions } from '../store/useTerminalStore'
@@ -10,6 +19,37 @@ function matches(script: Script, keyword: string): boolean {
   if (!keyword) return true
   const k = keyword.toLowerCase()
   return script.name.toLowerCase().includes(k) || script.content.toLowerCase().includes(k)
+}
+
+/** 分组名后面的计数 chip。中性色,把「强调」留给选中态 */
+const countChipStyle = {
+  fontSize: 11,
+  lineHeight: '16px',
+  padding: '0 6px',
+  borderRadius: 6,
+  background: 'var(--app-hairline)',
+  color: 'var(--color-text)',
+  opacity: 0.6
+} as const
+
+function CenteredHint({ text }: { text: string }): JSX.Element {
+  return (
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10
+      }}
+    >
+      <SnippetsOutlined style={{ fontSize: 26, opacity: 0.35 }} />
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {text}
+      </Typography.Text>
+    </div>
+  )
 }
 
 export function Sidebar(): JSX.Element {
@@ -94,79 +134,123 @@ export function Sidebar(): JSX.Element {
     })
   }
 
-  const renderScript = (script: Script): JSX.Element => (
-    <div
-      key={script.id}
-      onClick={() => selectScript(script.id)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 8,
-        padding: '6px 8px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        background: selectedScriptId === script.id ? 'var(--color-control-item-bg-active)' : 'transparent'
-      }}
-    >
-      <Typography.Text
-        ellipsis={{ tooltip: script.name }}
-        style={{ flex: 1, fontSize: 13, fontWeight: selectedScriptId === script.id ? 500 : 400 }}
+  const renderScript = (script: Script): JSX.Element => {
+    const selected = selectedScriptId === script.id
+    return (
+      <div
+        key={script.id}
+        // 操作按钮靠 CSS 显隐(class 驱动)而非条件渲染:按钮始终留在 DOM 里,
+        // 键盘 Tab 仍可达,组件测试也不必为「悬停」造状态
+        className={selected ? 'app-row app-row-selected' : 'app-row'}
+        onClick={() => selectScript(script.id)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          padding: '5px 8px',
+          marginBottom: 2,
+          borderRadius: 'var(--app-radius)',
+          cursor: 'pointer',
+          // 用 inset 阴影而不是 border-left:选中时不会因为多出 2px 边框而让文字抖动
+          boxShadow: selected ? 'inset 2px 0 0 0 var(--app-primary)' : undefined
+        }}
       >
-        {script.name}
-      </Typography.Text>
-      <Space size={2}>
-        <Tooltip title="执行">
-          <Button
-            type="text"
-            size="small"
-            icon={<PlayCircleOutlined />}
-            onClick={(e) => {
-              e.stopPropagation()
-              void handleRun(script)
-            }}
-          />
-        </Tooltip>
-        <Tooltip title="编辑">
-          <Button
-            type="text"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={(e) => {
-              e.stopPropagation()
-              openForm({ type: 'script-edit', script })
-            }}
-          />
-        </Tooltip>
-        <Tooltip title="复制">
-          <Button
-            type="text"
-            size="small"
-            icon={<CopyOutlined />}
-            onClick={(e) => {
-              e.stopPropagation()
-              void handleDuplicateScript(script)
-            }}
-          />
-        </Tooltip>
-        <Tooltip title="删除">
-          <Button
-            type="text"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={(e) => {
-              e.stopPropagation()
-              handleDeleteScript(script)
-            }}
-          />
-        </Tooltip>
-      </Space>
+        <Typography.Text
+          ellipsis={{ tooltip: script.name }}
+          style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: selected ? 500 : 400 }}
+        >
+          {script.name}
+        </Typography.Text>
+        <span className="app-row-actions" style={{ display: 'flex', flex: '0 0 auto' }}>
+          <Tooltip title="执行">
+            <Button
+              type="text"
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleRun(script)
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="编辑">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+                openForm({ type: 'script-edit', script })
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="复制">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleDuplicateScript(script)
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="删除">
+            <Button
+              type="text"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleDeleteScript(script)
+              }}
+            />
+          </Tooltip>
+        </span>
+      </div>
+    )
+  }
+
+  const renderGroupRow = (
+    key: string,
+    name: string,
+    items: Script[],
+    actions: JSX.Element | null
+  ): JSX.Element => (
+    <div style={{ marginBottom: 10 }} key={key}>
+      <div
+        className="app-group-head"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '0 2px' }}
+      >
+        <Space size={6} align="center" style={{ minWidth: 0 }}>
+          <Typography.Text
+            ellipsis
+            style={{ fontSize: 12, fontWeight: 500, opacity: 0.7, letterSpacing: 0.3 }}
+          >
+            {name}
+          </Typography.Text>
+          <span style={countChipStyle}>{items.length}</span>
+        </Space>
+        {actions ? <span className="app-group-actions">{actions}</span> : null}
+      </div>
+      <div style={{ marginTop: 4 }}>
+        {items.length === 0 ? (
+          <Typography.Text type="secondary" style={{ fontSize: 12, paddingLeft: 8 }}>
+            暂无脚本
+          </Typography.Text>
+        ) : (
+          items.map(renderScript)
+        )}
+      </div>
     </div>
   )
 
+  const nothingAtAll = scripts.length === 0 && groups.length === 0
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
       <Input
         allowClear
         prefix={<SearchOutlined />}
@@ -175,8 +259,8 @@ export function Sidebar(): JSX.Element {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      <Space>
-        <Button icon={<PlusOutlined />} onClick={() => openForm({ type: 'script-create', groupId: null })}>
+      <Space size={8}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm({ type: 'script-create', groupId: null })}>
           新建脚本
         </Button>
         <Button icon={<FolderAddOutlined />} onClick={() => openForm({ type: 'group-create' })}>
@@ -184,19 +268,20 @@ export function Sidebar(): JSX.Element {
         </Button>
       </Space>
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {groups.map((group) => {
-          const items = grouped.get(group.id) ?? []
-          return (
-            <div key={group.id} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Space size={6}>
-                  <Typography.Text strong style={{ fontSize: 12 }}>
-                    {group.name}
-                  </Typography.Text>
-                  <Tag style={{ marginInlineEnd: 0 }}>{items.length}</Tag>
-                </Space>
-                <Space size={2}>
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        {nothingAtAll ? (
+          <CenteredHint text="还没有脚本,点上方「新建脚本」开始" />
+        ) : visible.length === 0 ? (
+          <CenteredHint text="没有匹配的脚本" />
+        ) : (
+          <>
+            {groups.map((group) => {
+              const items = grouped.get(group.id) ?? []
+              return renderGroupRow(
+                group.id,
+                group.name,
+                items,
+                <Space size={0}>
                   <Tooltip title="在此分组新建脚本">
                     <Button
                       type="text"
@@ -223,36 +308,11 @@ export function Sidebar(): JSX.Element {
                     />
                   </Tooltip>
                 </Space>
-              </div>
-              <div style={{ marginTop: 4 }}>
-                {items.length === 0 ? (
-                  <Typography.Text type="secondary" style={{ fontSize: 12, paddingLeft: 8 }}>
-                    暂无脚本
-                  </Typography.Text>
-                ) : (
-                  items.map(renderScript)
-                )}
-              </div>
-            </div>
-          )
-        })}
-
-        <div style={{ marginBottom: 12 }}>
-          <Typography.Text strong style={{ fontSize: 12 }}>
-            未分组
-          </Typography.Text>
-          <div style={{ marginTop: 4 }}>
-            {(grouped.get(null) ?? []).length === 0 ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12, paddingLeft: 8 }}>
-                暂无脚本
-              </Typography.Text>
-            ) : (
-              (grouped.get(null) ?? []).map(renderScript)
-            )}
-          </div>
-        </div>
-
-        {scripts.length === 0 ? <Empty description="还没有脚本,点击上方「新建脚本」开始" /> : null}
+              )
+            })}
+            {renderGroupRow('__ungrouped__', '未分组', grouped.get(null) ?? [], null)}
+          </>
+        )}
       </div>
     </div>
   )

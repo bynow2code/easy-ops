@@ -1,17 +1,183 @@
 /*
- * 自研样式统一消费由 ThemeProvider 注入的 CSS 变量(与 AntD token 对齐,设计 §11)。
- * 变量名与默认值需同时对应 antd 的 colorBgContainer / colorText /
- * colorBorderSecondary / controlItemBgActive,
- * 默认值用于 ThemeVariables 挂载前的那一帧,避免闪白。
+ * 设计令牌与全局样式。
+ *
+ * 分两层:
+ * 1. `--color-*` 由 ThemeVariables 从 antd token 注入,与 antd 组件严格同源
+ *    (容器底 / 文字 / 次级边框 / 选中底),设计 §11。
+ * 2. `--app-*` 来自 theme/tokens.ts,是 antd token 里没有对应概念的语义色
+ *    (顶栏底色、主色软底、发丝分割线、面板投影…)。
+ *
+ * 下面的默认值用于 ThemeVariables 挂载前的那一帧,避免闪白。
  */
 :root {
+  --color-bg-base: #ffffff;
   --color-bg-container: #ffffff;
   --color-text: rgba(0, 0, 0, 0.88);
   --color-border-secondary: #f0f0f0;
   --color-control-item-bg-active: rgba(0, 0, 0, 0.04);
+
+  --app-primary: #0e7490;
+  --app-topbar-bg: #0e2439;
+  --app-topbar-text: rgba(255, 255, 255, 0.94);
+  --app-topbar-muted: rgba(255, 255, 255, 0.55);
+  --app-topbar-control-bg: rgba(255, 255, 255, 0.08);
+  --app-topbar-control-border: rgba(255, 255, 255, 0.18);
+  --app-topbar-control-text: rgba(255, 255, 255, 0.86);
+  --app-topbar-selected-bg: rgba(255, 255, 255, 0.18);
+  --app-accent-soft: #e8f6f8;
+  --app-accent-text: #0b3b4a;
+  --app-layout-bg: #f4f6f7;
+  --app-subtle-bg: #f7f8fa;
+  --app-hairline: rgba(16, 24, 40, 0.08);
+  --app-hairline-strong: rgba(16, 24, 40, 0.14);
+  --app-row-hover: rgba(16, 24, 40, 0.04);
+  --app-radius: 8px;
+  --app-radius-lg: 10px;
+  --app-shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
-  background-color: var(--color-bg-container);
+  margin: 0;
+  background-color: var(--app-layout-bg);
   color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 顶栏:两种模式下都保持深色 ───────────────────────────── */
+.app-topbar {
+  background: var(--app-topbar-bg);
+}
+
+/* 深底上的 antd 控件要改成半透明白,否则浅色主题下的深灰文字会糊在深蓝上 */
+.app-topbar-segmented.ant-segmented {
+  background: var(--app-topbar-control-bg);
+  border: 1px solid var(--app-topbar-control-border);
+  padding: 1px;
+}
+
+.app-topbar-segmented .ant-segmented-item {
+  color: var(--app-topbar-control-text);
+}
+
+.app-topbar-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.app-topbar-segmented .ant-segmented-item-selected,
+.app-topbar-segmented .ant-segmented-thumb {
+  background: var(--app-topbar-selected-bg);
+  color: #fff;
+}
+
+.app-topbar-btn.ant-btn {
+  color: var(--app-topbar-control-text);
+  background: var(--app-topbar-control-bg);
+  border-color: var(--app-topbar-control-border);
+}
+
+.app-topbar-btn.ant-btn:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.32) !important;
+}
+
+/* ── 面板 ──────────────────────────────────────────────── */
+.app-panel {
+  background: var(--color-bg-container);
+  border: 1px solid var(--app-hairline);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-panel);
+}
+
+/* 设置面板里的分节:替代原来靠 Divider 堆叠的平铺 */
+.app-section {
+  background: var(--app-subtle-bg);
+  border: 1px solid var(--app-hairline);
+  border-radius: var(--app-radius-lg);
+  padding: 12px 14px 14px;
+}
+
+.app-section-title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+
+/* ── 脚本行:操作按钮悬停/选中/获得焦点才显形 ────────────── */
+.app-row {
+  transition: background 0.12s ease;
+}
+
+.app-row:hover {
+  background: var(--app-row-hover);
+}
+
+.app-row-selected,
+.app-row-selected:hover {
+  background: var(--app-accent-soft);
+}
+
+.app-row-actions {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.app-row:hover .app-row-actions,
+.app-row:focus-within .app-row-actions,
+.app-row-selected .app-row-actions {
+  opacity: 1;
+}
+
+/* ── 分组头:操作按钮同理,减少常态噪音 ─────────────────── */
+.app-group-actions {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.app-group-head:hover .app-group-actions,
+.app-group-head:focus-within .app-group-actions {
+  opacity: 1;
+}
+
+/* ── 扁平化的 List:行之间只用发丝线,不要整块描边 ────────── */
+.app-list-flat .ant-list-item {
+  border-block-end: 1px solid var(--app-hairline);
+  padding: 8px 0;
+}
+
+.app-list-flat .ant-list-item:last-child {
+  border-block-end: none;
+}
+
+/* ── 空态换掉 antd 默认的大线稿图,改成简洁居中的提示 ───── */
+.app-empty-icon {
+  color: var(--color-text-secondary);
+  opacity: 0.45;
+}
+
+/* ── CodeMirror 撑满父容器 ─────────────────────────────── */
+/* @uiw/react-codemirror 的根节点(.cm-theme-*)不透传 height 属性,
+   传「100%」会在它那里断掉,所以用 flex 从外面把它顶满。 */
+.app-editor-fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-editor-fill > .cm-theme,
+.app-editor-fill > .cm-theme-light,
+.app-editor-fill > .cm-theme-dark {
+  flex: 1;
+  min-height: 0;
+}
+
+.app-editor-fill .cm-editor {
+  height: 100%;
 }
