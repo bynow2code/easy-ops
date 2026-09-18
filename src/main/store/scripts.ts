@@ -1,4 +1,5 @@
 import {
+  SCRIPT_NAME_MAX,
   validateGroupName,
   validateScriptContent,
   validateScriptName
@@ -24,6 +25,7 @@ export interface ScriptsStore {
   listScripts: () => Script[]
   listGroups: () => Group[]
   createScript: (input: CreateScriptInput) => Script
+  duplicateScript: (id: string) => Script
   updateScript: (id: string, patch: ScriptPatch) => Script
   deleteScript: (id: string) => void
   reorderScripts: (ids: string[]) => void
@@ -54,6 +56,31 @@ function applyOrderById<T extends { id: string; order: number }>(items: T[], ids
     const next = indexOf.get(item.id)
     return next === undefined ? item : { ...item, order: next }
   })
+}
+
+const COPY_SUFFIX = ' 副本'
+
+/** 递增尝试的上限;正常不会触顶,只是避免异常数据把生成逻辑拖成死循环 */
+const COPY_NAME_ATTEMPTS = 999
+
+function truncateTo(value: string, max: number): string {
+  if (max <= 0) return ''
+  const chars = Array.from(value)
+  return chars.length <= max ? value : chars.slice(0, max).join('')
+}
+
+/**
+ * 副本名:原名后加「 副本」,已被占用则递增为「原名 副本 2」「原名 副本 3」…
+ * 加后缀前先截断原名,保证结果不超过长度上限。
+ */
+function buildCopyName(sourceName: string, existingNames: string[]): string {
+  const taken = new Set(existingNames)
+  for (let n = 1; n <= COPY_NAME_ATTEMPTS; n++) {
+    const suffix = n === 1 ? COPY_SUFFIX : `${COPY_SUFFIX} ${n}`
+    const candidate = `${truncateTo(sourceName, SCRIPT_NAME_MAX - Array.from(suffix).length)}${suffix}`
+    if (!taken.has(candidate)) return candidate
+  }
+  throw new Error('无法生成可用的副本名称')
 }
 
 export function createScriptsStore(persistence: Persistence<ScriptsData>): ScriptsStore {
@@ -98,6 +125,43 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
       }
       commit({ ...data, scripts: [...data.scripts, script] })
       return script
+    },
+
+    duplicateScript(id) {
+      const data = state()
+      const ordered = normalizeOrder(data.scripts)
+      const index = ordered.findIndex((s) => s.id === id)
+      if (index === -1) throw new Error(`脚本不存在: ${id}`)
+
+      const source = ordered[index]
+      const name = buildCopyName(
+        source.name,
+        ordered.map((s) => s.name)
+      )
+      const nameCheck = validateScriptName(name)
+      if (!nameCheck.ok) throw new Error(nameCheck.message)
+
+      // 副本紧跟原脚本,但要让过该脚本已有的副本,连续复制时名称从上到下才是递增的
+      const copyPrefix = `${source.name}${COPY_SUFFIX}`
+      let insertAt = index + 1
+      while (insertAt < ordered.length && ordered[insertAt].name.startsWith(copyPrefix)) insertAt++
+
+      const copy: Script = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        content: source.content,
+        groupId: source.groupId,
+        shellId: source.shellId,
+        order: insertAt,
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      }
+      // 后续项顺延;order 整体重排,保证下次读取时顺序稳定
+      const scripts = [...ordered.slice(0, insertAt), copy, ...ordered.slice(insertAt)].map(
+        (s, i) => ({ ...s, order: i })
+      )
+      commit({ ...data, scripts })
+      return copy
     },
 
     updateScript(id, patch) {

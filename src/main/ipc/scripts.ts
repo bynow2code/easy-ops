@@ -19,6 +19,8 @@ export function registerScriptIpc(store: ScriptsStore): void {
     return store.updateScript(payload.id, patch as Parameters<typeof store.updateScript>[1])
   })
 
+  ipcMain.handle('script:duplicate', (_event, payload: { id: string }) => store.duplicateScript(payload.id))
+
   ipcMain.handle('script:delete', (_event, payload: { id: string }) => {
     store.deleteScript(payload.id)
   })

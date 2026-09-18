@@ -51,6 +51,23 @@ describe('script:create 的 shellId 透传', () => {
   })
 })
 
+describe('script:duplicate', () => {
+  it('复制脚本,名称加后缀且字段照搬', () => {
+    invoke('script:create', { name: '构建', content: 'echo build', groupId: null, shellId: 'bash' })
+    const id = data.scripts[0].id
+
+    const copy = invoke('script:duplicate', { id }) as { name: string; shellId: string | null }
+
+    expect(copy.name).toBe('构建 副本')
+    expect(copy.shellId).toBe('bash')
+    expect(data.scripts).toHaveLength(2)
+  })
+
+  it('复制不存在的脚本时抛错', () => {
+    expect(() => invoke('script:duplicate', { id: 'nope' })).toThrowError(/不存在/)
+  })
+})
+
 describe('script:update 的字段白名单', () => {
   it('接受 shellId,置 null 表示清空覆盖', () => {
     invoke('script:create', { name: 'a', content: 'echo a', groupId: null, shellId: 'zsh' })

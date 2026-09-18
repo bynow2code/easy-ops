@@ -15,6 +15,7 @@ const api = {
       shellId: string | null
     }): Promise<Script> => ipcRenderer.invoke('script:create', input),
     update: (id: string, patch: Partial<Script>): Promise<Script> => ipcRenderer.invoke('script:update', { id, patch }),
+    duplicate: (id: string): Promise<Script> => ipcRenderer.invoke('script:duplicate', { id }),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('script:delete', { id }),
     reorder: (ids: string[]): Promise<void> => ipcRenderer.invoke('script:reorder', { ids })
   },

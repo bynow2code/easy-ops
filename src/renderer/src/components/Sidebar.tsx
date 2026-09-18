@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { App, Button, Empty, Input, Space, Tag, Tooltip, Typography } from 'antd'
-import { DeleteOutlined, EditOutlined, FolderAddOutlined, PlayCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { CopyOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, PlayCircleOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import type { Group, Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { terminalActions } from '../store/useTerminalStore'
@@ -42,6 +42,17 @@ export function Sidebar(): JSX.Element {
         shellId: script.shellId
       })
       terminalActions.add({ runId, title, scriptId: script.id })
+    } catch (err) {
+      message.error(toUserMessage(err))
+    }
+  }
+
+  const handleDuplicateScript = async (script: Script): Promise<void> => {
+    try {
+      const created = await window.api.scripts.duplicate(script.id)
+      await reload()
+      selectScript(created.id)
+      message.success(`已创建「${created.name}」`)
     } catch (err) {
       message.error(toUserMessage(err))
     }
@@ -124,6 +135,17 @@ export function Sidebar(): JSX.Element {
             onClick={(e) => {
               e.stopPropagation()
               openForm({ type: 'script-edit', script })
+            }}
+          />
+        </Tooltip>
+        <Tooltip title="复制">
+          <Button
+            type="text"
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={(e) => {
+              e.stopPropagation()
+              void handleDuplicateScript(script)
             }}
           />
         </Tooltip>

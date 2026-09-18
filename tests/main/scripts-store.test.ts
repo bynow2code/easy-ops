@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { SCRIPT_NAME_MAX, validateScriptName } from '../../src/shared/types'
 import { createScriptsStore, type ScriptsData } from '../../src/main/store/scripts'
 
 let data: ScriptsData
@@ -123,6 +124,78 @@ describe('脚本', () => {
   it('操作不存在的脚本时抛错', () => {
     expect(() => store.updateScript('nope', { name: 'x' })).toThrowError(/不存在/)
     expect(() => store.deleteScript('nope')).toThrowError(/不存在/)
+  })
+})
+
+describe('脚本复制', () => {
+  it('照搬内容、分组与脚本级 shell', () => {
+    const g = store.createGroup('后端')
+    const s = store.createScript({
+      name: '构建',
+      content: 'echo build',
+      groupId: g.id,
+      shellId: 'bash'
+    })
+
+    const copy = store.duplicateScript(s.id)
+
+    expect(copy.id).not.toBe(s.id)
+    expect(copy.content).toBe('echo build')
+    expect(copy.groupId).toBe(g.id)
+    expect(copy.shellId).toBe('bash')
+  })
+
+  it('副本名称在原名称后追加「副本」', () => {
+    const s = store.createScript({ name: '构建', content: 'echo build', groupId: null })
+    expect(store.duplicateScript(s.id).name).toBe('构建 副本')
+  })
+
+  it('同名副本已存在时名称递增,不会产生两个同名脚本', () => {
+    const s = store.createScript({ name: '构建', content: 'echo build', groupId: null })
+    expect(store.duplicateScript(s.id).name).toBe('构建 副本')
+    expect(store.duplicateScript(s.id).name).toBe('构建 副本 2')
+    expect(store.duplicateScript(s.id).name).toBe('构建 副本 3')
+  })
+
+  it('原名称接近长度上限时先截断再加后缀,结果仍合法', () => {
+    const s = store.createScript({ name: 'a'.repeat(SCRIPT_NAME_MAX), content: 'echo a', groupId: null })
+
+    const copy = store.duplicateScript(s.id)
+
+    expect(Array.from(copy.name).length).toBeLessThanOrEqual(SCRIPT_NAME_MAX)
+    expect(copy.name.endsWith(' 副本')).toBe(true)
+    expect(validateScriptName(copy.name).ok).toBe(true)
+  })
+
+  it('副本排在同一分组的原脚本正后方', () => {
+    const g = store.createGroup('后端')
+    const a = store.createScript({ name: 'a', content: 'echo a', groupId: g.id })
+    const b = store.createScript({ name: 'b', content: 'echo b', groupId: g.id })
+    const c = store.createScript({ name: 'c', content: 'echo c', groupId: g.id })
+
+    const copy = store.duplicateScript(b.id)
+
+    expect(store.listScripts().map((s) => s.id)).toEqual([a.id, b.id, copy.id, c.id])
+    expect(store.listScripts().map((s) => s.order)).toEqual([0, 1, 2, 3])
+  })
+
+  it('连续复制同一个脚本时,副本按名称递增顺序排在原脚本之后', () => {
+    const s = store.createScript({ name: '构建', content: 'echo build', groupId: null })
+
+    store.duplicateScript(s.id)
+    store.duplicateScript(s.id)
+    store.duplicateScript(s.id)
+
+    expect(store.listScripts().map((x) => x.name)).toEqual([
+      '构建',
+      '构建 副本',
+      '构建 副本 2',
+      '构建 副本 3'
+    ])
+  })
+
+  it('复制不存在的脚本时抛错', () => {
+    expect(() => store.duplicateScript('nope')).toThrowError(/不存在/)
   })
 })
 
