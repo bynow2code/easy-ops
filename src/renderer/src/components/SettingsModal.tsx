@@ -16,7 +16,8 @@ interface AppInfo {
 
 export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
   const { message, modal } = App.useApp()
-  const { mode, setMode } = useTheme()
+  // 主题切换只在顶栏;这里保留 setMode 是因为导入配置后要把新的主题同步过来
+  const { setMode } = useTheme()
   const reloadScripts = useAppStore((s) => s.reload)
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [shells, setShells] = useState<ShellInfo[]>([])
@@ -249,23 +250,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
           <Typography.Text type="secondary">Git 仓库</Typography.Text>
           <div>
             <Typography.Link onClick={() => void handleOpenRepo()}>{info?.repo ?? '—'}</Typography.Link>
-          </div>
-        </div>
-
-        <div>
-          <Typography.Text type="secondary">主题</Typography.Text>
-          <div style={{ marginTop: 4 }}>
-            <Space>
-              <Button size="small" type={mode === 'light' ? 'primary' : 'default'} onClick={() => setMode('light')}>
-                浅色
-              </Button>
-              <Button size="small" type={mode === 'dark' ? 'primary' : 'default'} onClick={() => setMode('dark')}>
-                深色
-              </Button>
-              <Button size="small" type={mode === 'system' ? 'primary' : 'default'} onClick={() => setMode('system')}>
-                跟随系统
-              </Button>
-            </Space>
           </div>
         </div>
 
