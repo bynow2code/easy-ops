@@ -1,17 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { App, Button, Divider, Input, List, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
+import { App, Button, Divider, Input, List, Modal, Space, Switch, Tag, Typography } from 'antd'
 import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, HistoryOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import type { Script, ShellInfo } from '../../../shared/types'
+import type { ShellInfo } from '../../../shared/types'
 import { UpdatePanel } from './UpdatePanel'
 import { useTheme } from '../theme/provider'
 import { useAppStore } from '../store/useAppStore'
-import {
-  buildCustomShell,
-  buildOverrideOptions,
-  globalShellLabel,
-  resolveScriptOverride,
-  toShellIdPatch
-} from '../settings/shellOverride'
+import { buildCustomShell } from '../settings/shellOverride'
 import { toUserMessage } from '../utils/toUserMessage'
 
 interface AppInfo {
@@ -27,7 +21,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [shells, setShells] = useState<ShellInfo[]>([])
   const [selectedShellId, setSelectedShellId] = useState<string | null>(null)
-  const [scripts, setScripts] = useState<Script[]>([])
   const [checkOnLaunch, setCheckOnLaunch] = useState(true)
   const [customPath, setCustomPath] = useState('')
   const [busy, setBusy] = useState(false)
@@ -40,16 +33,14 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
   // 导入会整份覆盖脚本/分组/设置,加载逻辑必须可复用,否则界面会停在导入前的状态
   const loadAll = useCallback(async () => {
-    const [appInfo, settings, list, scriptList] = await Promise.all([
+    const [appInfo, settings, list] = await Promise.all([
       window.api.app.info(),
       window.api.settings.get(),
-      refreshShells(),
-      window.api.scripts.list()
+      refreshShells()
     ])
     setInfo(appInfo)
     setSelectedShellId(settings.shellId ?? list[0]?.id ?? null)
     setCheckOnLaunch(settings.checkUpdateOnLaunch)
-    setScripts(scriptList)
   }, [refreshShells])
 
   useEffect(() => {
@@ -166,17 +157,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
-  const handleOverrideChange = async (scriptId: string, value: string): Promise<void> => {
-    try {
-      const updated = await window.api.scripts.update(scriptId, { shellId: toShellIdPatch(value) })
-      setScripts((prev) => prev.map((s) => (s.id === scriptId ? updated : s)))
-      await reloadScripts()
-      message.success(updated.shellId ? `已设置「${updated.name}」使用指定 shell` : `已恢复「${updated.name}」跟随全局`)
-    } catch (err) {
-      message.error(toUserMessage(err))
-    }
-  }
-
   const handleExport = async (): Promise<void> => {
     try {
       const result = await window.api.config.export()
@@ -254,8 +234,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       await syncAfterImport()
     }
   }
-
-  const followGlobalHint = globalShellLabel(shells, selectedShellId)
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} width={720} title="设置">
@@ -389,49 +367,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             添加
           </Button>
         </Space.Compact>
-
-        <Divider style={{ margin: '8px 0' }} />
-
-        <div>
-          <Typography.Text strong>脚本 Shell 覆盖</Typography.Text>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              默认「跟随全局」{followGlobalHint ? `(当前:${followGlobalHint})` : ''};为脚本单独指定后,该脚本不再跟随上方默认 shell。
-            </Typography.Text>
-          </div>
-          <List
-            size="small"
-            bordered
-            style={{ marginTop: 8 }}
-            dataSource={scripts}
-            locale={{ emptyText: '暂无脚本' }}
-            renderItem={(script) => {
-              const override = resolveScriptOverride(
-                script,
-                shells.map((s) => s.id)
-              )
-              return (
-                <List.Item>
-                  <div style={{ width: '100%' }}>
-                    <Typography.Text style={{ fontSize: 13 }}>{script.name}</Typography.Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Space size={6}>
-                        <Select
-                          size="small"
-                          style={{ width: 280 }}
-                          value={override.value}
-                          options={buildOverrideOptions(shells, script)}
-                          onChange={(value) => void handleOverrideChange(script.id, value)}
-                        />
-                        {override.stale ? <Tag color="warning">指定的 shell 已不可用</Tag> : null}
-                      </Space>
-                    </div>
-                  </div>
-                </List.Item>
-              )
-            }}
-          />
-        </div>
       </Space>
     </Modal>
   )

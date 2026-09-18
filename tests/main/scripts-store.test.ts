@@ -63,6 +63,27 @@ describe('脚本', () => {
     expect(s.groupId).toBeNull()
   })
 
+  it('创建时未指定 shell,落 null 表示跟随全局', () => {
+    const s = store.createScript({ name: 'a', content: 'echo a', groupId: null })
+    expect(s.shellId).toBeNull()
+  })
+
+  it('创建时可一并指定脚本级 shell', () => {
+    const s = store.createScript({ name: 'a', content: 'echo a', groupId: null, shellId: 'zsh' })
+    expect(s.shellId).toBe('zsh')
+    expect(store.listScripts()[0].shellId).toBe('zsh')
+  })
+
+  it('更新时可改写脚本级 shell', () => {
+    const s = store.createScript({ name: 'a', content: 'echo a', groupId: null, shellId: 'zsh' })
+    expect(store.updateScript(s.id, { shellId: 'bash' }).shellId).toBe('bash')
+  })
+
+  it('更新时置 null 表示清空覆盖,回到跟随全局', () => {
+    const s = store.createScript({ name: 'a', content: 'echo a', groupId: null, shellId: 'zsh' })
+    expect(store.updateScript(s.id, { shellId: null }).shellId).toBeNull()
+  })
+
   it('更新名称时同样执行长度校验', () => {
     const s = store.createScript({ name: 'a', content: 'echo a', groupId: null })
     expect(() => store.updateScript(s.id, { name: 'b'.repeat(31) })).toThrowError(/30/)

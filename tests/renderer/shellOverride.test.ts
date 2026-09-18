@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Script, ShellInfo } from '../../src/shared/types'
+import type { ShellInfo } from '../../src/shared/types'
 import {
   FOLLOW_GLOBAL,
   buildCustomShell,
@@ -17,17 +17,6 @@ const shell = (over: Partial<ShellInfo> & Pick<ShellInfo, 'id'>): ShellInfo => (
   args: ['-i'],
   source: 'detected',
   ...over
-})
-
-const script = (shellId: string | null): Script => ({
-  id: 's1',
-  name: 'a',
-  content: 'echo a',
-  groupId: null,
-  shellId,
-  order: 0,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z'
 })
 
 describe('shell 选项映射', () => {
@@ -72,15 +61,15 @@ describe('「跟随全局」哨兵值与 shellId 互转', () => {
 
 describe('脚本覆盖的默认值判定', () => {
   it('未覆盖时选中「跟随全局」且不算失效', () => {
-    expect(resolveScriptOverride(script(null), ['zsh'])).toEqual({ value: FOLLOW_GLOBAL, stale: false })
+    expect(resolveScriptOverride(null, ['zsh'])).toEqual({ value: FOLLOW_GLOBAL, stale: false })
   })
 
   it('覆盖到已知 shell 时选中该项', () => {
-    expect(resolveScriptOverride(script('bash'), ['zsh', 'bash'])).toEqual({ value: 'bash', stale: false })
+    expect(resolveScriptOverride('bash', ['zsh', 'bash'])).toEqual({ value: 'bash', stale: false })
   })
 
   it('覆盖的 shell 已不存在时原样选中并标记失效', () => {
-    expect(resolveScriptOverride(script('custom:/opt/gone'), ['zsh'])).toEqual({
+    expect(resolveScriptOverride('custom:/opt/gone', ['zsh'])).toEqual({
       value: 'custom:/opt/gone',
       stale: true
     })
@@ -91,13 +80,20 @@ describe('单个脚本的下拉选项', () => {
   const shells = [shell({ id: 'zsh' })]
 
   it('未覆盖时选项为「跟随全局」加全部可用 shell', () => {
-    expect(buildOverrideOptions(shells, script(null)).map((o) => o.value)).toEqual([FOLLOW_GLOBAL, 'zsh'])
+    expect(buildOverrideOptions(shells, null).map((o) => o.value)).toEqual([FOLLOW_GLOBAL, 'zsh'])
   })
 
   it('覆盖失效时补一项标注「已不可用」的选项,使当前值仍可读', () => {
-    const options = buildOverrideOptions(shells, script('custom:/opt/gone'))
+    const options = buildOverrideOptions(shells, 'custom:/opt/gone')
     expect(options).toHaveLength(3)
     expect(options[2]).toEqual({ label: 'custom:/opt/gone(已不可用)', value: 'custom:/opt/gone' })
+  })
+
+  it('一个可用 shell 都没有时,失效值仍作为占位项可读', () => {
+    expect(buildOverrideOptions([], 'custom:/opt/gone')).toEqual([
+      { label: '跟随全局', value: FOLLOW_GLOBAL },
+      { label: 'custom:/opt/gone(已不可用)', value: 'custom:/opt/gone' }
+    ])
   })
 })
 

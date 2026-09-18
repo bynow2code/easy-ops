@@ -8,8 +8,12 @@ const api = {
   },
   scripts: {
     list: (): Promise<Script[]> => ipcRenderer.invoke('script:list'),
-    create: (input: { name: string; content: string; groupId: string | null }): Promise<Script> =>
-      ipcRenderer.invoke('script:create', input),
+    create: (input: {
+      name: string
+      content: string
+      groupId: string | null
+      shellId: string | null
+    }): Promise<Script> => ipcRenderer.invoke('script:create', input),
     update: (id: string, patch: Partial<Script>): Promise<Script> => ipcRenderer.invoke('script:update', { id, patch }),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('script:delete', { id }),
     reorder: (ids: string[]): Promise<void> => ipcRenderer.invoke('script:reorder', { ids })

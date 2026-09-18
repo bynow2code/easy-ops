@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
 import { App, Form, Input, Modal, Select } from 'antd'
 import { SCRIPT_NAME_MAX, validateScriptContent, validateScriptName } from '../../../shared/types'
+import type { ShellInfo } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { ScriptEditor } from './ScriptEditor'
 import { toUserMessage } from '../utils/toUserMessage'
+import {
+  buildOverrideOptions,
+  globalShellLabel,
+  toSelectValue,
+  toShellIdPatch
+} from '../settings/shellOverride'
 
 export function ScriptFormModal(): JSX.Element | null {
   const { message } = App.useApp()
@@ -16,6 +23,9 @@ export function ScriptFormModal(): JSX.Element | null {
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
   const [groupId, setGroupId] = useState<string | null>(null)
+  const [shellId, setShellId] = useState<string | null>(null)
+  const [shells, setShells] = useState<ShellInfo[]>([])
+  const [globalShellId, setGlobalShellId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const isCreate = form.type === 'script-create'
@@ -27,12 +37,31 @@ export function ScriptFormModal(): JSX.Element | null {
       setName(form.script.name)
       setContent(form.script.content)
       setGroupId(form.script.groupId)
+      setShellId(form.script.shellId)
     } else if (isCreate) {
       setName('')
       setContent('')
       setGroupId(form.groupId)
+      setShellId(null)
     }
   }, [form, isCreate, isEdit])
+
+  // 可用 shell 与全局默认 shell 只在弹窗打开时取一次,避免编辑过程中的重渲染反复请求
+  useEffect(() => {
+    if (!open) return
+    void (async () => {
+      try {
+        const [list, settings] = await Promise.all([
+          window.api.shell.detect(),
+          window.api.settings.get()
+        ])
+        setShells(list)
+        setGlobalShellId(settings.shellId)
+      } catch (err) {
+        message.error(toUserMessage(err))
+      }
+    })()
+  }, [open, message])
 
   if (!open) return null
 
@@ -46,11 +75,11 @@ export function ScriptFormModal(): JSX.Element | null {
     setSubmitting(true)
     try {
       if (isCreate) {
-        const created = await window.api.scripts.create({ name, content, groupId })
+        const created = await window.api.scripts.create({ name, content, groupId, shellId })
         await reload()
         selectScript(created.id)
       } else {
-        await window.api.scripts.update(form.script.id, { name, content, groupId })
+        await window.api.scripts.update(form.script.id, { name, content, groupId, shellId })
         await reload()
       }
       closeForm()
@@ -60,6 +89,8 @@ export function ScriptFormModal(): JSX.Element | null {
       setSubmitting(false)
     }
   }
+
+  const followGlobalHint = globalShellLabel(shells, globalShellId)
 
   return (
     <Modal
@@ -71,7 +102,7 @@ export function ScriptFormModal(): JSX.Element | null {
       okText="保存"
       cancelText="取消"
       width={720}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form layout="vertical">
         <Form.Item
@@ -95,6 +126,17 @@ export function ScriptFormModal(): JSX.Element | null {
             placeholder="未分组"
             onChange={(value) => setGroupId(value ?? null)}
             options={groups.map((g) => ({ label: g.name, value: g.id }))}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label="Shell"
+          help={`不指定时跟随全局 shell${followGlobalHint ? `(当前:${followGlobalHint})` : ''}`}
+        >
+          <Select
+            value={toSelectValue(shellId)}
+            options={buildOverrideOptions(shells, shellId)}
+            onChange={(value) => setShellId(toShellIdPatch(value))}
           />
         </Form.Item>
 
