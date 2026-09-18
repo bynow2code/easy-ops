@@ -57,11 +57,29 @@ function Workspace(): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      <aside style={{ width: 320, borderRight: '1px solid var(--color-border-secondary)', padding: 12, overflow: 'hidden' }}>
-        <Sidebar />
-      </aside>
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-        <div style={{ flex: '0 0 40%', padding: 16, overflow: 'auto', minHeight: 0 }}>
+      {/* 左半:上脚本列表 / 下脚本详情 */}
+      <div
+        style={{
+          flex: '0 0 50%',
+          borderRight: '1px solid var(--color-border-secondary)',
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          minHeight: 0
+        }}
+      >
+        <div style={{ flex: '0 0 60%', minHeight: 0, padding: 12, overflow: 'hidden' }}>
+          <Sidebar />
+        </div>
+        <div
+          style={{
+            flex: 1,
+            borderTop: '1px solid var(--color-border-secondary)',
+            padding: 16,
+            overflow: 'auto',
+            minHeight: 0
+          }}
+        >
           {selected ? (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <Space>
@@ -75,13 +93,14 @@ function Workspace(): JSX.Element {
               <ScriptEditor value={selected.content} readOnly height="220px" />
             </Space>
           ) : (
-            <Typography.Text type="secondary">从左侧选择一个脚本查看详情</Typography.Text>
+            <Typography.Text type="secondary">从左上选择一个脚本查看详情</Typography.Text>
           )}
         </div>
-        <div style={{ flex: 1, borderTop: '1px solid var(--color-border-secondary)', minHeight: 0 }}>
-          <TerminalDock />
-        </div>
-      </main>
+      </div>
+      {/* 右半:终端瀑布流 */}
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+        <TerminalDock />
+      </div>
     </div>
   )
 }

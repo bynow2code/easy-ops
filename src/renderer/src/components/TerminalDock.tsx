@@ -1,10 +1,15 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { App, Badge, Button, Empty, Space, Tag, Tooltip, Typography } from 'antd'
+import { useCallback, useRef, useState } from 'react'
+import { App, Badge, Button, Empty, Tag, Tooltip, Typography } from 'antd'
 import { CloseOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons'
 import { terminalActions, useTerminalStore } from '../store/useTerminalStore'
 import { usePtyEvents } from '../hooks/usePtyEvents'
 import { TerminalView } from './TerminalView'
 import { toUserMessage } from '../utils/toUserMessage'
+
+/** 瀑布流的最小列宽;容器不够宽时 CSS 会自动退化成单列 */
+const GRID_MIN_COLUMN = 360
+/** 卡片固定高度,终端多了整体纵向滚动 */
+const CARD_HEIGHT = 340
 
 export function TerminalDock(): JSX.Element {
   const sessions = useTerminalStore((s) => s.sessions)
@@ -64,11 +69,6 @@ export function TerminalDock(): JSX.Element {
     forceRender((n) => n + 1)
   }
 
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.runId === activeRunId) ?? null,
-    [sessions, activeRunId]
-  )
-
   if (sessions.length === 0) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
@@ -79,80 +79,9 @@ export function TerminalDock(): JSX.Element {
 
   const isMaximized = maximizedRunId !== null
 
-  const tabBar = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', flexWrap: 'wrap' }}>
-      {sessions.map((s) => (
-        <Tag.CheckableTag
-          key={s.runId}
-          checked={s.runId === activeRunId}
-          onChange={() => terminalActions.setActive(s.runId)}
-          style={{ cursor: 'pointer', marginInlineEnd: 0 }}
-        >
-          <Space size={4}>
-            <span>{s.title}</span>
-            {s.exited ? <Badge status="default" text={`退出 ${s.exitCode ?? 0}`} /> : <Badge status="processing" />}
-          </Space>
-        </Tag.CheckableTag>
-      ))}
-      <Button size="small" onClick={() => void handleCloseAll()} danger>
-        关闭全部
-      </Button>
-    </div>
-  )
-
-  const activePanel = activeSession ? (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '4px 8px',
-          borderBottom: '1px solid var(--color-border-secondary)'
-        }}
-      >
-        <Typography.Text strong style={{ fontSize: 12 }}>
-          {activeSession.title}
-        </Typography.Text>
-        <Space size={2}>
-          <Tooltip title={isMaximized ? '还原' : '最大化'}>
-            <Button
-              type="text"
-              size="small"
-              icon={isMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-              onClick={() => terminalActions.setMaximized(activeSession.runId, !isMaximized)}
-            />
-          </Tooltip>
-          <Tooltip title="关闭此终端">
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<CloseOutlined />}
-              onClick={() => void handleClose(activeSession.runId)}
-            />
-          </Tooltip>
-        </Space>
-      </div>
-      <div style={{ flex: 1, minHeight: 0, padding: 4 }}>
-        {sessions.map((s) => (
-          <div
-            key={s.runId}
-            style={{
-              height: '100%',
-              display: s.runId === activeSession.runId ? 'block' : 'none'
-            }}
-          >
-            <TerminalView runId={s.runId} active={s.runId === activeSession.runId} onRegisterWriter={registerWriter} />
-          </div>
-        ))}
-      </div>
-    </div>
-  ) : null
-
-  // 最大化与普通态共用同一棵树(仅根 div 的 style 不同),避免 React 按位置协调
-  // 导致 TerminalView 全量卸载重挂、xterm 滚动缓冲丢失
   return (
+    // 最大化与瀑布流共用同一棵树(卡片始终在同一位置、同一 key,只换 style),
+    // 避免 React 按位置协调导致 TerminalView 卸载重挂、xterm 滚动缓冲丢失
     <div
       style={
         isMaximized
@@ -167,16 +96,111 @@ export function TerminalDock(): JSX.Element {
           : { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }
       }
     >
-      {tabBar}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 10px',
+          flex: '0 0 auto'
+        }}
+      >
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {sessions.length} 个终端
+        </Typography.Text>
+        <Button size="small" danger onClick={() => void handleCloseAll()}>
+          关闭全部
+        </Button>
+      </div>
+
       <div
         style={
           isMaximized
-            ? // 最大化:包装层作为 column flex,activePanel 的 flex:1 才能撑满(与原直接子级等价)
-              { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
-            : { flex: 1, minHeight: 0, borderTop: '1px solid var(--color-border-secondary)' }
+            ? { flex: 1, minHeight: 0, overflow: 'auto' }
+            : {
+                flex: 1,
+                minHeight: 0,
+                overflow: 'auto',
+                display: 'grid',
+                gridTemplateColumns: `repeat(auto-fill, minmax(${GRID_MIN_COLUMN}px, 1fr))`,
+                gridAutoRows: `${CARD_HEIGHT}px`,
+                alignContent: 'start',
+                gap: 8,
+                padding: 8
+              }
         }
       >
-        {activePanel}
+        {sessions.map((s) => {
+          const cardMaximized = s.runId === maximizedRunId
+          return (
+            <div
+              key={s.runId}
+              style={{
+                // 最大化时其余卡片隐藏但不卸载,xterm 状态得以保留
+                display: isMaximized && !cardMaximized ? 'none' : 'flex',
+                flexDirection: 'column',
+                minWidth: 0,
+                height: isMaximized ? '100%' : undefined,
+                border: '1px solid var(--color-border-secondary)',
+                borderRadius: isMaximized ? 0 : 8,
+                overflow: 'hidden',
+                background: 'var(--color-bg-container, #fff)'
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 6px 4px 10px',
+                  borderBottom: '1px solid var(--color-border-secondary)',
+                  flex: '0 0 auto'
+                }}
+              >
+                <Typography.Text
+                  strong
+                  ellipsis
+                  style={{ fontSize: 12, flex: 1, minWidth: 0 }}
+                  title={s.title}
+                >
+                  {s.title}
+                </Typography.Text>
+                {s.exited ? (
+                  <Tag style={{ marginInlineEnd: 0 }}>退出 {s.exitCode ?? 0}</Tag>
+                ) : (
+                  <Badge status="processing" />
+                )}
+                <Tooltip title={cardMaximized ? '还原' : '最大化'}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={cardMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                    onClick={() => terminalActions.setMaximized(s.runId, !cardMaximized)}
+                  />
+                </Tooltip>
+                <Tooltip title="关闭此终端">
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<CloseOutlined />}
+                    onClick={() => void handleClose(s.runId)}
+                  />
+                </Tooltip>
+              </div>
+              <div
+                style={{ flex: 1, minHeight: 0, padding: 4 }}
+                onClick={() => terminalActions.setActive(s.runId)}
+              >
+                <TerminalView
+                  runId={s.runId}
+                  active={s.runId === activeRunId}
+                  onRegisterWriter={registerWriter}
+                />
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
