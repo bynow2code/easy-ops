@@ -55,8 +55,8 @@ describe('脚本', () => {
     expect(() => store.createScript({ name: 'a'.repeat(31), content: 'echo', groupId: null })).toThrowError(/30/)
   })
 
-  it('创建脚本时校验内容为空', () => {
-    expect(() => store.createScript({ name: 'a', content: '  ', groupId: null })).toThrowError(/内容/)
+  it('允许空内容:内容在面板里编辑,先建后写是正常状态', () => {
+    expect(store.createScript({ name: 'a', content: '', groupId: null }).content).toBe('')
   })
 
   it('允许 groupId 为 null(分组不必选)', () => {

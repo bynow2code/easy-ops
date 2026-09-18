@@ -97,15 +97,15 @@ afterEach(() => {
 })
 
 describe('脚本弹窗的 Shell 字段', () => {
-  it('未打开表单时编辑器也保持挂载,不让挂载开销落进弹窗动画', () => {
+  it('未打开表单时弹窗骨架也保持挂载,不让挂载开销落进弹窗动画', () => {
     setupApi()
     useAppStore.setState({ form: { type: 'none' } })
 
     renderModal()
 
-    // 常驻的弹窗在关闭态不渲染可见内容,但编辑器子树已经在位
+    // 常驻的弹窗在关闭态不渲染可见内容,但表单子树已经在位
     expect(document.querySelector('.ant-modal-wrap[style*="display: none"]')).toBeTruthy()
-    expect(screen.getByTestId('editor')).toBeTruthy()
+    expect(screen.getByPlaceholderText('例如:启动本地服务')).toBeTruthy()
   })
 
   it('编辑脚本时回填该脚本已指定的 shell', async () => {
@@ -140,7 +140,7 @@ describe('脚本弹窗的 Shell 字段', () => {
     )
   })
 
-  it('新建时未指定 shell,提交 null 表示跟随全局', async () => {
+  it('新建时不填内容,提交空串表示先建后写', async () => {
     const api = setupApi()
     useAppStore.setState({ form: { type: 'script-create', groupId: null } })
 
@@ -149,13 +149,12 @@ describe('脚本弹窗的 Shell 字段', () => {
     fireEvent.change(screen.getByPlaceholderText('例如:启动本地服务'), {
       target: { value: '部署' }
     })
-    fireEvent.change(screen.getByTestId('editor'), { target: { value: 'echo deploy' } })
     fireEvent.click(saveButton())
 
     await waitFor(() =>
       expect(api.scripts.create).toHaveBeenCalledWith({
         name: '部署',
-        content: 'echo deploy',
+        content: '',
         groupId: null,
         shellId: null
       })

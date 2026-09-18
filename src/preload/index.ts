@@ -3,7 +3,8 @@ import type { Group, Script, Settings, ShellInfo } from '../shared/types'
 
 const api = {
   app: {
-    info: (): Promise<{ version: string; repo: string; platform: string }> => ipcRenderer.invoke('app:info'),
+    info: (): Promise<{ version: string; repo: string; platform: string; packaged: boolean }> =>
+      ipcRenderer.invoke('app:info'),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url })
   },
   scripts: {

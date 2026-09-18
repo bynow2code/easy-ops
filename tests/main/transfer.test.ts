@@ -76,10 +76,11 @@ describe('parseImport — v2', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('拒绝 v2 中内容为空的脚本', () => {
-    const payload = buildExportPayload([makeScript({ content: '   ' })], [], SETTINGS)
+  it('接受 v2 中内容为空的脚本:先建后写是合法状态', () => {
+    const payload = buildExportPayload([makeScript({ content: '' })], [], SETTINGS)
     const result = parseImport(JSON.stringify(payload))
-    expect(result.ok).toBe(false)
+    expect(result.ok).toBe(true)
+    if (result.ok && result.mode === 'v2') expect(result.payload.scripts[0].content).toBe('')
   })
 
   it('拒绝缺少 id 的脚本', () => {
@@ -203,16 +204,16 @@ describe('toLegacyMigration', () => {
     expect(result.groups).toHaveLength(0)
   })
 
-  it('跳过名称超长或内容为空的记录并记录 warning', () => {
+  it('跳过名称超长的记录并记录 warning,空内容照常迁入', () => {
     const legacy = [
       { id: '1', name: 'a'.repeat(31), content: 'x' },
-      { id: '2', name: 'ok', content: '   ' },
+      { id: '2', name: 'empty-but-fine', content: '' },
       { id: '3', name: 'good', content: 'echo ok' }
     ]
     const result = toLegacyMigration(legacy)
-    expect(result.scripts).toHaveLength(1)
-    expect(result.scripts[0].id).toBe('3')
-    expect(result.warnings.length).toBe(2)
+    expect(result.scripts).toHaveLength(2)
+    expect(result.scripts.map((s) => s.id)).toEqual(['2', '3'])
+    expect(result.warnings.length).toBe(1)
   })
 
   it('无 id 时补生成 id', () => {

@@ -88,9 +88,13 @@ export function validateGroupName(name: unknown): ValidationResult {
   return { ok: true }
 }
 
+/**
+ * 内容校验:只要求是字符串。
+ * 内容现在在内容面板里编辑,新建/导入时为空是合法状态(先建后写)。
+ */
 export function validateScriptContent(content: unknown): ValidationResult {
-  if (typeof content !== 'string' || content.trim().length === 0) {
-    return { ok: false, message: '脚本内容不能为空' }
+  if (typeof content !== 'string') {
+    return { ok: false, message: '脚本内容必须是字符串' }
   }
   return { ok: true }
 }

@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { App, Form, Input, Modal, Select } from 'antd'
-import { SCRIPT_NAME_MAX, validateScriptContent, validateScriptName } from '../../../shared/types'
+import { App, Form, Input, Modal, Select, Typography } from 'antd'
+import { SCRIPT_NAME_MAX, validateScriptName } from '../../../shared/types'
 import type { ShellInfo } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
-import { ScriptEditor } from './ScriptEditor'
 import { toUserMessage } from '../utils/toUserMessage'
 import {
   buildOverrideOptions,
@@ -12,6 +11,11 @@ import {
   toShellIdPatch
 } from '../settings/shellOverride'
 
+/**
+ * 脚本元数据弹窗:只管名称 / 分组 / Shell。
+ * 脚本内容不在这里 —— 内容面板(常驻的那块)才是唯一的内容编辑入口,
+ * 这样一个职责一个地方,不存在「两处改同一份内容」的歧义。
+ */
 export function ScriptFormModal(): JSX.Element {
   const { message } = App.useApp()
   const form = useAppStore((s) => s.form)
@@ -19,9 +23,9 @@ export function ScriptFormModal(): JSX.Element {
   const closeForm = useAppStore((s) => s.closeForm)
   const reload = useAppStore((s) => s.reload)
   const selectScript = useAppStore((s) => s.selectScript)
+  const requestContentFocus = useAppStore((s) => s.requestContentFocus)
 
   const [name, setName] = useState('')
-  const [content, setContent] = useState('')
   const [groupId, setGroupId] = useState<string | null>(null)
   const [shellId, setShellId] = useState<string | null>(null)
   const [shells, setShells] = useState<ShellInfo[]>([])
@@ -35,12 +39,10 @@ export function ScriptFormModal(): JSX.Element {
   useEffect(() => {
     if (isEdit) {
       setName(form.script.name)
-      setContent(form.script.content)
       setGroupId(form.script.groupId)
       setShellId(form.script.shellId)
     } else if (isCreate) {
       setName('')
-      setContent('')
       setGroupId(form.groupId)
       setShellId(null)
     }
@@ -64,20 +66,20 @@ export function ScriptFormModal(): JSX.Element {
   }, [open, message])
 
   const nameCheck = validateScriptName(name)
-  const contentCheck = validateScriptContent(content)
 
   const handleOk = async (): Promise<void> => {
     if (!nameCheck.ok) return void message.error(nameCheck.message)
-    if (!contentCheck.ok) return void message.error(contentCheck.message)
 
     setSubmitting(true)
     try {
       if (isCreate) {
-        const created = await window.api.scripts.create({ name, content, groupId, shellId })
+        // 内容故意留空:创建后自动选中,到内容面板里写
+        const created = await window.api.scripts.create({ name, content: '', groupId, shellId })
         await reload()
         selectScript(created.id)
+        requestContentFocus(created.id)
       } else if (isEdit) {
-        await window.api.scripts.update(form.script.id, { name, content, groupId, shellId })
+        await window.api.scripts.update(form.script.id, { name, groupId, shellId })
         await reload()
       }
       closeForm()
@@ -100,10 +102,10 @@ export function ScriptFormModal(): JSX.Element {
       okText="保存"
       cancelText="取消"
       width={720}
-      // 编辑器挂载有几十毫秒开销(实测最慢帧 84ms),而它原本正好落在弹窗入场动画里,
-      // 于是「新建脚本」的动画只有 ~39fps(其它弹窗 ~51fps、满帧 60fps)。
-      // 这里让 Modal 常驻(配合上面去掉 `if (!open) return null`),把开销挪出动画窗口。
+      // 让 Modal 常驻,把挂载开销挪出弹窗入场动画(实测不这样做动画只有 ~39fps)
       forceRender
+      // 新建后要把光标交回内容面板;antd 默认在关闭时把焦点还给触发按钮,会抢走
+      focusTriggerAfterClose={false}
     >
       <Form layout="vertical">
         <Form.Item
@@ -141,14 +143,13 @@ export function ScriptFormModal(): JSX.Element {
           />
         </Form.Item>
 
-        <Form.Item
-          label="脚本内容"
-          required
-          validateStatus={content.length > 0 && !contentCheck.ok ? 'error' : undefined}
-          help={content.length > 0 && !contentCheck.ok ? contentCheck.message : undefined}
-        >
-          <ScriptEditor value={content} onChange={setContent} />
-        </Form.Item>
+        {isCreate ? (
+          <Form.Item help="创建后在下方内容区直接输入脚本内容">
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              内容不在这里填 —— 建好就写,下面那块内容区才是编辑器。
+            </Typography.Text>
+          </Form.Item>
+        ) : null}
       </Form>
     </Modal>
   )

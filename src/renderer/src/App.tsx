@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Button, Segmented, Space, Typography } from 'antd'
-import { EditOutlined, FileTextOutlined, SettingOutlined } from '@ant-design/icons'
+import { FileTextOutlined, SettingOutlined } from '@ant-design/icons'
 import {
   DEFAULT_DETAIL_SPLIT_RATIO,
   DEFAULT_MAIN_SPLIT_RATIO,
@@ -12,7 +12,8 @@ import { Sidebar } from './components/Sidebar'
 import { ScriptFormModal } from './components/ScriptFormModal'
 import { GroupFormModal } from './components/GroupFormModal'
 import { SettingsModal } from './components/SettingsModal'
-import { ScriptEditor } from './components/ScriptEditor'
+import { ContentPanel } from './components/ContentPanel'
+import { UnsavedDraftGuard } from './components/UnsavedDraftGuard'
 import { Splitter } from './components/Splitter'
 import { TerminalDock } from './components/TerminalDock'
 import { useAppStore } from './store/useAppStore'
@@ -103,7 +104,6 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element
 function ScriptDetail(): JSX.Element {
   const selectedScriptId = useAppStore((s) => s.selectedScriptId)
   const scripts = useAppStore((s) => s.scripts)
-  const openForm = useAppStore((s) => s.openForm)
   const selected = scripts.find((s) => s.id === selectedScriptId) ?? null
 
   if (!selected) {
@@ -120,39 +120,14 @@ function ScriptDetail(): JSX.Element {
       >
         <FileTextOutlined style={{ fontSize: 26, opacity: 0.35 }} />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          选择左上角的脚本,这里会显示它的内容
+          选择脚本后,在这里直接编辑它的内容
         </Typography.Text>
       </div>
     )
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          flex: '0 0 auto'
-        }}
-      >
-        <Typography.Text ellipsis style={{ fontSize: 14, fontWeight: 500, minWidth: 0 }}>
-          {selected.name}
-        </Typography.Text>
-        <Button
-          size="small"
-          icon={<EditOutlined />}
-          onClick={() => openForm({ type: 'script-edit', script: selected })}
-        >
-          编辑
-        </Button>
-      </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <ScriptEditor value={selected.content} readOnly height="100%" />
-      </div>
-    </div>
-  )
+  // key 用脚本 id:切换脚本时重挂面板,CodeMirror 的 undo 历史等内部状态不跨脚本串
+  return <ContentPanel key={selected.id} script={selected} />
 }
 
 function Workspace(): JSX.Element {
@@ -274,6 +249,7 @@ export default function App(): JSX.Element {
       <GroupFormModal />
       <ScriptFormModal />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <UnsavedDraftGuard />
     </ThemeProvider>
   )
 }

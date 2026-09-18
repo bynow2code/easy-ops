@@ -20,12 +20,15 @@ export function ScriptEditor({
   value,
   onChange,
   height = '260px',
-  readOnly = false
+  readOnly = false,
+  onReady
 }: {
   value: string
   onChange?: (next: string) => void
   height?: string
   readOnly?: boolean
+  /** 编辑器实例就绪后回调,外部用它聚焦(比如新建完脚本直接开写) */
+  onReady?: (view: EditorView) => void
 }): JSX.Element {
   const { resolved } = useTheme()
 
@@ -78,6 +81,7 @@ export function ScriptEditor({
           highlightActiveLine: true,
           autocompletion: false
         }}
+        onCreateEditor={(view) => onReady?.(view)}
         onChange={(next) => onChange?.(next)}
       />
     </div>

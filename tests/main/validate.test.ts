@@ -64,12 +64,15 @@ describe('validateGroupName', () => {
 })
 
 describe('validateScriptContent', () => {
-  it('拒绝空内容', () => {
-    expect(validateScriptContent('').ok).toBe(false)
+  it('接受空内容:内容在面板里编辑,先建后写是正常状态', () => {
+    expect(validateScriptContent('').ok).toBe(true)
+    expect(validateScriptContent('\n\t  ').ok).toBe(true)
   })
 
-  it('拒绝纯空白内容', () => {
-    expect(validateScriptContent('\n\t  ').ok).toBe(false)
+  it('拒绝非字符串', () => {
+    expect(validateScriptContent(null).ok).toBe(false)
+    expect(validateScriptContent(undefined).ok).toBe(false)
+    expect(validateScriptContent(42).ok).toBe(false)
   })
 
   it('接受有内容的脚本', () => {

@@ -24,7 +24,10 @@ export function registerIpc(ctx: IpcContext): { updaterHandle: ReturnType<typeof
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
     repo: ctx.repoUrl,
-    platform: process.platform
+    platform: process.platform,
+    // 渲染层用这个区分 dev / 打包:未保存草稿的关窗拦截只在打包版开启,
+    // dev 下 HMR 的整页刷新会频繁触发 beforeunload,不能被它烦到
+    packaged: app.isPackaged
   }))
 
   ipcMain.handle('app:openExternal', async (_event, payload: { url: string }) => {
