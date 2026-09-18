@@ -6,13 +6,23 @@ import {
   parseImport,
   toLegacyMigration
 } from '../../src/main/store/transfer'
-import type { Group, Script, Settings } from '../../src/shared/types'
+import {
+  DEFAULT_DETAIL_SPLIT_RATIO,
+  DEFAULT_MAIN_SPLIT_RATIO,
+  SPLIT_RATIO_MAX,
+  SPLIT_RATIO_MIN,
+  type Group,
+  type Script,
+  type Settings
+} from '../../src/shared/types'
 
 const SETTINGS: Settings = {
   theme: 'dark',
   shellId: 'zsh',
   customShells: [{ id: 'custom:/opt/zsh', name: 'zsh', path: '/opt/zsh' }],
-  checkUpdateOnLaunch: false
+  checkUpdateOnLaunch: false,
+  mainSplitRatio: 50,
+  detailSplitRatio: 60
 }
 
 function makeScript(over: Partial<Script> = {}): Script {
@@ -248,5 +258,27 @@ describe('filterPortableSettings', () => {
     const { settings } = filterPortableSettings(SETTINGS, { exists: () => true, knownShellIds: ['zsh'] })
     expect(settings.theme).toBe('dark')
     expect(settings.checkUpdateOnLaunch).toBe(false)
+  })
+})
+
+describe('导入时夹住分栏比例', () => {
+  const ctx = { exists: () => true, knownShellIds: ['zsh'] }
+
+  it('越界的比例被夹到合法区间', () => {
+    const { settings } = filterPortableSettings(
+      { ...SETTINGS, mainSplitRatio: 5, detailSplitRatio: 99 },
+      ctx
+    )
+    expect(settings.mainSplitRatio).toBe(SPLIT_RATIO_MIN)
+    expect(settings.detailSplitRatio).toBe(SPLIT_RATIO_MAX)
+  })
+
+  it('缺失或非数字时回落到默认值', () => {
+    const { settings } = filterPortableSettings(
+      { ...SETTINGS, mainSplitRatio: undefined as never, detailSplitRatio: '60' as never },
+      ctx
+    )
+    expect(settings.mainSplitRatio).toBe(DEFAULT_MAIN_SPLIT_RATIO)
+    expect(settings.detailSplitRatio).toBe(DEFAULT_DETAIL_SPLIT_RATIO)
   })
 })

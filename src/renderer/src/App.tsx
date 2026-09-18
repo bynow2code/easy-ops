@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Button, Segmented, Space, Typography } from 'antd'
 import { EditOutlined, FileTextOutlined, SettingOutlined } from '@ant-design/icons'
-import type { ThemeMode } from '../../shared/types'
+import {
+  DEFAULT_DETAIL_SPLIT_RATIO,
+  DEFAULT_MAIN_SPLIT_RATIO,
+  clampSplitRatio,
+  type ThemeMode
+} from '../../shared/types'
 import { ThemeProvider, useTheme } from './theme/provider'
 import { Sidebar } from './components/Sidebar'
 import { ScriptFormModal } from './components/ScriptFormModal'
 import { GroupFormModal } from './components/GroupFormModal'
 import { SettingsModal } from './components/SettingsModal'
 import { ScriptEditor } from './components/ScriptEditor'
+import { Splitter } from './components/Splitter'
 import { TerminalDock } from './components/TerminalDock'
 import { useAppStore } from './store/useAppStore'
 
@@ -150,32 +156,89 @@ function ScriptDetail(): JSX.Element {
 }
 
 function Workspace(): JSX.Element {
+  const rowRef = useRef<HTMLDivElement>(null)
+  const leftRef = useRef<HTMLDivElement>(null)
+  const [mainRatio, setMainRatio] = useState(DEFAULT_MAIN_SPLIT_RATIO)
+  const [detailRatio, setDetailRatio] = useState(DEFAULT_DETAIL_SPLIT_RATIO)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    void window.api.settings.get().then((s) => {
+      setMainRatio(s.mainSplitRatio)
+      setDetailRatio(s.detailSplitRatio)
+      setLoaded(true)
+    })
+  }, [])
+
+  // 比例落盘防抖 300ms:拖动过程中不必每帧写一次设置,
+  // 松手(或键盘微调暂停)后自然会写一次。加载完成前不回写,免得把默认值盖上去。
+  useEffect(() => {
+    if (!loaded) return
+    const timer = setTimeout(() => {
+      void window.api.settings.update({ mainSplitRatio: mainRatio, detailSplitRatio: detailRatio })
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [loaded, mainRatio, detailRatio])
+
+  /** 指针位置 → 百分比(相对容器的内容盒) */
+  const ratioFrom = (ref: RefObject<HTMLElement>, clientPos: number, horizontal: boolean): number => {
+    const el = ref.current
+    if (!el) return 0
+    const rect = el.getBoundingClientRect()
+    const size = horizontal ? rect.height : rect.width
+    const offset = horizontal ? clientPos - rect.top : clientPos - rect.left
+    if (size <= 0) return 0
+    return clampSplitRatio((offset / size) * 100, 50)
+  }
+
   return (
-    <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: 8 }}>
-      {/* 左半:上脚本列表 / 下脚本详情 */}
-      <div
-        style={{
-          flex: '0 0 50%',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          minWidth: 0,
-          minHeight: 0
-        }}
-      >
-        <div className="app-panel" style={{ flex: '0 0 60%', minHeight: 0, padding: 12, overflow: 'hidden' }}>
-          <Sidebar />
+    <div style={{ display: 'flex', flex: 1, minHeight: 0, padding: 8 }}>
+      {/* 内层 flex 行:ref 挂在这里,换算比例时拿到的正是内容区(不含外层 padding) */}
+      <div ref={rowRef} style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
+        {/* 左半:上脚本列表 / 下脚本详情 */}
+        <div
+          ref={leftRef}
+          style={{
+            flex: `0 0 ${mainRatio}%`,
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: 0,
+            minHeight: 0
+          }}
+        >
+          <div
+            className="app-panel"
+            style={{ flex: `0 0 ${detailRatio}%`, minHeight: 0, padding: 12, overflow: 'hidden' }}
+          >
+            <Sidebar />
+          </div>
+          <Splitter
+            orientation="horizontal"
+            label="调整脚本列表与详情的高度"
+            onDrag={(clientY) => setDetailRatio(ratioFrom(leftRef, clientY, true))}
+            onNudge={(delta) => setDetailRatio((r) => clampSplitRatio(r + delta, DEFAULT_DETAIL_SPLIT_RATIO))}
+            onReset={() => setDetailRatio(DEFAULT_DETAIL_SPLIT_RATIO)}
+          />
+          <div className="app-panel" style={{ flex: 1, padding: 14, overflow: 'hidden', minHeight: 0 }}>
+            <ScriptDetail />
+          </div>
         </div>
-        <div className="app-panel" style={{ flex: 1, padding: 14, overflow: 'hidden', minHeight: 0 }}>
-          <ScriptDetail />
+
+        <Splitter
+          orientation="vertical"
+          label="调整脚本区与终端区的宽度"
+          onDrag={(clientX) => setMainRatio(ratioFrom(rowRef, clientX, false))}
+          onNudge={(delta) => setMainRatio((r) => clampSplitRatio(r + delta, DEFAULT_MAIN_SPLIT_RATIO))}
+          onReset={() => setMainRatio(DEFAULT_MAIN_SPLIT_RATIO)}
+        />
+
+        {/* 右半:终端列表 */}
+        <div
+          className="app-panel"
+          style={{ flex: 1, minWidth: 0, minHeight: 0, padding: 10, overflow: 'hidden' }}
+        >
+          <TerminalDock />
         </div>
-      </div>
-      {/* 右半:终端列表 */}
-      <div
-        className="app-panel"
-        style={{ flex: 1, minWidth: 0, minHeight: 0, padding: '10px 10px 10px', overflow: 'hidden' }}
-      >
-        <TerminalDock />
       </div>
     </div>
   )

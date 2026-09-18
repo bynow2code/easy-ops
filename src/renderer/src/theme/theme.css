@@ -147,6 +147,51 @@ body {
   opacity: 1;
 }
 
+/* ── 可拖动的分割条 ────────────────────────────────────── */
+/* 命中区 10px,中间只画一条 2px 的发丝线;悬停/拖动/聚焦时才点亮成主色 */
+.app-splitter {
+  position: relative;
+  flex: 0 0 10px;
+  background: transparent;
+  outline: none;
+}
+
+.app-splitter::after {
+  content: '';
+  position: absolute;
+  background: var(--app-hairline-strong);
+  border-radius: 2px;
+  transition: background 0.12s ease;
+}
+
+.app-splitter-vertical {
+  cursor: col-resize;
+}
+
+.app-splitter-vertical::after {
+  top: 6px;
+  bottom: 6px;
+  left: 4px;
+  width: 2px;
+}
+
+.app-splitter-horizontal {
+  cursor: row-resize;
+}
+
+.app-splitter-horizontal::after {
+  left: 6px;
+  right: 6px;
+  top: 4px;
+  height: 2px;
+}
+
+.app-splitter:hover::after,
+.app-splitter:focus-visible::after,
+.app-splitter-active::after {
+  background: var(--app-primary);
+}
+
 /* ── 扁平化的 List:行之间只用发丝线,不要整块描边 ────────── */
 .app-list-flat .ant-list-item {
   border-block-end: 1px solid var(--app-hairline);

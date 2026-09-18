@@ -50,7 +50,9 @@ const SETTINGS: Settings = {
     { id: 'custom:/bin/sh', name: 'sh', path: '/bin/sh' },
     { id: 'custom:/definitely/not/here', name: 'ghost', path: '/definitely/not/here' }
   ],
-  checkUpdateOnLaunch: false
+  checkUpdateOnLaunch: false,
+  mainSplitRatio: 50,
+  detailSplitRatio: 60
 }
 
 function makeScript(over: Partial<Script> = {}): Script {

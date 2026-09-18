@@ -1,5 +1,8 @@
 import {
+  DEFAULT_DETAIL_SPLIT_RATIO,
+  DEFAULT_MAIN_SPLIT_RATIO,
   GROUP_NAME_MAX,
+  clampSplitRatio,
   validateGroupName,
   validateScriptContent,
   validateScriptName
@@ -245,7 +248,10 @@ export function filterPortableSettings(
       theme: source.theme === 'light' || source.theme === 'dark' || source.theme === 'system' ? source.theme : 'system',
       shellId,
       customShells,
-      checkUpdateOnLaunch: Boolean(source.checkUpdateOnLaunch)
+      checkUpdateOnLaunch: Boolean(source.checkUpdateOnLaunch),
+      // 分栏比例跟着配置走:备份恢复时能保住布局。越界的值一律夹紧到合法区间
+      mainSplitRatio: clampSplitRatio(source.mainSplitRatio, DEFAULT_MAIN_SPLIT_RATIO),
+      detailSplitRatio: clampSplitRatio(source.detailSplitRatio, DEFAULT_DETAIL_SPLIT_RATIO)
     },
     warnings
   }

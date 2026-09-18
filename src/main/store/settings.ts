@@ -1,11 +1,19 @@
-import type { Settings, ThemeMode } from '../../shared/types'
+import {
+  DEFAULT_DETAIL_SPLIT_RATIO,
+  DEFAULT_MAIN_SPLIT_RATIO,
+  clampSplitRatio,
+  type Settings,
+  type ThemeMode
+} from '../../shared/types'
 import type { Persistence } from './persistence'
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   shellId: null,
   customShells: [],
-  checkUpdateOnLaunch: true
+  checkUpdateOnLaunch: true,
+  mainSplitRatio: DEFAULT_MAIN_SPLIT_RATIO,
+  detailSplitRatio: DEFAULT_DETAIL_SPLIT_RATIO
 }
 
 const THEMES: ThemeMode[] = ['light', 'dark', 'system']
@@ -42,6 +50,13 @@ export function createSettingsStore(persistence: Persistence<Settings>): Setting
               .filter((s) => s && typeof s.id === 'string' && typeof s.path === 'string')
               .map((s) => ({ id: s.id, name: String(s.name ?? s.path), path: s.path }))
           : []
+      }
+
+      if (patch.mainSplitRatio !== undefined) {
+        next.mainSplitRatio = clampSplitRatio(patch.mainSplitRatio, DEFAULT_MAIN_SPLIT_RATIO)
+      }
+      if (patch.detailSplitRatio !== undefined) {
+        next.detailSplitRatio = clampSplitRatio(patch.detailSplitRatio, DEFAULT_DETAIL_SPLIT_RATIO)
       }
 
       cache = next
