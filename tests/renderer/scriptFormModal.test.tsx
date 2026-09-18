@@ -97,6 +97,17 @@ afterEach(() => {
 })
 
 describe('脚本弹窗的 Shell 字段', () => {
+  it('未打开表单时编辑器也保持挂载,不让挂载开销落进弹窗动画', () => {
+    setupApi()
+    useAppStore.setState({ form: { type: 'none' } })
+
+    renderModal()
+
+    // 常驻的弹窗在关闭态不渲染可见内容,但编辑器子树已经在位
+    expect(document.querySelector('.ant-modal-wrap[style*="display: none"]')).toBeTruthy()
+    expect(screen.getByTestId('editor')).toBeTruthy()
+  })
+
   it('编辑脚本时回填该脚本已指定的 shell', async () => {
     setupApi()
     useAppStore.setState({ form: { type: 'script-edit', script: script('zsh') } })

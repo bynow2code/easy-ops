@@ -12,7 +12,7 @@ import {
   toShellIdPatch
 } from '../settings/shellOverride'
 
-export function ScriptFormModal(): JSX.Element | null {
+export function ScriptFormModal(): JSX.Element {
   const { message } = App.useApp()
   const form = useAppStore((s) => s.form)
   const groups = useAppStore((s) => s.groups)
@@ -63,8 +63,6 @@ export function ScriptFormModal(): JSX.Element | null {
     })()
   }, [open, message])
 
-  if (!open) return null
-
   const nameCheck = validateScriptName(name)
   const contentCheck = validateScriptContent(content)
 
@@ -78,7 +76,7 @@ export function ScriptFormModal(): JSX.Element | null {
         const created = await window.api.scripts.create({ name, content, groupId, shellId })
         await reload()
         selectScript(created.id)
-      } else {
+      } else if (isEdit) {
         await window.api.scripts.update(form.script.id, { name, content, groupId, shellId })
         await reload()
       }
@@ -102,7 +100,10 @@ export function ScriptFormModal(): JSX.Element | null {
       okText="保存"
       cancelText="取消"
       width={720}
-      destroyOnHidden
+      // 编辑器挂载有几十毫秒开销(实测最慢帧 84ms),而它原本正好落在弹窗入场动画里,
+      // 于是「新建脚本」的动画只有 ~39fps(其它弹窗 ~51fps、满帧 60fps)。
+      // 这里让 Modal 常驻(配合上面去掉 `if (!open) return null`),把开销挪出动画窗口。
+      forceRender
     >
       <Form layout="vertical">
         <Form.Item
