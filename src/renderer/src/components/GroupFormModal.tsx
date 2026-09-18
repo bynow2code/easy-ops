@@ -51,7 +51,7 @@ export function GroupFormModal(): JSX.Element | null {
       confirmLoading={submitting}
       okText="保存"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
     >
       <Form layout="vertical">
         <Form.Item

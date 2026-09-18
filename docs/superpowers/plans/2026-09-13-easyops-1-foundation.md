@@ -1272,6 +1272,8 @@ git commit -m "feat: 实现脚本与分组数据层及校验逻辑"
 
 > **测试策略说明**:`ipcMain.handle` 依赖 Electron 运行时,无法在 vitest 中执行。因此本任务把「业务逻辑」全部留在任务 3 的数据层(已被单测覆盖),IPC 层只做**薄封装**(取参 → 调数据层 → 返回)。本任务的验证方式是启动应用后经 DevTools 调用 `window.api`。
 
+> ⚠️ **更正(2026-09-18)**:上面「`ipcMain.handle` 无法在 vitest 中执行」的结论**已过时**。用 `vi.mock('electron')` 把 `ipcMain.handle` 注册的处理函数收进一个 Map,再直接调用它即可测试 —— 见 `tests/main/updater-ipc.test.ts` 与 `tests/main/scripts-ipc.test.ts`。IPC 层已有用例覆盖,新增通道时请一并补测,不必再只靠 DevTools 手验。(原文保留,作为当时的决策记录。)
+
 **文件:**
 - 创建:`src/main/ipc/scripts.ts`
 - 创建:`src/main/ipc/groups.ts`
