@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import * as os from 'node:os'
+import { join } from 'node:path'
 import { registerIpc } from './ipc'
 import { registerPtyIpc } from './ipc/pty'
 import { probePty } from './pty/probe'
@@ -29,8 +30,24 @@ if (!gotLock) {
     }
   })
 
+  /**
+   * dev 下补上应用图标:窗口与 Dock 否则会显示 Electron 默认图标。
+   * 打包后不需要 —— 各平台各用自己那份资源(mac .icns / win .ico / linux .desktop)。
+   */
+  const applyAppIcon = (win: BrowserWindow): void => {
+    if (app.isPackaged) return
+    const iconPath = join(app.getAppPath(), 'build', 'icon.png')
+    if (process.platform === 'darwin') {
+      // macOS 的 Dock 图标只能这样设;BrowserWindow.icon 在 macOS 无效
+      if (app.dock) app.dock.setIcon(iconPath)
+    } else {
+      win.setIcon(iconPath)
+    }
+  }
+
   const spawnMainWindow = (): void => {
     const win = createMainWindow(ptyManagerRef ?? undefined)
+    applyAppIcon(win)
     win.on('closed', () => {
       void ptyManagerRef?.disposeAll()
       mainWindow = null
