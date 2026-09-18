@@ -6,8 +6,6 @@ import { usePtyEvents } from '../hooks/usePtyEvents'
 import { TerminalView } from './TerminalView'
 import { toUserMessage } from '../utils/toUserMessage'
 
-/** 瀑布流的最小列宽;容器不够宽时 CSS 会自动退化成单列 */
-const GRID_MIN_COLUMN = 360
 /** 卡片固定高度,终端多了整体纵向滚动 */
 const CARD_HEIGHT = 340
 
@@ -114,6 +112,7 @@ export function TerminalDock(): JSX.Element {
       </div>
 
       <div
+        data-testid="terminal-list"
         style={
           isMaximized
             ? { flex: 1, minHeight: 0, overflow: 'auto' }
@@ -122,7 +121,8 @@ export function TerminalDock(): JSX.Element {
                 minHeight: 0,
                 overflow: 'auto',
                 display: 'grid',
-                gridTemplateColumns: `repeat(auto-fill, minmax(${GRID_MIN_COLUMN}px, 1fr))`,
+                // 单列纵向排布:卡片占满宽度,从上往下流,整列可滚动
+                gridTemplateColumns: '1fr',
                 gridAutoRows: `${CARD_HEIGHT}px`,
                 alignContent: 'start',
                 gap: 8,

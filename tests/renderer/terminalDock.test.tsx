@@ -90,6 +90,19 @@ describe('终端瀑布流', () => {
     }
   })
 
+  it('终端列表横向只排一列', () => {
+    setupApi()
+    useTerminalStore.setState({
+      sessions: [session('r1', 'A'), session('r2', 'B'), session('r3', 'C')],
+      activeRunId: 'r1',
+      maximizedRunId: null
+    })
+
+    renderDock()
+
+    expect(screen.getByTestId('terminal-list').style.gridTemplateColumns).toBe('1fr')
+  })
+
   it('每张卡片都带自己的标题与操作按钮', () => {
     setupApi()
     useTerminalStore.setState({ sessions: [session('r1', '构建'), session('r2', '部署')], activeRunId: 'r1', maximizedRunId: null })
