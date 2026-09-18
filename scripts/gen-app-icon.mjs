@@ -12,16 +12,34 @@
 import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-/** 设计基准是 1024×1024，所有几何量按基准写，再按目标尺寸等比缩放 */
+/**
+ * 设计基准是 1024×1024 的「画板」,所有几何量按画板写,再按目标尺寸等比缩放。
+ *
+ * 注意画板 ≠ 画布:画板是**图案本身**,画布是最终输出的 1024×1024 方框。
+ * 两者之间有一圈留白,来自 Apple 的生产模板网格 —— 1024 画布里主体 824,
+ * 四周各留 100px(约 9.8%)。系统按画布对齐所有应用图标,若主体铺满画布,
+ * 在 Dock / Finder / 启动台里会比系统应用明显大一圈。
+ * 数字出处:Apple Design Resources 的 macOS App Icon 生产模板(HIG 正文只写
+ * 1024×1024,留白数值在模板网格里,HIG 让人去用那份模板)。
+ */
 const BASE = 1024
+/** 画布四周各留的透明边(画板单位) */
+const 画布留白 = 100
+/** 画板铺进画布时的缩放:824 / 1024 */
+const 主体比例 = (BASE - 画布留白 * 2) / BASE
 
 const 底色 = { r: 0x23, g: 0x28, b: 0x38 } // 深海军蓝
 const 提示符色 = { r: 0x5d, g: 0xca, b: 0xa5 } // 青
 const 光标色 = { r: 0xff, g: 0xff, b: 0xff }
 
-/** 圆角方块底：铺满整张画布，圆角半径 224/1024 */
-const 底 = { x: 0, y: 0, w: BASE, h: BASE, r: 224 }
+/**
+ * 圆角方块底:铺满**整张画板**,圆角 230/1024。
+ * 缩到画布上的 824 后圆角约 185,即主体宽的 22.5%(Apple 模板的连续曲率值;
+ * 我们是普通圆角矩形,不追 squircle,视觉差异在这个尺寸下极小)。
+ */
+const 底 = { x: 0, y: 0, w: BASE, h: BASE, r: 230 }
 /** 提示符 > 的折线，圆头圆角描边 */
 const 提示符 = {
   points: [
@@ -117,8 +135,11 @@ function render(size) {
       let cursorCov = 0
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
-          const px = (x + (sx + 0.5) * step) / scale
-          const py = (y + (sy + 0.5) * step) / scale
+          // 画布坐标(0~1024)→ 画板坐标:先减掉留白,再按主体比例还原。
+          // 落在留白区内的点会算出画板之外的坐标,三个覆盖率函数都返回 false → 透明。
+          // 这样底、提示符、光标是**整体**一起缩放的,不会只缩底色而让图案相对变大。
+          const px = ((x + (sx + 0.5) * step) / scale - 画布留白) / 主体比例
+          const py = ((y + (sy + 0.5) * step) / scale - 画布留白) / 主体比例
           if (insideRoundRect(px, py, 底.x, 底.y, 底.w, 底.h, 底.r)) bgCov++
           if (distToPolyline(px, py, 提示符.points) <= 提示符.width / 2) markCov++
           if (insideRoundRect(px, py, 光标.x, 光标.y, 光标.w, 光标.h, 光标.r)) cursorCov++
@@ -157,8 +178,15 @@ function render(size) {
   return encodePng(size, rgba)
 }
 
-const size = Number(process.argv[2] ?? 1024)
-const out = process.argv[3] ?? `build/icon-${size}.png`
-mkdirSync(dirname(out), { recursive: true })
-writeFileSync(out, render(size))
-console.log(`已生成 ${out}（${size}×${size}）`)
+// 供 scripts/build-icons.mjs 复用同一套渲染(每个尺寸原生渲染,不从 1024 降采样)
+export { render }
+
+/** 直接 `node scripts/gen-app-icon.mjs <尺寸> <输出>` 时才走 CLI;被 import 时不执行 */
+const invokedDirectly = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href
+if (invokedDirectly) {
+  const size = Number(process.argv[2] ?? 1024)
+  const out = process.argv[3] ?? `build/icon-${size}.png`
+  mkdirSync(dirname(out), { recursive: true })
+  writeFileSync(out, render(size))
+  console.log(`已生成 ${out}（${size}×${size}）`)
+}

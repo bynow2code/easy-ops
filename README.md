@@ -208,6 +208,19 @@ env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm run dev -- --noSandbox --remoteD
 
 ## 构建与发布
 
+### 应用图标
+
+几何的单一来源是 `scripts/gen-app-icon.mjs`，三平台产物用 `node scripts/build-icons.mjs` 一次生成：
+
+```bash
+node scripts/build-icons.mjs
+```
+
+- `build/icon.png`（1024，Linux）、`build/icon.icns`（macOS，iconset 各档原生渲染）、`build/icon.ico`（Windows，16–256 共 7 档，用 electron-builder 自带的转换器生成）
+- 主体按 **Apple 生产模板网格**留白：1024 画布里主体 824×824、四周各 100px、圆角约为主体宽的 22.5%。留白数字出自 Apple Design Resources 的 macOS App Icon 模板（HIG 正文只写 1024×1024，并让人去用那份模板）。**没有这圈留白，图标在 Dock / Finder / 启动台里会比系统应用大一圈** —— 系统按画布对齐所有图标，主体占比越高看起来越大
+- 未走 App Store 的分层 `.icon`（Icon Composer）流程，macOS 不会替我们施加圆角遮罩，所以圆角和留白都得自己烤进 `.icns`
+- dev 下由主进程 `applyAppIcon` 补设（macOS 走 `app.dock.setIcon`，其余 `BrowserWindow.setIcon`）；打包后不需要，各平台用自己那份资源
+
 ### 本地打包
 
 ```bash
