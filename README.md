@@ -30,7 +30,7 @@ EasyOps 把它们收进一个窗口：按分组管理、随手搜索，点一下
 | Linux | `.AppImage` / `.deb` / `.rpm` |
 
 > 应用未做代码签名：
-> - **macOS** 首次打开可能需要右键「打开」，或执行 `xattr -dr com.apple.quarantine /Applications/EasyOps.app`
+> - **macOS** 首次打开会被 Gatekeeper 拦截。到「系统设置 → 隐私与安全性」，拉到底部的「安全性」区域，点**「仍要打开」**并输入密码确认（macOS 15 起右键「打开」已不再能放行）。也可以在终端执行 `xattr -dr com.apple.quarantine /Applications/EasyOps.app` 去掉隔离标记。放行一次后，通过应用内更新得到的后续版本不会再被拦截
 > - **Windows** 首次运行如遇 SmartScreen 提示，点「更多信息 → 仍要运行」
 
 ## 快速上手
