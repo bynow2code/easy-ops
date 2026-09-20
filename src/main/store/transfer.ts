@@ -248,7 +248,9 @@ export function filterPortableSettings(
       theme: source.theme === 'light' || source.theme === 'dark' || source.theme === 'system' ? source.theme : 'system',
       shellId,
       customShells,
-      checkUpdateOnLaunch: Boolean(source.checkUpdateOnLaunch),
+      // 字段缺失(旧版配置没有它)回落到默认打开,与 DEFAULT_SETTINGS 对齐;
+      // 用 Boolean(undefined) 会把「没设置过」误判成「明确关闭」
+      checkUpdateOnLaunch: source.checkUpdateOnLaunch === undefined ? true : Boolean(source.checkUpdateOnLaunch),
       // 分栏比例跟着配置走:备份恢复时能保住布局。越界的值一律夹紧到合法区间
       mainSplitRatio: clampSplitRatio(source.mainSplitRatio, DEFAULT_MAIN_SPLIT_RATIO),
       detailSplitRatio: clampSplitRatio(source.detailSplitRatio, DEFAULT_DETAIL_SPLIT_RATIO)

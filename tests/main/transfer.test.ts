@@ -260,6 +260,15 @@ describe('filterPortableSettings', () => {
     expect(settings.theme).toBe('dark')
     expect(settings.checkUpdateOnLaunch).toBe(false)
   })
+
+  it('checkUpdateOnLaunch 缺失时回落为默认打开(true),不被 Boolean(undefined) 打成 false', () => {
+    const { settings } = filterPortableSettings(
+      // 模拟旧版配置:没有这个字段
+      { theme: 'dark' } as unknown as Settings,
+      { exists: () => true, knownShellIds: ['zsh'] }
+    )
+    expect(settings.checkUpdateOnLaunch).toBe(true)
+  })
 })
 
 describe('导入时夹住分栏比例', () => {
