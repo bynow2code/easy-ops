@@ -5,6 +5,7 @@ import { registerIpc } from './ipc'
 import { registerPtyIpc } from './ipc/pty'
 import { probePty } from './pty/probe'
 import { createPtyManager } from './pty/manager'
+import { shellEnv } from './pty/env'
 import { spawnNodePty } from './pty/nodePtyAdapter'
 import { cleanupStaleTempScripts, cleanupTempScript, writeTempScript } from './pty/runner'
 import { createNodeShellProbe, detectShells } from './pty/shell'
@@ -83,7 +84,7 @@ if (!gotLock) {
         emit: (channel, payload) => {
           mainWindow?.webContents.send(channel, payload)
         },
-        env: process.env as Record<string, string>,
+        env: shellEnv(process.env as Record<string, string>),
         platform: process.platform
       })
       ptyManagerRef = ptyManager
