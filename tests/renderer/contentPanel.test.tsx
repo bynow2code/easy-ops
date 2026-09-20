@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react'
 import type { Script } from '../../src/shared/types'
 import { installJsdomShims } from './jsdomShims'
 
@@ -100,6 +100,33 @@ describe('内容面板', () => {
 
     await waitFor(() => expect(api.scripts.update).toHaveBeenCalledWith('s1', { content: 'echo changed' }))
     await waitFor(() => expect(useAppStore.getState().contentDrafts.s1).toBeUndefined())
+  })
+
+  it('保存飞行期间继续输入,新输入不丢(草稿保留为未保存增量)', async () => {
+    const api = setupApi('echo changed')
+    // update 挂起,模拟 IPC 往返期间用户还在编辑器里敲字
+    let resolveUpdate: (value: Script) => void = () => undefined
+    api.scripts.update.mockImplementationOnce(
+      () => new Promise<Script>((resolve) => { resolveUpdate = resolve })
+    )
+    renderPanel()
+
+    const editor = screen.getByTestId('editor')
+    fireEvent.change(editor, { target: { value: 'echo changed' } })
+    fireEvent.click(screen.getByText('保存'))
+    expect(api.scripts.update).toHaveBeenCalledWith('s1', { content: 'echo changed' })
+
+    // 飞行期间继续输入 → 草稿变成更新的内容
+    fireEvent.change(editor, { target: { value: 'echo changed & more' } })
+    resolveUpdate({ ...script, content: 'echo changed' })
+
+    // 等 save 走到 reload(list 被调用),再冲刷微任务让 clearContentDraft(若会执行)落地,
+    // 然后断言「终态」——不能用 waitFor 直接等草稿值,它会在保存流程跑完前被中间态骗过
+    await waitFor(() => expect(api.scripts.list).toHaveBeenCalled())
+    await act(async () => {})
+
+    // 保存只应落定「保存时的值」;飞行期间的新输入必须留在草稿里
+    expect(useAppStore.getState().contentDrafts.s1).toBe('echo changed & more')
   })
 
   it('草稿按脚本 id 存:切走再切回来,没保存的改动还在', () => {

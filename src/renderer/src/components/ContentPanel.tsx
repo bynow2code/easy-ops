@@ -29,10 +29,14 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
 
   const save = useCallback(async (): Promise<void> => {
     if (!dirty) return
+    // 记住本次保存的值:保存走 IPC 往返,期间用户可能继续输入(草稿已变)。
+    // 只有草稿仍等于保存值时才清除,否则保留 —— 让飞行期间的输入作为未保存增量继续存在。
+    const savedValue = draft
     try {
-      await window.api.scripts.update(script.id, { content: draft })
+      await window.api.scripts.update(script.id, { content: savedValue })
       await reload()
-      clearContentDraft(script.id)
+      const latestDraft = useAppStore.getState().contentDrafts[script.id]
+      if (latestDraft === undefined || latestDraft === savedValue) clearContentDraft(script.id)
       message.success('已保存')
     } catch (err) {
       message.error(toUserMessage(err))
