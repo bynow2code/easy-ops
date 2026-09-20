@@ -31,7 +31,7 @@ src/
 │   ├── window.ts      # 窗口创建
 │   ├── ipc/           # IPC 通道注册（scripts / groups / shell / pty / settings / config / updater / app）
 │   ├── store/         # 数据层：scripts、settings、persistence、transfer（导入导出）
-│   ├── pty/           # 终端：shell 检测、shellResolver、PtyManager（唯一会话表）、runner、title
+│   ├── pty/           # 终端：shell 检测、shellResolver、PtyManager（唯一会话表）、runner、title、env
 │   └── updater/       # 更新：version / mac（自研替换）/ win-linux（electron-updater）
 ├── preload/       # contextBridge 暴露 window.api（附 index.d.ts 类型声明）
 ├── renderer/      # React + antd
@@ -57,7 +57,7 @@ src/
 
 ## 测试
 
-vitest，共 **266** 个用例，分两套环境：
+vitest，共 **269** 个用例，分两套环境：
 
 ```bash
 npm test                        # 全部
