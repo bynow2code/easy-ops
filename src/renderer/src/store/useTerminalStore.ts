@@ -34,7 +34,8 @@ export const terminalActions: TerminalActions = {
 
   add({ runId, title, scriptId }) {
     useTerminalStore.setState((state) => ({
-      sessions: [...state.sessions, { runId, title, scriptId, exited: false, exitCode: null }],
+      // 新会话插到最顶部:刚执行的脚本离注意力最近,不用滚到列表底部找
+      sessions: [{ runId, title, scriptId, exited: false, exitCode: null }, ...state.sessions],
       activeRunId: runId
     }))
   },

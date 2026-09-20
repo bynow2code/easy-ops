@@ -12,6 +12,13 @@ describe('终端列表', () => {
     expect(terminalActions.get().sessions[0].title).toBe('a')
   })
 
+  it('新增终端插到列表最顶部(最新在最上)', () => {
+    terminalActions.add({ runId: 'r1', title: 'a', scriptId: 's1' })
+    terminalActions.add({ runId: 'r2', title: 'b', scriptId: 's2' })
+    terminalActions.add({ runId: 'r3', title: 'c', scriptId: 's3' })
+    expect(terminalActions.get().sessions.map((s) => s.runId)).toEqual(['r3', 'r2', 'r1'])
+  })
+
   it('新增后自动成为活动终端', () => {
     terminalActions.add({ runId: 'r1', title: 'a', scriptId: 's1' })
     expect(terminalActions.get().activeRunId).toBe('r1')
