@@ -1,16 +1,41 @@
 import { app, shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
-import { createWriteStream } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { createReadStream, createWriteStream, readFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { compareVersions, decideMacUpdateAction, deriveAppPath, buildReplaceScript } from './version'
+import { compareVersions, decideMacUpdateAction, deriveAppPath, buildReplaceScript, parseLatestMacChecksums } from './version'
 import type { UpdateEvent } from './win-linux'
 
 const REPO = 'bynow2code/easy-ops'
 const WORK_DIR_PREFIX = 'easyops-update-'
+
+/** mac 自研替换脚本的失败现场落点;注册 updater IPC 时消费并转为可回放的 error 事件 */
+export const MAC_UPDATE_ERROR_FILE = path.join(os.tmpdir(), 'easyops-update-error.log')
+
+/** 读取并清除上次自动替换脚本写入的错误现场;无则返回 null */
+export function consumeMacUpdateError(): string | null {
+  try {
+    const text = readFileSync(MAC_UPDATE_ERROR_FILE, 'utf8').trim()
+    fs.rm(MAC_UPDATE_ERROR_FILE, { force: true }).catch(() => undefined)
+    return text.length > 0 ? text : null
+  } catch {
+    return null
+  }
+}
+
+function sha512File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha512')
+    const stream = createReadStream(filePath)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('base64')))
+    stream.on('error', reject)
+  })
+}
 
 interface ReleaseAsset {
   name: string
@@ -113,9 +138,9 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
       }
 
       const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-      const asset =
-        pendingRelease.assets.find((a) => a.name.endsWith(`${arch}.zip`)) ??
-        pendingRelease.assets.find((a) => a.name.endsWith('.zip'))
+      // 严格匹配当前架构:fallback 到任意架构的 zip 会装上跑不起来的包(还是替换掉旧版之后),
+      // 宁可走手动下载分支,绝不静默装错架构
+      const asset = pendingRelease.assets.find((a) => a.name.endsWith(`${arch}.zip`))
 
       if (!asset) {
         emit({ status: 'error', message: '未找到适用于当前架构的更新包' })
@@ -123,14 +148,38 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
         return
       }
 
+      // electron-updater 的清单里有各资产的 sha512;mac 自研链路没有代码签名与 updater 内建校验,
+      // 必须借它做完整性校验 —— 下载器只保证传输,不保证内容
+      const manifestAsset = pendingRelease.assets.find((a) => a.name === 'latest-mac.yml')
+      if (!manifestAsset) {
+        emit({ status: 'error', message: '更新清单缺失,无法校验更新包完整性,已打开下载页面,请手动安装' })
+        await openReleasePage(pendingRelease.htmlUrl)
+        return
+      }
+
       await cleanupStaleWorkDirs()
       workDir = await fs.mkdtemp(path.join(os.tmpdir(), WORK_DIR_PREFIX))
       const zipPath = path.join(workDir, asset.name)
+      const manifestPath = path.join(workDir, 'latest-mac.yml')
 
       try {
+        const manifestResponse = await fetch(manifestAsset.browser_download_url, { redirect: 'follow' })
+        if (!manifestResponse.ok || !manifestResponse.body) {
+          throw new Error(`下载更新清单失败:HTTP ${manifestResponse.status}`)
+        }
+        await pipeline(Readable.fromWeb(manifestResponse.body as never), createWriteStream(manifestPath))
+        const checksums = parseLatestMacChecksums(await fs.readFile(manifestPath, 'utf8'))
+        const expectedSha512 = checksums[asset.name]
+        if (!expectedSha512) throw new Error(`更新清单中没有 ${asset.name} 的校验值`)
+
         const response = await fetch(asset.browser_download_url, { redirect: 'follow' })
         if (!response.ok || !response.body) throw new Error(`下载失败:HTTP ${response.status}`)
         await pipeline(Readable.fromWeb(response.body as never), createWriteStream(zipPath))
+
+        const actualSha512 = await sha512File(zipPath)
+        if (actualSha512 !== expectedSha512) {
+          throw new Error('更新包完整性校验失败(sha512 不匹配),已丢弃本次下载')
+        }
 
         emit({ status: 'downloading', percent: 100 })
 
@@ -162,6 +211,16 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
             return
           }
 
+          // spawn 替换脚本前确认解压产物还在:workDir 可能被下一轮清理或已被删,
+          // 否则脚本会在 app 退出后静默失败,用户面对凭空消失的应用
+          try {
+            await fs.access(extractedAppPath)
+          } catch {
+            emit({ status: 'error', message: '已下载的更新包不存在,请重新下载' })
+            await openReleasePage(pendingRelease.htmlUrl)
+            return
+          }
+
           const appPath = deriveAppPath(app.getAppPath())
           const targetDir = path.dirname(appPath)
           const writable = await canWrite(targetDir)
@@ -176,7 +235,15 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
             return
           }
 
-          const script = buildReplaceScript({ appPath, extractedAppPath, workDir })
+          // 先清掉旧的失败现场,避免下次启动把上一次的错误当成这次的
+          await fs.rm(MAC_UPDATE_ERROR_FILE, { force: true }).catch(() => undefined)
+
+          const script = buildReplaceScript({
+            appPath,
+            extractedAppPath,
+            workDir,
+            errorFile: MAC_UPDATE_ERROR_FILE
+          })
           const scriptPath = path.join(os.tmpdir(), `easyops-replace-${Date.now()}.sh`)
           await fs.writeFile(scriptPath, script, { mode: 0o755 })
 

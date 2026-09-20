@@ -36,27 +36,67 @@ function shQuote(value: string): string {
 /**
  * 后台替换脚本:等待主进程退出(上限 60 秒)→ 拷到 .new → 移除旧包 → 改名 → 去隔离 → 重启。
  * 拷贝成功前绝不删除旧包,避免 ditto 失败时把应用删成不可用。
+ * 任一步失败把原因追加到 errorFile(此时 app 已退出、无处上报),供下次启动读取并提示。
  */
-export function buildReplaceScript(input: { appPath: string; extractedAppPath: string; workDir: string }): string {
-  const { appPath, extractedAppPath, workDir } = input
+export function buildReplaceScript(input: {
+  appPath: string
+  extractedAppPath: string
+  workDir: string
+  errorFile: string
+}): string {
+  const { appPath, extractedAppPath, workDir, errorFile } = input
   const staged = `${appPath}.new`
   const q = shQuote
 
   return [
     '#!/bin/sh',
+    `fail() { printf '%s\\n' "$1" >> ${q(errorFile)} 2>/dev/null || true; exit 1; }`,
     'WAITED=0',
     `while pgrep -f ${q(appPath)} > /dev/null 2>&1; do`,
     '  WAITED=$((WAITED + 1))',
-    '  if [ "$WAITED" -ge 60 ]; then exit 1; fi',
+    `  if [ "$WAITED" -ge 60 ]; then fail '等待应用退出超时(60 秒)'; fi`,
     '  sleep 1',
     'done',
-    `ditto ${q(extractedAppPath)} ${q(staged)} || exit 1`,
+    `ditto ${q(extractedAppPath)} ${q(staged)} || fail '拷贝新版本失败'`,
     `rm -rf ${q(appPath)}`,
-    `mv ${q(staged)} ${q(appPath)} || exit 1`,
+    `mv ${q(staged)} ${q(appPath)} || fail '替换新版本失败'`,
     `xattr -dr com.apple.quarantine ${q(appPath)} 2>/dev/null || true`,
     `open ${q(appPath)}`,
     `rm -rf ${q(workDir)}`
   ].join('\n')
+}
+
+/**
+ * 从 electron-updater 的 latest-mac.yml 提取 文件名 → sha512(base64) 映射。
+ * 只认 files: 列表下的 url/sha512 项;列表结束(出现其它顶层键)即停,
+ * 空/畸形输入返回空映射,由调用方决定如何失败。
+ */
+export function parseLatestMacChecksums(yml: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  let inFiles = false
+  let currentUrl: string | null = null
+
+  for (const raw of yml.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === 'files:') {
+      inFiles = true
+      continue
+    }
+    if (inFiles && !/^(?:-\s+)?(?:url|sha512|size):/.test(line)) break
+    if (!inFiles) continue
+
+    const url = line.match(/^(?:-\s+)?url:\s*(\S+)$/)
+    if (url) {
+      currentUrl = url[1]
+      continue
+    }
+    const sha = line.match(/^sha512:\s*(\S+)$/)
+    if (sha && currentUrl) {
+      result[currentUrl] = sha[1]
+      currentUrl = null
+    }
+  }
+  return result
 }
 
 export type MacUpdateAction = 'auto-replace' | 'manual-download'

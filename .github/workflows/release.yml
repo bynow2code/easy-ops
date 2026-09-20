@@ -27,6 +27,7 @@ defaults:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -86,6 +87,7 @@ jobs:
             script: build:linux
             manifest: latest-linux.yml
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
@@ -147,6 +149,7 @@ jobs:
       - create-release
       - build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: 断言三平台更新清单已发布
         env:
@@ -158,11 +161,26 @@ jobs:
           echo "$assets"
           missing=0
           for manifest in latest-mac.yml latest.yml latest-linux.yml; do
-            if grep -qx "$manifest" <<< "$assets"; then
-              echo "ok: $manifest"
-            else
+            if ! grep -qx "$manifest" <<< "$assets"; then
               echo "::error::Release ${TAG} 缺少更新清单 $manifest"
               missing=1
+              continue
             fi
+            echo "ok: $manifest"
+            # 只断言 yml 存在是不够的:更新器按 yml 里引用的文件名下载,
+            # yml 列了文件不代表资产真的上传成功 —— 逐个引用核对资产清单
+            url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+              --jq -r ".assets[] | select(.name==\"$manifest\") | .browser_download_url")"
+            refs="$(curl -fsSL "$url" | grep -oE '(url|path):[[:space:]]*[^[:space:]]+' \
+              | sed -E 's/(url|path):[[:space:]]*//' | tr -d '"' | sort -u)"
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              if grep -Fxq "$ref" <<< "$assets"; then
+                echo "  ok: $ref"
+              else
+                echo "::error::$manifest 引用的 $ref 不在 Release 资产中,更新链已断"
+                missing=1
+              fi
+            done <<< "$refs"
           done
           exit "$missing"

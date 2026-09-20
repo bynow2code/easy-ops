@@ -5,7 +5,8 @@ import {
   decideMacUpdateAction,
   deriveAppPath,
   isNewer,
-  normalizeVersion
+  normalizeVersion,
+  parseLatestMacChecksums
 } from '../../src/main/updater/version'
 
 describe('normalizeVersion', () => {
@@ -116,11 +117,17 @@ describe('deriveAppPath', () => {
 })
 
 describe('buildReplaceScript', () => {
+  const ERROR_FILE = '/tmp/easyops-update-error.log'
   const build = (): { script: string; appPath: string; extractedAppPath: string; workDir: string } => {
     const appPath = '/Applications/EasyOps.app'
     const extractedAppPath = '/tmp/easyops-update-abc/extract/EasyOps.app'
     const workDir = '/tmp/easyops-update-abc'
-    return { script: buildReplaceScript({ appPath, extractedAppPath, workDir }), appPath, extractedAppPath, workDir }
+    return {
+      script: buildReplaceScript({ appPath, extractedAppPath, workDir, errorFile: ERROR_FILE }),
+      appPath,
+      extractedAppPath,
+      workDir
+    }
   }
 
   it('先把新版本拷到 .new,成功后再移除旧包并改名', () => {
@@ -138,7 +145,15 @@ describe('buildReplaceScript', () => {
 
   it('拷贝失败即退出,不再删除旧包', () => {
     const { script, extractedAppPath, appPath } = build()
-    expect(script).toContain(`ditto '${extractedAppPath}' '${appPath}.new' || exit 1`)
+    expect(script).toContain(`ditto '${extractedAppPath}' '${appPath}.new' || fail '拷贝新版本失败'`)
+  })
+
+  it('每条失败路径都写入固定错误文件,供下次启动提示', () => {
+    const { script } = build()
+    expect(script).toContain(`fail() { printf '%s\\n' "$1" >> '${ERROR_FILE}' 2>/dev/null || true; exit 1; }`)
+    expect(script).toContain("fail '等待应用退出超时(60 秒)'")
+    expect(script).toContain("fail '拷贝新版本失败'")
+    expect(script).toContain("fail '替换新版本失败'")
   })
 
   it('包含去隔离与重启,且顺序为 ditto → xattr → open', () => {
@@ -171,12 +186,13 @@ describe('buildReplaceScript', () => {
     const script = buildReplaceScript({
       appPath: '/Applications/EasyOps.app',
       extractedAppPath,
-      workDir: '/tmp/easyops-update-abc'
+      workDir: '/tmp/easyops-update-abc',
+      errorFile: ERROR_FILE
     })
 
     // 整条路径原样落在单引号内,ditto 行不再出现会被 shell 展开的双引号
     const dittoLine = script.split('\n').find((line) => line.startsWith('ditto '))!
-    expect(dittoLine).toBe(`ditto '${extractedAppPath}' '/Applications/EasyOps.app.new' || exit 1`)
+    expect(dittoLine).toBe(`ditto '${extractedAppPath}' '/Applications/EasyOps.app.new' || fail '拷贝新版本失败'`)
     expect(dittoLine).not.toContain('"')
   })
 
@@ -185,11 +201,49 @@ describe('buildReplaceScript', () => {
     const script = buildReplaceScript({
       appPath: '/Applications/EasyOps.app',
       extractedAppPath,
-      workDir: '/tmp/easyops-update-abc'
+      workDir: '/tmp/easyops-update-abc',
+      errorFile: ERROR_FILE
     })
 
     const escaped = `'${extractedAppPath.replace(/'/g, "'\\''")}'`
     expect(escaped).toContain(`'\\''`)
-    expect(script).toContain(`ditto ${escaped} '/Applications/EasyOps.app.new' || exit 1`)
+    expect(script).toContain(`ditto ${escaped} '/Applications/EasyOps.app.new' || fail '拷贝新版本失败'`)
+  })
+})
+
+describe('parseLatestMacChecksums', () => {
+  const yml = [
+    'version: 0.8.0',
+    'files:',
+    '  - url: EasyOps-0.8.0-arm64.zip',
+    '    sha512: AAAA==',
+    '    size: 123',
+    '  - url: EasyOps-0.8.0-x64.zip',
+    '    sha512: BBBB==',
+    '    size: 456',
+    'path: EasyOps-0.8.0-arm64.zip',
+    'sha512: CCCC==',
+    "releaseDate: '2026-09-20T00:00:00.000Z'"
+  ].join('\n')
+
+  it('提取 files 列表里每个 url 的 sha512', () => {
+    expect(parseLatestMacChecksums(yml)).toEqual({
+      'EasyOps-0.8.0-arm64.zip': 'AAAA==',
+      'EasyOps-0.8.0-x64.zip': 'BBBB=='
+    })
+  })
+
+  it('files 列表结束后的顶层 path/sha512 不再计入(不会用 CCCC== 覆盖)', () => {
+    expect(parseLatestMacChecksums(yml)['EasyOps-0.8.0-arm64.zip']).toBe('AAAA==')
+  })
+
+  it('空内容与缺 files 列表时返回空映射', () => {
+    expect(parseLatestMacChecksums('')).toEqual({})
+    expect(parseLatestMacChecksums('version: 0.8.0\npath: x.zip\nsha512: AAAA==')).toEqual({})
+  })
+
+  it('条目缺 sha512 时不产生键', () => {
+    const partial = 'files:\n  - url: a.zip\n    size: 1\n'
+    expect(parseLatestMacChecksums(partial)).toEqual({})
   })
 })

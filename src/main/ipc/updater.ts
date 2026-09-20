@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { createUpdater, type Updater, type UpdateEvent } from '../updater'
+import { consumeMacUpdateError } from '../updater/mac'
 
 export interface UpdaterIpcHandle {
   updater: Updater
@@ -35,6 +36,16 @@ export function registerUpdaterIpc(getWindow: () => BrowserWindow | null): Updat
   }
 
   const updater = createUpdater(emit)
+
+  // mac 自研替换脚本在 app 退出后才运行,失败无处上报 —— 它把原因写进固定错误文件,
+  // 这里在启动时消费并转为可回放的 error 事件:设置面板挂载回放时用户能看到上次失败的原因
+  const lastInstallError = consumeMacUpdateError()
+  if (lastInstallError) {
+    emit({
+      status: 'error',
+      message: `上次自动更新未完成:${lastInstallError},请重新检查更新,仍失败时请手动下载安装`
+    })
+  }
 
   ipcMain.handle('update:check', async () => {
     await updater.check()
