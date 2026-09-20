@@ -283,7 +283,16 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   }
 
   return (
-    <Modal open={open} onCancel={onClose} footer={null} width={720} title="设置">
+    <Modal
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={720}
+      title="设置"
+      // body 限高 + 纵向滚动:Shell 列表长度无上限(检测到的 + 自定义的),内容一多
+      // 弹窗会被撑出窗口高度且底部够不着;预算 = 顶部留白 100 + 标题栏 ~57 + body 上下 padding 48,再留余量
+      styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Section title="关于">
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
