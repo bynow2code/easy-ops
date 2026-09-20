@@ -11,12 +11,14 @@
 
 ```bash
 npm install          # 装依赖（会触发 electron-builder install-app-deps 重建原生模块）
-npm run dev          # 开发模式（electron-vite dev，主进程改动会自动重启）
+npm run dev          # 开发模式（electron-vite dev）
 npm run typecheck    # 三进程类型检查（tsc --noEmit，node + web 两套）
 npm test             # 全量单测（vitest run）
 npm run build        # typecheck + electron-vite build
 npm start            # 预览构建产物
 ```
+
+> ⚠️ **主进程改动后要确认应用真的重启了**：electron-vite 会重新构建 `out/main`，但实测存在「构建完成、Electron 没重启」的情况（旧进程继续跑旧代码）。看 dev 日志里有没有新的一行 `start electron app...` / `DevTools listening on ...`；没有就手动 `kill` 掉 Electron 进程重启。改渲染层文件触发 HMR 会重置渲染层 store（开着的终端卡片会没掉），主进程侧正常回收。
 
 ## 架构
 
