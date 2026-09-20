@@ -1,6 +1,6 @@
 # EasyOps 脚本管家
 
-> 一个帮你**集中管理、随手执行 Shell 脚本**的桌面小工具。把零散的运维/开发脚本收进一个窗口，分组、编辑、一键运行、在真实终端里交互，不用再满硬盘找脚本、开终端敲命令。
+> 一个帮你**集中管理、随手执行 Shell 脚本**的桌面小工具。把零散的运维、开发脚本收进一个窗口，分组、编辑、一键运行、在真实终端里交互，不用再满硬盘找脚本、开终端敲命令。
 
 > 当前分支 `feature/new` 是基于 Electron + electron-vite 的**重构版本**（v0.8.0）。旧版（v0.7.15）保留在 `master` 分支。
 
@@ -32,12 +32,12 @@ EasyOps 把这些脚本统一管起来：
 | 🎨 **语法高亮编辑器** | CodeMirror 6 + shell 语法模式，带 shell 命令关键字补全 |
 | 🌗 **主题三态** | 深色 / 浅色 / 跟随系统，入口在**顶栏**（设置面板不含主题项，避免重复入口） |
 | 📤 **导入 / 导出配置** | 导出为 `easyops-config` v2 格式的 JSON；支持导入 v2 配置，也支持从旧版（v0.7.x）导出的 JSON 或旧版数据目录里的 `scripts.json` 迁移；导入前会二次确认，且对结构做校验 |
-| 🔔 **检查更新** | 启动时可自动检查更新，也可在设置里手动检查。采用**无代码签名**方案（见下文） |
+| 🔔 **检查更新** | 启动时可自动检查更新，也可在设置里手动检查。采用**无代码签名**方案，mac 端下载后按 sha512 做完整性校验（见下文） |
 | 💻 **跨平台** | 三平台打包：macOS（dmg，Intel + Apple Silicon）、Windows（nsis）、Linux（AppImage / deb / rpm）；自动检测 zsh / bash / csh / dash / ksh / sh / tcsh，Windows 下另含 Git Bash 与 WSL |
 
 ### 与旧版（v0.7.x）的差异
 
-重构版本按需求清单重写了功能集，**以下旧版特性目前尚未回归**：批量执行、拖拽排序、系统原生通知、以及独立于终端的「输出面板」（新版直接用真实终端替代）。
+重构版本按需求清单重写了功能集，**以下旧版特性目前尚未回归**：批量执行、拖拽排序、系统原生通知，以及独立于终端的「输出面板」（新版直接用真实终端替代）。
 
 ---
 
@@ -75,14 +75,14 @@ EasyOps 把这些脚本统一管起来：
 
 点脚本行左侧的 ▶（执行）按钮，应用会在**右侧的终端区新增一张终端卡片**并在其中运行该脚本。
 
-**界面布局**：窗口横向对半分 —— **左半**是脚本区（上：脚本列表；下：内容编辑器，两者之间的分隔条可拖动），**右半**是终端区。
+**界面布局**：窗口左右对半分（分隔条可拖动调整比例）—— **左半**是脚本区，再上下分成脚本列表与内容编辑器（比例同样可拖动，且会记住）；**右半**是终端区。
 
 **终端列表**：所有运行中的终端会以卡片形式**单列纵向铺开**（水平方向只有一列），卡片占满终端区宽度、固定高 340px，终端多了整列上下滚动。每张卡片自带标题栏（脚本名 + 运行中/已退出 + 最大化/还原 + 关闭）。
 
 - 脚本执行结束后卡片**不会自动关闭** —— 提示符会回到你面前，方便查看结果或继续敲命令。
 - 想中断正在跑的脚本：点一下那张卡片（焦点会给到该终端），然后按 `Ctrl+C`。
 - 关闭：卡片标题栏右上角的关闭按钮，或终端区顶部的「关闭全部」。
-- 最大化：卡片标题栏的最大化按钮，会把该终端铺满整个窗口；被最大化的卡片暂时脱离瀑布流，其余终端隐藏但**不销毁**（滚动缓冲得以保留），点「还原」即可回到瀑布流。
+- 最大化：卡片标题栏的最大化按钮，会把该终端铺满整个窗口；被最大化的卡片暂时脱离列表，其余终端隐藏但**不销毁**（滚动缓冲得以保留），点「还原」即可回到列表。
 
 **关于启动速度**：终端启动的是**交互式 shell**（`-i`），会加载你的 `~/.zshrc` / `~/.bashrc`。如果你在 rc 里 source 了 nvm、oh-my-zsh 之类的重物，**从点执行到脚本真正开始跑之间会有相应延迟**（实测本机上 `zsh -i` 冷启动约 6.7 秒，`bash -i` 约 0.007 秒）。这是 shell 自身的开销，不是应用卡住；期间终端里会先回显一行 `source '...'`。
 
@@ -122,7 +122,7 @@ EasyOps 把这些脚本统一管起来：
 | 文件 | 内容 |
 |------|------|
 | `easyops-scripts.json` | 脚本与分组（键名 `data`） |
-| `easyops-settings.json` | 主题、全局 shell、自定义 shell、启动检查更新 |
+| `easyops-settings.json` | 主题、全局 shell、自定义 shell、启动检查更新、分栏比例 |
 
 ---
 
@@ -136,10 +136,10 @@ EasyOps 把这些脚本统一管起来：
 ### 常用命令
 
 ```bash
-npm install          # 装依赖(会触发 electron-builder install-app-deps 重建原生模块)
-npm run dev          # 开发模式(electron-vite dev,主进程改动会自动重启)
-npm run typecheck    # 三进程类型检查(tsc --noEmit,node + web 两套)
-npm test             # 全量单测(vitest run)
+npm install          # 装依赖（会触发 electron-builder install-app-deps 重建原生模块）
+npm run dev          # 开发模式（electron-vite dev，主进程改动会自动重启）
+npm run typecheck    # 三进程类型检查（tsc --noEmit，node + web 两套）
+npm test             # 全量单测（vitest run）
 npm run build        # typecheck + electron-vite build
 npm start            # 预览构建产物
 ```
@@ -150,25 +150,25 @@ npm start            # 预览构建产物
 
 ```
 src/
-├── main/          # 主进程(CJS 输出)
-│   ├── index.ts       # 入口:单实例锁、store 装配、IPC 注册、退出时回收终端
+├── main/          # 主进程（CJS 输出）
+│   ├── index.ts       # 入口：单实例锁、store 装配、IPC 注册、退出时回收终端
 │   ├── window.ts      # 窗口创建
-│   ├── ipc/           # IPC 通道注册(scripts / groups / shell / pty / settings / config / updater / app)
-│   ├── store/         # 数据层:scripts、settings、persistence、transfer(导入导出)
-│   ├── pty/           # 终端:shell 检测、shellResolver、PtyManager(唯一会话表)、runner、title
-│   └── updater/       # 更新:version / mac(自研替换) / win-linux(electron-updater)
-├── preload/       # contextBridge 暴露 window.api(附 index.d.ts 类型声明)
+│   ├── ipc/           # IPC 通道注册（scripts / groups / shell / pty / settings / config / updater / app）
+│   ├── store/         # 数据层：scripts、settings、persistence、transfer（导入导出）
+│   ├── pty/           # 终端：shell 检测、shellResolver、PtyManager（唯一会话表）、runner、title
+│   └── updater/       # 更新：version / mac（自研替换）/ win-linux（electron-updater）
+├── preload/       # contextBridge 暴露 window.api（附 index.d.ts 类型声明）
 ├── renderer/      # React + antd
 │   └── src/
-│       ├── App.tsx            # 顶栏(版本 + 主题三态 + 设置入口)与工作区
+│       ├── App.tsx            # 顶栏（版本 + 主题三态 + 设置入口）与工作区
 │       ├── components/        # Sidebar / ScriptFormModal / GroupFormModal / SettingsModal
 │       │                      # TerminalDock / TerminalView / ScriptEditor / UpdatePanel
-│       ├── store/            # zustand:useAppStore(脚本/分组/表单) useTerminalStore(终端会话)
-│       ├── settings/         # shellOverride:shell 下拉选项与失效值判定(纯函数)
-│       ├── editor/           # shellKeywords:命令补全词表
-│       ├── theme/            # 主题三态与 CSS 变量注入
-│       └── utils/            # toUserMessage:剥掉 Electron 给 IPC 错误加的前缀
-└── shared/        # 三进程共享的类型与校验(types.ts)
+│       ├── store/             # zustand：useAppStore（脚本/分组/表单）、useTerminalStore（终端会话）
+│       ├── settings/          # shellOverride：shell 下拉选项与失效值判定（纯函数）
+│       ├── editor/            # shellKeywords：命令补全词表
+│       ├── theme/             # 主题三态与 CSS 变量注入
+│       └── utils/             # toUserMessage：剥掉 Electron 给 IPC 错误加的前缀
+└── shared/        # 三进程共享的类型与校验（types.ts）
 ```
 
 几个关键约定：
@@ -181,12 +181,12 @@ src/
 
 ### 测试
 
-vitest，共 **220** 个用例，分两套环境：
+vitest，共 **266** 个用例，分两套环境：
 
 ```bash
 npm test                        # 全部
-npx vitest run tests/main       # 主进程:node 环境
-npx vitest run tests/renderer   # 渲染层:jsdom 环境
+npx vitest run tests/main       # 主进程：node 环境
+npx vitest run tests/renderer   # 渲染层：jsdom 环境
 ```
 
 - **纯函数 / 数据层**：store、shell 检测与解析、导入导出迁移、更新事件判定等都有单测。
@@ -207,6 +207,7 @@ env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS npm run dev -- --noSandbox --remoteD
 - 渲染层终端用的是 xterm 的 **DOM renderer**，`.xterm-rows > div` 能读到终端文本（**只有视口，没有 scrollback**）；要拿完整输出更适合直接订阅 `window.api.pty.onData()`。
 - **直接调 `window.api.pty.start()` 起的会话不会出现在终端面板里**（面板由渲染层 store 添加），所以「验证脚本真的执行了」应让脚本自己写一个副作用文件，或走 UI 点击。
 - ⚠️ **遗留的 Electron 进程会让新实例启动即退出**（拿不到 `app.requestSingleInstanceLock()` 就 `app.quit()`），日志表现为只打印到 `DevTools listening on ...` 就结束。清理用：
+
   ```bash
   pgrep -fl "easy-ops/node_modules/electron" | awk '{print $1}' | xargs -r kill
   ```
@@ -231,18 +232,22 @@ node scripts/build-icons.mjs
 ### 本地打包
 
 ```bash
-npm run build:mac    # dmg(Intel + Apple Silicon)
+npm run build:mac    # dmg（Intel + Apple Silicon）
 npm run build:win    # nsis
 npm run build:linux  # AppImage + deb + rpm
 ```
 
 打包配置见 `electron-builder.yml`：`appId: com.easyops.app`，产物名 `EasyOps-<version>-<arch>.<ext>`，**已把 `node-pty` 加入 `asarUnpack`**（原生模块必须在 asar 外，且经 `electron-builder install-app-deps` 重建）。
 
+> ⚠️ 在 Intel 机器上跑过 `build:mac` 后，node-pty 会被重建成 arm64（mac target 含双架构，后写者赢），本地 dev 终端会报 `posix_spawnp failed.`。重跑 `npx electron-builder install-app-deps` 即可恢复。
+
 ### GitHub Actions
 
-`.github/workflows/release.yml`：三平台矩阵构建，推送 `v*` 标签触发，也支持 `workflow_dispatch` 手动触发。构建完成后上传为 GitHub Release 产物。
+`.github/workflows/release.yml`：三平台矩阵构建，推送 `v*` 标签触发，也支持 `workflow_dispatch` 手动触发（留空版本号会生成 `0.8.0-rc.<run>` 形式的预发布，不污染正式更新通道）。构建完成后上传为 GitHub Release 产物。
 
-> ⚠️ 踩过的坑：electron-builder 默认 `releaseType: draft`。如果 Release 已经存在（例如预建了草稿），必须显式设成 `release`，否则**全部产物会被静默跳过上传，而 CI 仍然全绿**。
+发布前有一个独立的 `verify-release` 终检：断言三个平台的更新清单（`latest-mac.yml` / `latest.yml` / `latest-linux.yml`）都已发布，**并逐个核对清单里引用的每个安装包与 blockmap 都真的在 Release 资产中** —— 更新器按清单下载，清单列了文件不代表资产上传成功。
+
+> ⚠️ 踩过的坑：electron-builder 默认 `releaseType: draft`。如果 Release 已经存在（例如预建了草稿），必须显式设成 `release`，否则**全部产物会被静默跳过上传，而 CI 仍然全绿**。重跑超过 2 小时的失败 job 也需 `EP_GH_IGNORE_TIME: 'true'` 忽略发布器的时间窗（workflow 已配置）。
 
 ### 无签名自动更新的实现
 
@@ -250,8 +255,15 @@ npm run build:linux  # AppImage + deb + rpm
 
 | 平台 | 方案 |
 |------|------|
-| Windows / Linux | 直接用 `electron-updater`（读 GitHub Release 的 `latest.yml` / `latest-linux.yml`） |
-| macOS | 自研：下载新版本 zip → `ditto -x -k` 解压 → 替换 `.app` → `xattr` 去掉隔离属性 → 重启应用（`src/main/updater/mac.ts`） |
+| Windows / Linux | 直接用 `electron-updater`（读 GitHub Release 的 `latest.yml` / `latest-linux.yml`，校验其中的 sha512） |
+| macOS | 自研：下载新版本 zip → 按 `latest-mac.yml` 里的 sha512 校验完整性 → `ditto -x -k` 解压 → 替换 `.app` → `xattr` 去掉隔离属性 → 重启应用（`src/main/updater/mac.ts`） |
+
+mac 链路的几个要点：
+
+- **完整性校验**：下载器只保证传输不保证内容，所以 zip 落盘后按清单里的 sha512 逐字节核对，不匹配即丢弃并回退手动下载。
+- **失败可见**：替换脚本在应用退出后才运行，失败无处上报 —— 它会把原因写进临时目录的固定错误文件，下次启动时读取并在设置面板提示。
+- **安装位置判断**：只对「位于 `/Applications` 且当前用户可写」的情况自动替换，其余情况回退打开下载页手动替换。
+- **Gatekeeper 与隔离属性**：zip 由 Node 直接写盘、不经 LaunchServices，天然不带 quarantine 属性；`xattr` 只是双保险。对已放行过首次启动的无签名应用，自替换不会再次触发 Gatekeeper。
 
 > macOS 不做签名就无法使用 Squirrel.Mac 的标准更新链路，所以这里自己实现替换逻辑。
 
@@ -284,7 +296,7 @@ npm run build:linux  # AppImage + deb + rpm
 
 以下是代码已完成、但**尚未在真实环境跑通**的部分，发版前需要补：
 
-- macOS 自研替换安装的完整链路（下载 → ditto 解压 → 替换 → xattr → 重启）—— 需等 CI 产出首个 Release 后实测。
+- macOS 自研替换安装的完整链路（下载 → sha512 校验 → ditto 解压 → 替换 → xattr → 重启）—— 需等 CI 产出首个 Release 后实测。
 - Windows / Linux 的 `electron-updater` 端到端；`latest.yml` / `latest-linux.yml` 的真实产出。
 - Windows 下 Git Bash / WSL 的真机行为，以及自定义 shell 带 `args: ['-i']` 在各平台的差异。
 - 三平台产物的实际安装体验（macOS 未签名时的 Gatekeeper 提示等）。
