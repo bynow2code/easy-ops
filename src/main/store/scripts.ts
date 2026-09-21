@@ -259,7 +259,12 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
         if (cur === target) throw new Error('不能把目录移动到自己的子目录')
         stack.push(...(childrenOf.get(cur) ?? []))
       }
-      commit({ ...data, groups: data.groups.map((g) => (g.id === id ? { ...g, parentId: target } : g)) })
+      // order 落到新兄弟末尾:沿用旧 order 会在新兄弟间插入到不可预期的位置
+      const newSiblings = data.groups.filter((g) => g.id !== id && (g.parentId ?? null) === target)
+      commit({
+        ...data,
+        groups: data.groups.map((g) => (g.id === id ? { ...g, parentId: target, order: nextOrder(newSiblings) } : g))
+      })
     },
 
     deleteGroup(id) {

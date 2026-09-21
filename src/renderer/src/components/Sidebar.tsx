@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { App, Button, Dropdown, Input, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -18,6 +18,7 @@ import type { Group, Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { terminalActions } from '../store/useTerminalStore'
 import { toUserMessage } from '../utils/toUserMessage'
+import { computeDropAction, insertIntoSiblings, type DragItem, type DropPosition, type DropTarget } from '../utils/treeDnd'
 
 function matches(script: Script, keyword: string): boolean {
   if (!keyword) return true
@@ -65,11 +66,11 @@ interface GroupNode {
 const countChipStyle = {
   fontSize: 11,
   lineHeight: '16px',
-  padding: '0 6px',
+  padding: '0 5px',
   borderRadius: 6,
   background: 'var(--app-hairline)',
   color: 'var(--color-text)',
-  opacity: 0.6
+  opacity: 0.55
 } as const
 
 function CenteredHint({ text }: { text: string }): JSX.Element {
@@ -173,6 +174,121 @@ export function Sidebar(): JSX.Element {
     })
   }, [selectedGroupId, collapsedIds])
 
+  // ── 拖拽排序 / 跨目录移动 ────────────────────────────────
+  // 搜索态禁用拖拽:过滤后的树只含匹配子集,基于它算兄弟顺序会打乱未展示条目的排序
+  const dndEnabled = !searching
+  const [dragItem, setDragItem] = useState<DragItem | null>(null)
+  const [dropHint, setDropHint] = useState<{ id: string; position: DropPosition } | null>(null)
+
+  /** target 目录是否在 ancestor 目录的后代里(含自身判定在外层) */
+  const isDescendantGroup = (ancestorId: string, targetId: string): boolean => {
+    const walk = (parentId: string): boolean => {
+      for (const g of groups) {
+        if (g.parentId === parentId) {
+          if (g.id === targetId) return true
+          if (walk(g.id)) return true
+        }
+      }
+      return false
+    }
+    return walk(ancestorId)
+  }
+
+  const handleDragStart = (item: DragItem) => (e: DragEvent<HTMLDivElement>): void => {
+    if (!dndEnabled) return
+    setDragItem(item)
+    // 必须设置 dataTransfer,Firefox 才会真正启动拖拽
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', item.id)
+  }
+
+  const handleDragEnd = (): void => {
+    setDragItem(null)
+    setDropHint(null)
+  }
+
+  const handleDragOver = (target: DropTarget) => (e: DragEvent<HTMLDivElement>): void => {
+    if (!dragItem || dragItem.id === target.id) return
+    // 目录不能落到自己或自己的后代里(store 层防环是最后兜底,UI 先拦掉)
+    if (dragItem.type === 'group' && target.type === 'group' && isDescendantGroup(dragItem.id, target.id)) return
+
+    // 落点三分:目录行上/中/下 = 之前/移入/之后;脚本行上下对半 = 之前/之后
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ratio = (e.clientY - rect.top) / Math.max(rect.height, 1)
+    let position: DropPosition
+    if (target.type === 'group') {
+      position = ratio < 1 / 3 ? 'before' : ratio > 2 / 3 ? 'after' : 'into'
+    } else {
+      position = ratio < 0.5 ? 'before' : 'after'
+    }
+    if (position !== 'into' && dragItem.type === 'group' && target.type === 'script') return
+
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dropHint?.id !== target.id || dropHint.position !== position) {
+      setDropHint({ id: target.id, position })
+    }
+  }
+
+  const handleDragLeave = (targetId: string) => (e: DragEvent<HTMLDivElement>): void => {
+    // 进入子元素也会触发 leave,relatedTarget 还在行内就不清提示,避免闪烁
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setDropHint((prev) => (prev?.id === targetId ? null : prev))
+  }
+
+  const handleDrop = (target: DropTarget) => (e: DragEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const drag = dragItem
+    const hint = dropHint
+    setDragItem(null)
+    setDropHint(null)
+    if (!drag || !hint || hint.id !== target.id) return
+    const action = computeDropAction(drag, target, hint.position)
+    if (!action) return
+
+    void (async () => {
+      try {
+        if (action.kind === 'move-into') {
+          if (drag.type === 'script') {
+            await window.api.scripts.update(drag.id, { groupId: action.parentId })
+            // 换目录后 order 追加到新兄弟末尾,落点可预期
+            const siblings = scripts
+              .filter((s) => s.id !== drag.id && (s.groupId ?? null) === action.parentId)
+              .sort((a, b) => a.order - b.order)
+              .map((s) => s.id)
+            await window.api.scripts.reorder([...siblings, drag.id])
+          } else {
+            // moveGroup 已把 order 追加到新兄弟末尾
+            await window.api.groups.move(drag.id, action.parentId)
+          }
+        } else if (drag.type === 'script') {
+          if (drag.parentId !== action.parentId) {
+            await window.api.scripts.update(drag.id, { groupId: action.parentId })
+          }
+          const siblings = scripts
+            .filter((s) => (s.groupId ?? null) === action.parentId)
+            .sort((a, b) => a.order - b.order)
+            .map((s) => s.id)
+          await window.api.scripts.reorder(insertIntoSiblings(siblings, drag.id, action.anchorId, action.position))
+        } else {
+          if (drag.parentId !== action.parentId) {
+            await window.api.groups.move(drag.id, action.parentId)
+          }
+          const siblings = groups
+            .filter((g) => (g.parentId ?? null) === action.parentId)
+            .sort((a, b) => a.order - b.order)
+            .map((g) => g.id)
+          await window.api.groups.reorder(insertIntoSiblings(siblings, drag.id, action.anchorId, action.position))
+        }
+        await reload()
+      } catch (err) {
+        message.error(toUserMessage(err))
+      }
+    })()
+  }
+
+
   const handleRun = async (script: Script): Promise<void> => {
     // 执行也算一次「使用」:先把列表条目选中(同时打开详情页签),再跑脚本
     selectScript(script.id)
@@ -264,6 +380,8 @@ export function Sidebar(): JSX.Element {
 
   const renderScript = (script: Script, depth: number): JSX.Element => {
     const selected = selectedScriptId === script.id
+    // 拖拽落点提示:目标行的上/下边缘画 2px 主色线,标记插入位置
+    const hint = dropHint?.id === script.id ? dropHint.position : null
     return (
       <div
         key={script.id}
@@ -271,18 +389,32 @@ export function Sidebar(): JSX.Element {
         // 键盘 Tab 仍可达,组件测试也不必为「悬停」造状态
         className={selected ? 'app-row app-row-selected' : 'app-row'}
         onClick={() => selectScript(script.id)}
+        draggable={dndEnabled}
+        onDragStart={dndEnabled ? handleDragStart({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
+        onDragEnd={handleDragEnd}
+        onDragOver={dndEnabled ? handleDragOver({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
+        onDragLeave={dndEnabled ? handleDragLeave(script.id) : undefined}
+        onDrop={dndEnabled ? handleDrop({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 8,
-          padding: '4px 8px 4px 8px',
+          padding: '3px 8px',
           // 脚本行与所在分组头的名称左对齐(分组名文字起点 = depth*39+39 = marginLeft 31 + padding 8),
           // 子目录则比脚本深一级,层级关系由缩进表达
           marginLeft: depth * TREE_INDENT + (TREE_INDENT - 8),
           marginBottom: 1,
           borderRadius: 'var(--app-radius)',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          userSelect: 'none',
+          opacity: dragItem?.id === script.id ? 0.4 : undefined,
+          boxShadow:
+            hint === 'before'
+              ? 'inset 0 2px 0 0 var(--app-primary)'
+              : hint === 'after'
+                ? 'inset 0 -2px 0 0 var(--app-primary)'
+                : undefined
         }}
       >
         <Typography.Text
@@ -392,12 +524,29 @@ export function Sidebar(): JSX.Element {
     const key = node.group.id
     const expanded = isExpanded(key)
     const indent = depth * TREE_INDENT
+    // 「未分组」是渲染层伪分组,不参与拖拽(它的"父目录"无数据语义)
+    const dndTarget = dndEnabled && key !== UNGROUPED_KEY
+    const hint = dropHint?.id === key ? dropHint.position : null
     return (
-      <div style={{ marginBottom: 6 }} key={key}>
+      <div style={{ marginBottom: 4 }} key={key}>
         {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称 + 总数 chip,整行可点用于展开/收起;缩进随层级加深 */}
         <div
           className="app-group-head"
           onClick={() => toggleGroup(key)}
+          draggable={dndTarget}
+          onDragStart={
+            dndTarget
+              ? handleDragStart({ id: key, type: 'group', parentId: node.group.parentId ?? null })
+              : undefined
+          }
+          onDragEnd={dndTarget ? handleDragEnd : undefined}
+          onDragOver={
+            dndTarget
+              ? handleDragOver({ id: key, type: 'group', parentId: node.group.parentId ?? null })
+              : undefined
+          }
+          onDragLeave={dndTarget ? handleDragLeave(key) : undefined}
+          onDrop={dndTarget ? handleDrop({ id: key, type: 'group', parentId: node.group.parentId ?? null }) : undefined}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -407,7 +556,16 @@ export function Sidebar(): JSX.Element {
             paddingLeft: 4 + indent,
             borderRadius: 'var(--app-radius)',
             cursor: 'pointer',
-            userSelect: 'none'
+            userSelect: 'none',
+            opacity: dragItem?.id === key ? 0.4 : undefined,
+            // 落点提示:上/下边缘插入线;中间区域 = 移入,整行灰底
+            background: hint === 'into' ? 'var(--app-row-hover)' : undefined,
+            boxShadow:
+              hint === 'before'
+                ? 'inset 0 2px 0 0 var(--app-primary)'
+                : hint === 'after'
+                  ? 'inset 0 -2px 0 0 var(--app-primary)'
+                  : undefined
           }}
         >
           <Space size={6} align="center" style={{ minWidth: 0 }}>
@@ -415,10 +573,10 @@ export function Sidebar(): JSX.Element {
               rotate={expanded ? 90 : 0}
               style={{ fontSize: 10, opacity: 0.45, transition: 'transform 0.12s ease' }}
             />
-            <FolderOutlined style={{ fontSize: 13, opacity: 0.65 }} />
+            <FolderOutlined style={{ fontSize: 13, opacity: 0.7 }} />
             <Typography.Text
               ellipsis
-              style={{ fontSize: 13, fontWeight: 400, opacity: 0.85, minWidth: 0 }}
+              style={{ fontSize: 13, fontWeight: 400, opacity: 0.9, minWidth: 0 }}
             >
               {node.group.name}
             </Typography.Text>

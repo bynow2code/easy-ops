@@ -75,6 +75,21 @@ describe('分组', () => {
       expect(store.listGroups().find((g) => g.id === a.id)!.parentId).toBe(b.id)
     })
 
+    it('moveGroup 换父后 order 落在新兄弟末尾', () => {
+      const root = store.createGroup('root')
+      const s1 = store.createGroup('s1', root.id)
+      const s2 = store.createGroup('s2', root.id)
+      const mover = store.createGroup('mover')
+      store.moveGroup(mover.id, root.id)
+      const moved = store.listGroups().find((g) => g.id === mover.id)!
+      expect(moved.order).toBe(2)
+      // 原有兄弟的相对顺序不受影响
+      const orders = store.listGroups().filter((g) => g.parentId === root.id).map((g) => g.order)
+      expect(orders).toEqual([...orders].sort((x, y) => x - y))
+      expect(s1.order).toBe(0)
+      expect(s2.order).toBe(1)
+    })
+
     it('moveGroup 不能把目录移到自己或自己的后代(防环)', () => {
       const root = store.createGroup('root')
       const child = store.createGroup('child', root.id)
