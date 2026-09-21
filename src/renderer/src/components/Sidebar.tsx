@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { App, Button, Input, Space, Tooltip, Typography } from 'antd'
+import { App, Button, Dropdown, Input, Space, Tooltip, Typography } from 'antd'
+import type { MenuProps } from 'antd'
 import {
   CaretRightOutlined,
   CopyOutlined,
@@ -7,6 +8,7 @@ import {
   EditOutlined,
   FolderAddOutlined,
   FolderOutlined,
+  MoreOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   SearchOutlined,
@@ -25,7 +27,7 @@ function matches(script: Script, keyword: string): boolean {
 
 /**
  * 树形缩进:分组头 = 折叠箭头 + 文件夹图标 + 名称,
- * 脚本行与分组名称左对齐(参考 API 工具的接口树)。
+ * 脚本行与子目录条目同层缩进(参考 API 工具的接口树)。
  * 39 = 分组头左 padding 4 + 箭头 10 + gap 6 + 文件夹图标 13 + gap 6。
  * 递归渲染时同一单位也作为每层目录的水平缩进,保证父子视觉层级一致。
  */
@@ -33,6 +35,30 @@ const TREE_INDENT = 39
 
 /** 「未分组」伪分组的 key;脚本无 groupId 或 groupId 指向已删分组时都归到这里 */
 const UNGROUPED_KEY = '__ungrouped__'
+
+/** 目录行 ⋯ 菜单的固定项;具体行为(新建子目录/重命名/删除)在 onClick 里按 key 分发 */
+const groupMenuItems: MenuProps['items'] = [
+  { key: 'add-subgroup', icon: <FolderAddOutlined />, label: '新建子目录' },
+  { key: 'rename', icon: <EditOutlined />, label: '重命名' },
+  { type: 'divider' },
+  { key: 'delete', icon: <DeleteOutlined />, label: '删除目录', danger: true }
+]
+
+/** 脚本行 ⋯ 菜单的固定项;复制/删除收敛进菜单后,行上只留高频的执行/编辑 */
+const scriptMenuItems: MenuProps['items'] = [
+  { key: 'copy', icon: <CopyOutlined />, label: '复制' },
+  { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true }
+]
+
+/** 在递归树里按分组 id 找节点,供删除确认框统计脚本/子目录数 */
+function findGroupNode(nodes: GroupNode[], id: string): GroupNode | undefined {
+  for (const node of nodes) {
+    if (node.group.id === id) return node
+    const found = findGroupNode(node.children, id)
+    if (found) return found
+  }
+  return undefined
+}
 
 /** 递归树的节点:目录 + 子目录 + 直接挂的脚本 + 后序聚合的脚本总数 */
 interface GroupNode {
@@ -209,9 +235,17 @@ export function Sidebar(): JSX.Element {
   }
 
   const handleDeleteGroup = (group: Group): void => {
+    // 确认文案要交代删除后果:脚本/子目录都是上移而非删除,数字从树的对应节点算出来
+    const node = findGroupNode(tree, group.id)
+    const scriptCount = node?.total ?? 0
+    const countSubGroups = (n: GroupNode): number =>
+      n.children.reduce((sum, c) => sum + 1 + countSubGroups(c), 0)
+    const subCount = node ? countSubGroups(node) : 0
+    const parentName = group.parentId ? groups.find((g) => g.id === group.parentId)?.name : null
+    const target = parentName ? `「${parentName}」` : '顶层'
     modal.confirm({
       title: '删除分组',
-      content: `确定删除分组「${group.name}」吗?组内脚本会变为未分组,不会被删除。`,
+      content: `删除目录『${group.name}』?其下 ${scriptCount} 个脚本与 ${subCount} 个子目录将上移到 ${target}。`,
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
@@ -241,7 +275,7 @@ export function Sidebar(): JSX.Element {
           justifyContent: 'space-between',
           gap: 8,
           padding: '4px 8px 4px 8px',
-          // 缩进随目录层级加深,脚本名称与所在分组头的名称左对齐
+          // 缩进随目录层级加深,脚本行与子目录条目同层缩进
           marginLeft: depth * TREE_INDENT + (TREE_INDENT - 8),
           marginBottom: 1,
           borderRadius: 'var(--app-radius)',
@@ -277,62 +311,72 @@ export function Sidebar(): JSX.Element {
               }}
             />
           </Tooltip>
-          <Tooltip title="复制">
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: scriptMenuItems,
+              // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触脚本行的选中
+              onClick: ({ key, domEvent }) => {
+                domEvent.stopPropagation()
+                if (key === 'copy') void handleDuplicateScript(script)
+                else if (key === 'delete') handleDeleteScript(script)
+              }
+            }}
+          >
+            {/* stopPropagation:⋯ 的点击不能冒泡成行选中 */}
             <Button
               type="text"
               size="small"
-              icon={<CopyOutlined />}
-              onClick={(e) => {
-                e.stopPropagation()
-                void handleDuplicateScript(script)
-              }}
+              icon={<MoreOutlined />}
+              aria-label="更多操作"
+              onClick={(e) => e.stopPropagation()}
             />
-          </Tooltip>
-          <Tooltip title="删除">
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={(e) => {
-                e.stopPropagation()
-                handleDeleteScript(script)
-              }}
-            />
-          </Tooltip>
+          </Dropdown>
         </span>
       </div>
     )
   }
 
-  /** 目录行操作区:沿用现有平铺按钮(＋/编辑/删除),任务 4 再替换为菜单 */
+  /** 目录行操作区:＋ 直达新建脚本,其余操作收进 ⋯ 菜单(Postman 式) */
   const renderGroupActions = (group: Group): JSX.Element => (
     <Space size={0}>
-      <Tooltip title="在此分组新建脚本">
+      <Tooltip title="在此目录新建脚本">
         <Button
           type="text"
           size="small"
           icon={<PlusOutlined />}
-          onClick={() => openForm({ type: 'script-create', groupId: group.id })}
+          aria-label="在此目录新建脚本"
+          onClick={(e) => {
+            e.stopPropagation()
+            openForm({ type: 'script-create', groupId: group.id })
+          }}
         />
       </Tooltip>
-      <Tooltip title="编辑分组">
-        <Button
-          type="text"
-          size="small"
-          icon={<EditOutlined />}
-          onClick={() => openForm({ type: 'group-edit', group })}
-        />
-      </Tooltip>
-      <Tooltip title="删除分组">
-        <Button
-          type="text"
-          size="small"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => handleDeleteGroup(group)}
-        />
-      </Tooltip>
+      <Dropdown
+        trigger={['click']}
+        menu={{
+          items: groupMenuItems,
+          // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触分组头的折叠
+          onClick: ({ key, domEvent }) => {
+            domEvent.stopPropagation()
+            if (key === 'add-subgroup') {
+              // 新子目录要建到这个目录下,顺手展开让建好的目录立即可见
+              setCollapsedIds((prev) => {
+                const next = new Set(prev)
+                next.delete(group.id)
+                return next
+              })
+              openForm({ type: 'group-create', parentId: group.id })
+            } else if (key === 'rename') {
+              openForm({ type: 'group-edit', group })
+            } else if (key === 'delete') {
+              handleDeleteGroup(group)
+            }
+          }
+        }}
+      >
+        <Button type="text" size="small" icon={<MoreOutlined />} aria-label="分组操作" />
+      </Dropdown>
     </Space>
   )
 
@@ -414,7 +458,10 @@ export function Sidebar(): JSX.Element {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm({ type: 'script-create', groupId: null })}>
           新建脚本
         </Button>
-        <Button icon={<FolderAddOutlined />} onClick={() => openForm({ type: 'group-create' })}>
+        <Button
+          icon={<FolderAddOutlined />}
+          onClick={() => openForm({ type: 'group-create', parentId: null })}
+        >
           新建分组
         </Button>
       </Space>

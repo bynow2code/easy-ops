@@ -3,7 +3,7 @@ import type { Group, Script } from '../../../shared/types'
 
 export type NameFormState =
   | { type: 'none' }
-  | { type: 'group-create' }
+  | { type: 'group-create'; parentId: string | null }
   | { type: 'group-edit'; group: Group }
   | { type: 'script-create'; groupId: string | null }
   | { type: 'script-edit'; script: Script }

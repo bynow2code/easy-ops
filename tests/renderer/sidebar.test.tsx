@@ -49,14 +49,6 @@ function setupApi(): ApiMock {
   return api
 }
 
-/** antd 图标自带 aria-label(如 copy),用它定位行内按钮比按顺序取下标稳 */
-function iconButton(name: string): HTMLElement {
-  const icon = screen.getAllByLabelText(name)[0]
-  const button = icon.closest('button')
-  if (!button) throw new Error(`图标 ${name} 不在 button 内`)
-  return button
-}
-
 beforeEach(() => {
   installJsdomShims()
   useAppStore.setState({
@@ -107,7 +99,8 @@ describe('树形分组的折叠', () => {
 })
 
 describe('脚本行的复制按钮', () => {
-  it('点击复制会请求生成副本,并选中新副本', async () => {
+  // 复制/删除已收编进「更多操作」菜单,平铺按钮不复存在,走菜单路径验证同一行为
+  it('菜单里点复制会请求生成副本,并选中新副本', async () => {
     const api = setupApi()
     render(
       <ThemeProvider mode="light" onModeChange={() => undefined}>
@@ -116,13 +109,14 @@ describe('脚本行的复制按钮', () => {
     )
     await screen.findByText('构建')
 
-    fireEvent.click(iconButton('copy'))
+    fireEvent.click(screen.getByLabelText('更多操作'))
+    fireEvent.click(await screen.findByText('复制'))
 
     await waitFor(() => expect(api.scripts.duplicate).toHaveBeenCalledWith('s1'))
     await waitFor(() => expect(useAppStore.getState().selectedScriptId).toBe('s1-copy'))
   })
 
-  it('点击复制不会打开编辑表单,也不会触发删除', async () => {
+  it('菜单里点复制不会打开编辑表单,也不会触发删除', async () => {
     const api = setupApi()
     render(
       <ThemeProvider mode="light" onModeChange={() => undefined}>
@@ -131,7 +125,8 @@ describe('脚本行的复制按钮', () => {
     )
     await screen.findByText('构建')
 
-    fireEvent.click(iconButton('copy'))
+    fireEvent.click(screen.getByLabelText('更多操作'))
+    fireEvent.click(await screen.findByText('复制'))
 
     await waitFor(() => expect(api.scripts.duplicate).toHaveBeenCalled())
     expect(useAppStore.getState().form).toEqual({ type: 'none' })
@@ -169,5 +164,67 @@ describe('嵌套树渲染', () => {
     expect(wmsHead.parentElement!.contains(pdaHead)).toBe(true)
     // 层级缩进:depth 1 的分组头 paddingLeft = 4 + 1 * TREE_INDENT
     expect(pdaHead.style.paddingLeft).toBe('43px')
+  })
+})
+
+describe('悬停菜单', () => {
+  /** 一个顶层分组 + 一条直接挂载的脚本,供目录行/脚本行菜单测试共用 */
+  function setupGrouped(): ApiMock {
+    const api = setupApi()
+    const g1: Group = { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    const s1: Script = { ...script, id: 's1', groupId: 'g1' }
+    api.groups.list.mockResolvedValue([g1])
+    api.scripts.list.mockResolvedValue([s1])
+    return api
+  }
+
+  it('脚本行菜单里有复制与删除,点复制走 duplicate', async () => {
+    const api = setupApi()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    // 菜单触发点是 ⋯ 按钮(aria-label),复制/删除不再平铺在行上
+    expect(screen.queryByLabelText('copy')).toBeNull()
+    fireEvent.click(screen.getByLabelText('更多操作'))
+    fireEvent.click(await screen.findByText('复制'))
+
+    await waitFor(() => expect(api.scripts.duplicate).toHaveBeenCalledWith('s1'))
+  })
+
+  it('目录行菜单:新增子目录打开带 parentId 的表单', async () => {
+    setupGrouped()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+
+    fireEvent.click(screen.getByLabelText('分组操作'))
+    fireEvent.click(await screen.findByText('新建子目录'))
+
+    await waitFor(() =>
+      expect(useAppStore.getState().form).toEqual({ type: 'group-create', parentId: 'g1' })
+    )
+  })
+
+  it('目录行悬停 + 号直接打开新建脚本表单且 groupId 指向该目录', async () => {
+    setupGrouped()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+
+    fireEvent.click(screen.getByLabelText('在此目录新建脚本'))
+
+    await waitFor(() =>
+      expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: 'g1' })
+    )
   })
 })
