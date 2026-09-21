@@ -84,7 +84,7 @@ describe('启动会话', () => {
     expect(second.title).toBe('启动服务 (2)')
   })
 
-  it('以交互模式启动 shell 并写入 source 命令', async () => {
+  it('等 shell 打印提示符后再写入 source 命令,避免 tty 双重回显', async () => {
     const shellUsed: string[] = []
     const capturingSpawn: PtySpawnFn = (file, args, options) => {
       shellUsed.push(file, ...args)
@@ -103,7 +103,30 @@ describe('启动会话', () => {
     const { runId } = await m.start({ scriptId: 's1', scriptName: 'a', content: 'echo hi', shell: SHELL })
     expect(shellUsed).toContain('/bin/zsh')
     expect(shellUsed).toContain('-i')
-    expect(fake.last()!.written[0]).toBe(`source '/tmp/easyops-test/easyops-${runId}.sh'\n`)
+
+    const pty = fake.last()!
+    // 提示符出现前不注入:提前写命令会被 tty 回显成裸命令一行 + 提示符后又重复一行
+    expect(pty.written).toHaveLength(0)
+
+    // 提示符到达(即使被切成两个 chunk 也能匹配)→ 注入一次
+    pty.emitData('arthur@arthur-PC')
+    expect(pty.written).toHaveLength(0)
+    pty.emitData(':~$ ')
+    expect(pty.written).toEqual([`source '/tmp/easyops-test/easyops-${runId}.sh'\n`])
+  })
+
+  it('shell 迟迟不打印提示符时超时兜底注入', async () => {
+    vi.useFakeTimers()
+    try {
+      const { runId } = await manager.start({ scriptId: 's1', scriptName: 'a', content: 'echo hi', shell: SHELL })
+      const pty = fake.last()!
+      expect(pty.written).toHaveLength(0)
+
+      vi.advanceTimersByTime(3000)
+      expect(pty.written).toEqual([`source '/tmp/easyops-test/easyops-${runId}.sh'\n`])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('spawn 抛错时清理临时文件并以中文前缀上抛', async () => {

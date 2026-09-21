@@ -40,6 +40,8 @@ interface Session {
   tempFile: string
   dataDisposers: { dispose: () => void }[]
   exitDisposer: { dispose: () => void } | null
+  /** 注入 source 命令的兜底定时器;提示符出现或会话销毁时清掉 */
+  commandTimer: ReturnType<typeof setTimeout> | null
 }
 
 export interface PtyManager {
@@ -59,6 +61,15 @@ function makeRunId(): string {
   return `${Date.now().toString(36)}-${counter}`
 }
 
+/**
+ * 提示符特征:主流交互 shell 的提示符都以这些字符收尾
+ * (bash/zsh 的 $ #、fish 的 >、powershell/cmd 的 >、csh 的 %)。
+ */
+const PROMPT_RE = /[$#%>]\s*$/
+
+/** 兜底注入时限:非标准提示符(如自定义 powerline)时不能永远等下去 */
+const PROMPT_WAIT_MS = 3000
+
 export function createPtyManager(deps: PtyManagerDeps): PtyManager {
   const sessions = new Map<string, Session>()
 
@@ -68,6 +79,10 @@ export function createPtyManager(deps: PtyManagerDeps): PtyManager {
     // 只停掉数据转发;exit 监听保留,让 kill 触发的真实 exit 事件仍能到达渲染层
     session.dataDisposers.forEach((d) => d.dispose())
     session.dataDisposers = []
+    if (session.commandTimer) {
+      clearTimeout(session.commandTimer)
+      session.commandTimer = null
+    }
     try {
       session.pty.write('\x03')
     } catch {
@@ -109,22 +124,65 @@ export function createPtyManager(deps: PtyManagerDeps): PtyManager {
         throw new Error(`终端启动失败: ${err instanceof Error ? err.message : String(err)}`)
       }
 
-      const session: Session = { runId, scriptId: input.scriptId, title, pty, tempFile, dataDisposers: [], exitDisposer: null }
+      const session: Session = {
+        runId,
+        scriptId: input.scriptId,
+        title,
+        pty,
+        tempFile,
+        dataDisposers: [],
+        exitDisposer: null,
+        commandTimer: null
+      }
       sessions.set(runId, session)
 
-      session.dataDisposers.push(pty.onData((chunk) => deps.emit('pty:data', { runId, chunk })))
+      // 注入 source 命令的时机:等 shell 打印出提示符再写。
+      // spawn 后立刻写的话,输入会先被 tty 原样回显成一行裸命令,
+      // 等 shell 就绪打印提示符后 readline 又把缓冲的输入显示一遍 —— 终端里同一命令出现两次。
+      // 提示符出现后才注入,回显自然落在提示符后面,只显示一次。
+      let pendingCommand = buildSourceCommand(tempFile)
+      let outputTail = ''
+      const flushCommand = (): void => {
+        if (session.commandTimer) {
+          clearTimeout(session.commandTimer)
+          session.commandTimer = null
+        }
+        if (!pendingCommand) return
+        const command = pendingCommand
+        pendingCommand = ''
+        try {
+          pty.write(command)
+        } catch {
+          // pty 可能已退出
+        }
+      }
+
+      session.dataDisposers.push(
+        pty.onData((chunk) => {
+          deps.emit('pty:data', { runId, chunk })
+          if (!pendingCommand) return
+          // chunk 可能从中间切断提示符,只保留末尾一小段做匹配足够
+          outputTail = (outputTail + chunk).slice(-64)
+          if (PROMPT_RE.test(outputTail)) flushCommand()
+        })
+      )
 
       session.exitDisposer = pty.onExit(({ exitCode, signal }) => {
         session.exitDisposer?.dispose()
         session.exitDisposer = null
         session.dataDisposers.forEach((d) => d.dispose())
         session.dataDisposers = []
+        if (session.commandTimer) {
+          clearTimeout(session.commandTimer)
+          session.commandTimer = null
+        }
         sessions.delete(runId)
         deps.emit('pty:exit', { runId, exitCode, signal: signal ?? null })
         void deps.cleanupTempScript(tempFile)
       })
 
-      pty.write(buildSourceCommand(tempFile))
+      // 非标准提示符(自定义 powerline 等)匹配不到时,超时兜底注入,保证脚本终究会跑
+      session.commandTimer = setTimeout(flushCommand, PROMPT_WAIT_MS)
 
       return { runId, title }
     },

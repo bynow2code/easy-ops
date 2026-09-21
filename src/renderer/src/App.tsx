@@ -136,7 +136,7 @@ function ScriptDetail(): JSX.Element {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 8 }}>
       {/* 页签条:打开过的脚本排成一排,当前选中的是灰胶囊(参考 API 工具的编辑区页签) */}
       <div
         style={{
@@ -263,7 +263,11 @@ function Workspace(): JSX.Element {
             onNudge={(delta) => setDetailRatio((r) => clampSplitRatio(r + delta, DEFAULT_DETAIL_SPLIT_RATIO))}
             onReset={() => setDetailRatio(DEFAULT_DETAIL_SPLIT_RATIO)}
           />
-          <div className="app-panel" style={{ flex: 1, padding: 14, overflow: 'hidden', minHeight: 0 }}>
+          {/* 顶部 padding 与下方 gap 对齐(8/8):页签条上下留白对称,编辑器更早露出 */}
+          <div
+            className="app-panel"
+            style={{ flex: 1, padding: '8px 14px 14px', overflow: 'hidden', minHeight: 0 }}
+          >
             <ScriptDetail />
           </div>
         </div>

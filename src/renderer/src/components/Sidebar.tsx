@@ -277,7 +277,8 @@ export function Sidebar(): JSX.Element {
           justifyContent: 'space-between',
           gap: 8,
           padding: '4px 8px 4px 8px',
-          // 缩进随目录层级加深,脚本行与子目录条目同层缩进
+          // 脚本行与所在分组头的名称左对齐(分组名文字起点 = depth*39+39 = marginLeft 31 + padding 8),
+          // 子目录则比脚本深一级,层级关系由缩进表达
           marginLeft: depth * TREE_INDENT + (TREE_INDENT - 8),
           marginBottom: 1,
           borderRadius: 'var(--app-radius)',
@@ -429,7 +430,7 @@ export function Sidebar(): JSX.Element {
         {expanded ? (
           <div style={{ marginTop: 2 }}>
             {node.children.map((c) => renderGroupNode(c, depth + 1))}
-            {node.scripts.map((s) => renderScript(s, depth + 1))}
+            {node.scripts.map((s) => renderScript(s, depth))}
             {node.children.length === 0 && node.scripts.length === 0 ? (
               <Typography.Text
                 type="secondary"

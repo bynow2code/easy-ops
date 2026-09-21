@@ -164,6 +164,10 @@ describe('嵌套树渲染', () => {
     expect(wmsHead.parentElement!.contains(pdaHead)).toBe(true)
     // 层级缩进:depth 1 的分组头 paddingLeft = 4 + 1 * TREE_INDENT
     expect(pdaHead.style.paddingLeft).toBe('43px')
+    // 脚本行与所在分组头名称左对齐:depth 1 的脚本 marginLeft = 1 * TREE_INDENT + 31,
+    // 加上行内 padding 8 后文字起点 = 78px,与 pda 分组名文字起点(43 + 35)一致
+    const row = screen.getByText('拣货').closest('.app-row') as HTMLElement
+    expect(row.style.marginLeft).toBe('70px')
   })
 })
 
