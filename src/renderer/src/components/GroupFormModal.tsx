@@ -47,6 +47,7 @@ export function GroupFormModal(): JSX.Element | null {
   return (
     <Modal
       open={open}
+      centered
       // 从子目录菜单进来(parentId 非空)时标题体现层级
       title={isCreate ? (form.type === 'group-create' && form.parentId ? '新建子目录' : '新建分组') : '编辑分组'}
       onOk={handleOk}

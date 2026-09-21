@@ -37,6 +37,7 @@ export function UnsavedDraftGuard(): null {
       e.returnValue = ''
 
       modal.confirm({
+        centered: true,
         title: '有未保存的内容',
         content: `${drafts.length} 个脚本的改动还没保存,退出前要保存吗?`,
         okText: '保存并退出',

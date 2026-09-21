@@ -239,6 +239,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const handleImportV2 = async (): Promise<void> => {
     const applied = await new Promise<boolean>((resolve) => {
       modal.confirm({
+        centered: true,
         title: '导入配置',
         content: '导入会覆盖当前全部脚本与分组,确定继续吗?',
         okText: '覆盖导入',
@@ -262,6 +263,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const handleImportLegacy = async (): Promise<void> => {
     const applied = await new Promise<boolean>((resolve) => {
       modal.confirm({
+        centered: true,
         title: '导入旧版配置',
         content:
           '导入会覆盖当前全部脚本与分组。请先退出旧版 EasyOps,避免两边同时写入数据;点击「开始导入」后选择旧版导出的 JSON,或选择旧版数据目录下的 scripts.json。',
@@ -285,6 +287,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <Modal
       open={open}
+      centered
       onCancel={onClose}
       footer={null}
       width={720}

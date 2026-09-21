@@ -95,6 +95,7 @@ export function ScriptFormModal(): JSX.Element {
   return (
     <Modal
       open={open}
+      centered
       title={isCreate ? '新建脚本' : '编辑脚本'}
       onOk={handleOk}
       onCancel={closeForm}

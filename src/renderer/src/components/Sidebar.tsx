@@ -310,6 +310,7 @@ export function Sidebar(): JSX.Element {
 
   const handleDeleteScript = (script: Script): void => {
     modal.confirm({
+      centered: true,
       title: '删除脚本',
       content: `确定删除「${script.name}」吗?此操作不可撤销。`,
       okText: '删除',
@@ -347,6 +348,7 @@ export function Sidebar(): JSX.Element {
     const parentName = group.parentId ? groups.find((g) => g.id === group.parentId)?.name : null
     const target = parentName ? `「${parentName}」` : '顶层'
     modal.confirm({
+      centered: true,
       title: '删除目录',
       content: `删除目录『${group.name}』?其下 ${scriptCount} 个脚本与 ${subCount} 个子目录将上移到 ${target}。`,
       okText: '删除',
