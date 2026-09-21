@@ -85,18 +85,18 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
-      {/* 脚本名已在上方页签条展示,这里只保留「未保存」状态与保存入口 */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          flex: '0 0 auto',
-          minHeight: 22
-        }}
-      >
-        {dirty ? (
+      {/* 脚本名已在上方页签条展示,这里只保留「未保存」状态与保存入口。
+          仅在 dirty 时渲染:干净状态留空行会在页签与编辑区之间撑出多余间距 */}
+      {dirty ? (
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            flex: '0 0 auto'
+          }}
+        >
           <span
             style={{
               fontSize: 11,
@@ -110,13 +110,11 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
           >
             未保存
           </span>
-        ) : null}
-        {dirty ? (
           <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void save()}>
             保存
           </Button>
-        ) : null}
-      </header>
+        </header>
+      ) : null}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ScriptEditor
           value={value}

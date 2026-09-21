@@ -72,13 +72,15 @@ function renderPanel(): void {
 }
 
 describe('内容面板', () => {
-  it('无改动时没有「保存」按钮,也不标记未保存', () => {
+  it('无改动时不渲染 header 行:没有「保存」按钮,也不标记未保存', () => {
     setupApi()
     renderPanel()
 
     expect(screen.getByTestId('editor')).toBeTruthy()
-    expect(screen.queryByText('保存')).toBeNull()
+    // header 仅在 dirty 时渲染:干净状态不应存在「未保存」chip,保存按钮也不存在
+    // (页签与编辑区间距来源之一,空 header 行会撑出多余间距)
     expect(screen.queryByText('未保存')).toBeNull()
+    expect(screen.queryByText('保存')).toBeNull()
   })
 
   it('编辑后出现「保存」按钮与未保存标记,草稿进 store', () => {

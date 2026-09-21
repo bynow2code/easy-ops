@@ -136,7 +136,7 @@ function ScriptDetail(): JSX.Element {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
       {/* 页签条:打开过的脚本排成一排,当前选中的是灰胶囊(参考 API 工具的编辑区页签) */}
       <div
         style={{
