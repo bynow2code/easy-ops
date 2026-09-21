@@ -174,16 +174,16 @@ describe('嵌套树渲染', () => {
     expect(wmsHead.parentElement!.contains(pdaHead)).toBe(true)
     // 层级缩进(Postman 式):depth 1 的分组头 paddingLeft = 4 + 1 * 20
     expect(pdaHead.style.paddingLeft).toBe('24px')
-    // 脚本行比所在分组名深一级:pda(depth1) 的脚本以 depth2 渲染,marginLeft = 2*20+31,
-    // 文字起点 79px = 分组名文字起点(24+35=59) + 20px
+    // 脚本内容紧贴对齐线右侧:pda(depth1) 的脚本以 depth2 渲染,marginLeft = 2*20+3,
+    // 对齐线在 2*20+9,内容起点 43+8=51,比子目录名(24+35=59)靠左 8px
     const row = screen.getByText('拣货').closest('.app-row') as HTMLElement
-    expect(row.style.marginLeft).toBe('71px')
+    expect(row.style.marginLeft).toBe('43px')
 
     // 层级对齐线:由每个子项自画经过段,最后一个子项只画到中线(bottom 50%,不穿透)。
-    // wms 的线画在 pda 块内(left = 1*20+9),pda 的线画在拣货行内(left = -22,相对行盒)
+    // wms 的线画在 pda 块内(left = 1*20+9),pda 的线画在拣货行内(left = +6,相对行盒)
     const guides = [...document.querySelectorAll('.app-guide')] as HTMLElement[]
     expect(guides.length).toBe(2)
-    expect(guides.map((g) => g.style.left).sort()).toEqual(['-22px', '29px'])
+    expect(guides.map((g) => g.style.left).sort()).toEqual(['29px', '6px'])
     for (const g of guides) expect(g.style.bottom).toBe('50%')
   })
 })
@@ -337,7 +337,7 @@ describe('悬停菜单', () => {
     // 伪目录已移除:行直接在顶层,不再套「未分组」折叠头
     expect(screen.queryByText('未分组')).toBeNull()
     const row = screen.getByText('构建').closest('.app-row') as HTMLElement
-    expect(row.style.marginLeft).toBe('31px') // depth 0:0*39 + 31,与顶层分组名对齐
+    expect(row.style.marginLeft).toBe('3px') // depth 0:0*20 + 3,内容紧贴根对齐线列(与 Postman 的 New Request 一致)
   })
 
   it('有分组但 0 个脚本时,树仍然渲染(分组行上的 ＋ 是唯一建脚本入口)', async () => {
@@ -356,6 +356,7 @@ describe('悬停菜单', () => {
     // 回归:这里若显示「没有匹配的脚本」占位,树不渲染,用户将没有任何建脚本入口
     expect(screen.queryByText('没有匹配的脚本')).toBeNull()
     expect(screen.getByLabelText('在此目录新建脚本')).toBeTruthy()
-    expect(screen.getByText('暂无脚本')).toBeTruthy()
+    // 空目录不再渲染「暂无脚本」占位(Postman 式)
+    expect(screen.queryByText('暂无脚本')).toBeNull()
   })
 })

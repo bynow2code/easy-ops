@@ -419,9 +419,9 @@ export function Sidebar(): JSX.Element {
           justifyContent: 'space-between',
           gap: 8,
           padding: '3px 8px',
-          // Postman 式缩进:调用方传入的是「分组 depth + 1」,脚本文字起点 = 39 + depth*20,
-          // 比所在分组名(39 + (depth-1)*20)深一级 20px;marginLeft = 文字起点 - padding 8
-          marginLeft: depth * TREE_INDENT + 31,
+          // Postman 式:脚本内容紧贴对齐线右侧(线在 depth*20+9,内容起点 depth*20+11),
+          // 比子目录名(depth*20+39)再靠左 8px —— 目录行有箭头+图标占位,脚本行没有
+          marginLeft: depth * TREE_INDENT + 3,
           marginBottom: 1,
           borderRadius: 'var(--app-radius)',
           cursor: 'pointer',
@@ -440,7 +440,7 @@ export function Sidebar(): JSX.Element {
         {guide ? (
           <span
             className="app-guide"
-            style={{ left: -22, ...(guide === 'half' ? { bottom: '50%' } : null) }}
+            style={{ left: 6, ...(guide === 'half' ? { bottom: '50%' } : null) }}
             aria-hidden="true"
           />
         ) : null}
@@ -623,6 +623,7 @@ export function Sidebar(): JSX.Element {
           </span>
         </div>
         {expanded ? (
+          // 空目录不渲染任何内容(Postman 式):「暂无脚本」占位会造成树形噪音
           <div style={{ marginTop: 2, position: 'relative' }}>
             {(() => {
               // 每个子项自己画「父目录对齐线」的经过段:非末位画满高,末位只画到中线(Postman 式截止)
@@ -635,14 +636,6 @@ export function Sidebar(): JSX.Element {
                 </>
               )
             })()}
-            {node.children.length === 0 && node.scripts.length === 0 ? (
-              <Typography.Text
-                type="secondary"
-                style={{ fontSize: 12, paddingLeft: 39 + (depth + 1) * TREE_INDENT }}
-              >
-                暂无脚本
-              </Typography.Text>
-            ) : null}
           </div>
         ) : null}
       </div>
