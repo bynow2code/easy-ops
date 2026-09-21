@@ -50,16 +50,6 @@ const scriptMenuItems: MenuProps['items'] = [
   { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true }
 ]
 
-/** 在递归树里按分组 id 找节点,供删除确认框统计脚本/子目录数 */
-function findGroupNode(nodes: GroupNode[], id: string): GroupNode | undefined {
-  for (const node of nodes) {
-    if (node.group.id === id) return node
-    const found = findGroupNode(node.children, id)
-    if (found) return found
-  }
-  return undefined
-}
-
 /** 递归树的节点:目录 + 子目录 + 直接挂的脚本 + 后序聚合的脚本总数 */
 interface GroupNode {
   group: Group
@@ -235,12 +225,24 @@ export function Sidebar(): JSX.Element {
   }
 
   const handleDeleteGroup = (group: Group): void => {
-    // 确认文案要交代删除后果:脚本/子目录都是上移而非删除,数字从树的对应节点算出来
-    const node = findGroupNode(tree, group.id)
-    const scriptCount = node?.total ?? 0
-    const countSubGroups = (n: GroupNode): number =>
-      n.children.reduce((sum, c) => sum + 1 + countSubGroups(c), 0)
-    const subCount = node ? countSubGroups(node) : 0
+    // 确认文案要交代删除后果:脚本/子目录都是上移而非删除,数字必须基于全量数据统计。
+    // 为什么不用 tree:tree 的 total 基于 visible(搜索过滤后的脚本)聚合,搜索态下
+    // 匹配 0 条时会把「全部上移」误报成「0 个脚本上移」,误导用户执行不可逆操作。
+    // 因此这里直接对 groups 递归收集该目录及全部后代 id,再从全量 scripts 里数命中数。
+    const ids = new Set<string>([group.id])
+    const collect = (parentId: string): void => {
+      for (const g of groups) {
+        if (g.parentId === parentId && !ids.has(g.id)) {
+          ids.add(g.id)
+          collect(g.id)
+        }
+      }
+    }
+    collect(group.id)
+    const scriptCount = scripts.filter((s) => s.groupId != null && ids.has(s.groupId)).length
+    // 同一批收集到的 id 里去掉目录自身,剩下的就是将被上移的子目录数
+    const subCount = ids.size - 1
+    // '__ungrouped__' 是树渲染用的伪分组 key,不在 groups 里,不会被上面收集到,无需处理
     const parentName = group.parentId ? groups.find((g) => g.id === group.parentId)?.name : null
     const target = parentName ? `「${parentName}」` : '顶层'
     modal.confirm({
