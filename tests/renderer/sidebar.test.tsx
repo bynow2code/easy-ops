@@ -179,10 +179,12 @@ describe('嵌套树渲染', () => {
     const row = screen.getByText('拣货').closest('.app-row') as HTMLElement
     expect(row.style.marginLeft).toBe('71px')
 
-    // 层级对齐线:与子项折叠箭头中心列对齐 = 4 + (depth+1)*20 + 5
+    // 层级对齐线:由每个子项自画经过段,最后一个子项只画到中线(bottom 50%,不穿透)。
+    // wms 的线画在 pda 块内(left = 1*20+9),pda 的线画在拣货行内(left = -22,相对行盒)
     const guides = [...document.querySelectorAll('.app-guide')] as HTMLElement[]
     expect(guides.length).toBe(2)
-    expect(guides.map((g) => g.style.left).sort()).toEqual(['29px', '49px'])
+    expect(guides.map((g) => g.style.left).sort()).toEqual(['-22px', '29px'])
+    for (const g of guides) expect(g.style.bottom).toBe('50%')
   })
 })
 
