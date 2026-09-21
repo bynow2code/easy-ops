@@ -11,3 +11,8 @@ electron.vite.config*.mjs
 .workbuddy/
 
 *.tsbuildinfo
+
+# CDP 本地测试基建(不入库:浏览器二进制 190MB + mock 产物)
+cdp/
+chrome-headless-shell-linux64/
+chs.zip
