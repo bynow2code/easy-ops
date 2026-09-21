@@ -20,10 +20,14 @@ import { terminalActions } from '../store/useTerminalStore'
 import { toUserMessage } from '../utils/toUserMessage'
 import { computeDropAction, insertIntoSiblings, type DragItem, type DropPosition, type DropTarget } from '../utils/treeDnd'
 
+/** 搜索按「名称」匹配(Postman 式):内容不参与,避免出现名称对不上却命中结果的困惑 */
 function matches(script: Script, keyword: string): boolean {
   if (!keyword) return true
-  const k = keyword.toLowerCase()
-  return script.name.toLowerCase().includes(k) || script.content.toLowerCase().includes(k)
+  return nameContains(script.name, keyword)
+}
+
+function nameContains(name: string, keyword: string): boolean {
+  return name.toLowerCase().includes(keyword.toLowerCase())
 }
 
 /**
@@ -104,9 +108,17 @@ export function Sidebar(): JSX.Element {
 
   const visible = useMemo(() => scripts.filter((s) => matches(s, search)), [scripts, search])
 
+  const searching = search.trim().length > 0
+
   // 整树构建:目录按 order 排好后按 parentId 挂到父节点,父缺失的(含旧孤儿数据)落顶层;
-  // 无分组脚本(groupId 缺失或指向已删目录)直接作为顶层行渲染,排在所有顶层目录之后
-  const { tree, rootScripts } = useMemo((): { tree: GroupNode[]; rootScripts: Script[] } => {
+  // 无分组脚本(groupId 缺失或指向已删目录)直接作为顶层行渲染,排在所有顶层目录之后。
+  // 搜索按 Postman 逻辑过滤:保留名称命中的脚本;目录「自身名称命中」则整棵子树保留,
+  // 否则仅当含命中后代时作为路径保留(只带命中项);没有命中内容的分支整个隐藏。
+  const { tree, rootScripts, searchEmpty } = useMemo((): {
+    tree: GroupNode[]
+    rootScripts: Script[]
+    searchEmpty: boolean
+  } => {
     const nodes = new Map<string, GroupNode>()
     for (const g of [...groups].sort((a, b) => a.order - b.order)) {
       nodes.set(g.id, { group: g, children: [], scripts: [], total: 0 })
@@ -123,16 +135,35 @@ export function Sidebar(): JSX.Element {
       if (key) nodes.get(key)!.scripts.push(s)
       else rootScripts.push(s)
     }
-    // 后序遍历:total = 直接脚本数 + 子目录 total 之和,计数 chip 展示整棵子树的脚本量
-    const fill = (node: GroupNode): number => {
-      node.total = node.scripts.length + node.children.reduce((sum, c) => sum + fill(c), 0)
-      return node.total
-    }
-    for (const root of roots) fill(root)
-    return { tree: roots, rootScripts }
-  }, [groups, visible])
 
-  const searching = search.trim().length > 0
+    if (!searching) {
+      // 非搜索态:全量展示。后序遍历,total = 直接脚本数 + 子目录 total 之和
+      const fill = (node: GroupNode): number => {
+        node.total = node.scripts.length + node.children.reduce((sum, c) => sum + fill(c), 0)
+        return node.total
+      }
+      for (const root of roots) fill(root)
+      return { tree: roots, rootScripts, searchEmpty: false }
+    }
+
+    const prune = (node: GroupNode): GroupNode | null => {
+      const selfMatch = nameContains(node.group.name, search)
+      const children = node.children.map(prune).filter((c): c is GroupNode => c !== null)
+      const scripts = selfMatch ? node.scripts : node.scripts.filter((s) => nameContains(s.name, search))
+      if (!selfMatch && children.length === 0 && scripts.length === 0) return null
+      const kept: GroupNode = { ...node, children, scripts, total: 0 }
+      kept.total = kept.scripts.length + kept.children.reduce((sum, c) => sum + c.total, 0)
+      return kept
+    }
+    const prunedRoots = roots.map(prune).filter((n): n is GroupNode => n !== null)
+    const prunedRootScripts = rootScripts.filter((s) => nameContains(s.name, search))
+    return {
+      tree: prunedRoots,
+      rootScripts: prunedRootScripts,
+      searchEmpty: prunedRoots.length === 0 && prunedRootScripts.length === 0
+    }
+  }, [groups, visible, searching, search])
+
   const isExpanded = (key: string): boolean => searching || !collapsedIds.has(key)
 
   const toggleGroup = (key: string): void => {
@@ -657,9 +688,9 @@ export function Sidebar(): JSX.Element {
       >
         {nothingAtAll ? (
           <CenteredHint text="还没有脚本,先新建一个分组,再通过目录上的 ＋ 添加脚本" />
-        ) : searching && visible.length === 0 ? (
-          // 只有搜索无结果才整体替换成提示;非搜索态即使 0 脚本也要渲染树,
-          // 否则「有分组但还没有脚本」的新用户会看不到任何 ＋ 入口(创建功能死路)
+        ) : searchEmpty ? (
+          // 搜索无任何命中(脚本名与目录名都没匹配):整树替换成提示;
+          // 非搜索态即使 0 脚本也要渲染树,否则「有分组但还没有脚本」的新用户会看不到任何 ＋ 入口
           <CenteredHint text="没有匹配的脚本" />
         ) : (
           <>

@@ -186,6 +186,78 @@ describe('嵌套树渲染', () => {
   })
 })
 
+describe('Postman 式搜索', () => {
+  /** wms > pda > 拣货导入;wms 直挂 盘点/巡检 */
+  function setupTree(): ApiMock {
+    const api = setupApi()
+    const g1: Group = { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    const g2: Group = { id: 'g2', name: 'pda', order: 0, parentId: 'g1', createdAt: '' }
+    const s1: Script = { ...script, id: 's1', name: '拣货导入', groupId: 'g2' }
+    const s2: Script = { ...script, id: 's2', name: '盘点', groupId: 'g1' }
+    const s3: Script = { ...script, id: 's3', name: '巡检', groupId: 'g1' }
+    api.groups.list.mockResolvedValue([g1, g2])
+    api.scripts.list.mockResolvedValue([s1, s2, s3])
+    return api
+  }
+
+  const search = async (keyword: string): Promise<void> => {
+    fireEvent.change(screen.getByPlaceholderText('搜索脚本'), { target: { value: keyword } })
+    await waitFor(() => expect(useAppStore.getState().search).toBe(keyword))
+  }
+
+  it('命中脚本时展示祖先目录链,未命中的兄弟脚本隐藏', async () => {
+    setupTree()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+    await search('导入')
+
+    expect(screen.getByText('拣货导入')).toBeTruthy()
+    // 祖先目录作为路径保留
+    expect(screen.getByText('wms')).toBeTruthy()
+    expect(screen.getByText('pda')).toBeTruthy()
+    // 未命中的兄弟脚本与空目录噪音全部隐藏
+    expect(screen.queryByText('盘点')).toBeNull()
+    expect(screen.queryByText('巡检')).toBeNull()
+    expect(screen.queryByText('暂无脚本')).toBeNull()
+  })
+
+  it('目录名命中时整棵子树保留(含未命中的脚本)', async () => {
+    setupTree()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+    await search('wms')
+
+    expect(screen.getByText('wms')).toBeTruthy()
+    expect(screen.getByText('pda')).toBeTruthy()
+    expect(screen.getByText('拣货导入')).toBeTruthy()
+    expect(screen.getByText('盘点')).toBeTruthy()
+    expect(screen.getByText('巡检')).toBeTruthy()
+  })
+
+  it('完全无命中显示占位,且不再渲染任何目录行', async () => {
+    setupTree()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+    await search('zzz')
+
+    expect(screen.getByText('没有匹配的脚本')).toBeTruthy()
+    expect(screen.queryByText('wms')).toBeNull()
+    expect(screen.queryByText('暂无脚本')).toBeNull()
+  })
+})
+
 describe('悬停菜单', () => {
   /** 一个顶层分组 + 一条直接挂载的脚本,供目录行/脚本行菜单测试共用 */
   function setupGrouped(): ApiMock {
