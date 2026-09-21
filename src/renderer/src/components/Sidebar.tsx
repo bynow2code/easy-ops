@@ -426,7 +426,7 @@ export function Sidebar(): JSX.Element {
     })
   }
 
-  const renderScript = (script: Script, depth: number, guide?: 'full' | 'half'): JSX.Element => {
+  const renderScript = (script: Script, depth: number): JSX.Element => {
     const selected = selectedScriptId === script.id
     // 拖拽落点提示:目标行的上/下边缘画 2px 主色线,标记插入位置
     const hint = dropHint?.id === script.id ? dropHint.position : null
@@ -466,14 +466,6 @@ export function Sidebar(): JSX.Element {
                 : undefined
         }}
       >
-        {/* 父目录的层级对齐线经过本行;最后一个子项只画到中线,不穿透 */}
-        {guide ? (
-          <span
-            className="app-guide"
-            style={{ left: 6, ...(guide === 'half' ? { bottom: '50%' } : null) }}
-            aria-hidden="true"
-          />
-        ) : null}
         <Typography.Text
           ellipsis={{ tooltip: script.name }}
           style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: selected ? 500 : 400 }}
@@ -577,7 +569,7 @@ export function Sidebar(): JSX.Element {
     </Space>
   )
 
-  const renderGroupNode = (node: GroupNode, depth: number, guide?: 'full' | 'half'): JSX.Element => {
+  const renderGroupNode = (node: GroupNode, depth: number): JSX.Element => {
     const key = node.group.id
     const expanded = isExpanded(key)
     const indent = depth * TREE_INDENT
@@ -585,14 +577,6 @@ export function Sidebar(): JSX.Element {
     return (
       // position relative:父目录的层级对齐线段以本块为定位基准,贯穿整块高度
       <div style={{ marginBottom: 4, position: 'relative' }} key={key}>
-        {/* 父目录的层级对齐线经过本块;最后一个子项只画到中线,不穿透 */}
-        {guide ? (
-          <span
-            className="app-guide"
-            style={{ left: depth * TREE_INDENT + 9, ...(guide === 'half' ? { bottom: '50%' } : null) }}
-            aria-hidden="true"
-          />
-        ) : null}
         {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称 + 总数 chip,整行可点用于展开/收起;缩进随层级加深 */}
         <div
           className="app-group-head"
@@ -652,17 +636,14 @@ export function Sidebar(): JSX.Element {
         {expanded ? (
           // 空目录不渲染任何内容(Postman 式):「暂无脚本」占位会造成树形噪音
           <div style={{ marginTop: 2, position: 'relative' }}>
-            {(() => {
-              // 每个子项自己画「父目录对齐线」的经过段:非末位画满高,末位只画到中线(Postman 式截止)
-              const lastIndex = node.children.length + node.scripts.length - 1
-              const guideOf = (i: number): 'full' | 'half' => (i === lastIndex ? 'half' : 'full')
-              return (
-                <>
-                  {node.children.map((c, i) => renderGroupNode(c, depth + 1, guideOf(i)))}
-                  {node.scripts.map((s, i) => renderScript(s, depth + 1, guideOf(node.children.length + i)))}
-                </>
-              )
-            })()}
+            {/* 层级对齐线:贯通整列,与本层子项的折叠箭头中心对齐;悬停列表时显现 */}
+            <span
+              className="app-guide"
+              style={{ left: 4 + (depth + 1) * TREE_INDENT + 5 }}
+              aria-hidden="true"
+            />
+            {node.children.map((c) => renderGroupNode(c, depth + 1))}
+            {node.scripts.map((s) => renderScript(s, depth + 1))}
           </div>
         ) : null}
       </div>
