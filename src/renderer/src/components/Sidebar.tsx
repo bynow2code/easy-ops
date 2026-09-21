@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { App, Button, Dropdown, Input, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
-  CaretRightOutlined,
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -61,6 +60,37 @@ interface GroupNode {
   scripts: Script[]
   /** 该目录下所有脚本总数(含子目录),用于计数 chip */
   total: number
+}
+
+/**
+ * 树形折叠箭头(Postman 式):细描边 v 形,不用 antd 的实心三角。
+ * 展开时旋转 90°;颜色跟随文字并压淡,与对齐线的灰度一致。
+ */
+function TreeCaret({ expanded }: { expanded: boolean }): JSX.Element {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      aria-hidden="true"
+      focusable="false"
+      style={{
+        flex: '0 0 auto',
+        transform: expanded ? 'rotate(90deg)' : 'none',
+        transition: 'transform 0.12s ease',
+        opacity: 0.5
+      }}
+    >
+      <path
+        d="M3.4 2.2 L6.8 5 L3.4 7.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
 }
 
 /** 分组名后面的计数 chip。中性色,把「强调」留给选中态 */
@@ -603,10 +633,7 @@ export function Sidebar(): JSX.Element {
           }}
         >
           <Space size={6} align="center" style={{ minWidth: 0 }}>
-            <CaretRightOutlined
-              rotate={expanded ? 90 : 0}
-              style={{ fontSize: 10, opacity: 0.45, transition: 'transform 0.12s ease' }}
-            />
+            <TreeCaret expanded={expanded} />
             <FolderOutlined style={{ fontSize: 13, opacity: 0.7 }} />
             <Typography.Text
               ellipsis
