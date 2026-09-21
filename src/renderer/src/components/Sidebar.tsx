@@ -249,11 +249,14 @@ export function Sidebar(): JSX.Element {
 
     void (async () => {
       try {
+        // 取 store 最新值而非 render 闭包快照:连续快速拖放时,上一次的 IPC+reload
+        // 可能还没落地,旧快照会让第二次 reorder 覆盖第一次的排序结果
+        const latest = useAppStore.getState()
         if (action.kind === 'move-into') {
           if (drag.type === 'script') {
             await window.api.scripts.update(drag.id, { groupId: action.parentId })
             // 换目录后 order 追加到新兄弟末尾,落点可预期
-            const siblings = scripts
+            const siblings = latest.scripts
               .filter((s) => s.id !== drag.id && (s.groupId ?? null) === action.parentId)
               .sort((a, b) => a.order - b.order)
               .map((s) => s.id)
@@ -266,7 +269,7 @@ export function Sidebar(): JSX.Element {
           if (drag.parentId !== action.parentId) {
             await window.api.scripts.update(drag.id, { groupId: action.parentId })
           }
-          const siblings = scripts
+          const siblings = latest.scripts
             .filter((s) => (s.groupId ?? null) === action.parentId)
             .sort((a, b) => a.order - b.order)
             .map((s) => s.id)
@@ -275,7 +278,7 @@ export function Sidebar(): JSX.Element {
           if (drag.parentId !== action.parentId) {
             await window.api.groups.move(drag.id, action.parentId)
           }
-          const siblings = groups
+          const siblings = latest.groups
             .filter((g) => (g.parentId ?? null) === action.parentId)
             .sort((a, b) => a.order - b.order)
             .map((g) => g.id)
@@ -287,7 +290,6 @@ export function Sidebar(): JSX.Element {
       }
     })()
   }
-
 
   const handleRun = async (script: Script): Promise<void> => {
     // 执行也算一次「使用」:先把列表条目选中(同时打开详情页签),再跑脚本
@@ -479,7 +481,7 @@ export function Sidebar(): JSX.Element {
         type="text"
         size="small"
         icon={<PlusOutlined />}
-        aria-label="在此目录新建脚本"
+        aria-label={groupId ? '在此目录新建脚本' : '新建未分组脚本'}
         onClick={(e) => {
           e.stopPropagation()
           openForm({ type: 'script-create', groupId })
@@ -631,7 +633,9 @@ export function Sidebar(): JSX.Element {
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {nothingAtAll ? (
           <CenteredHint text="还没有脚本,先新建一个分组,再通过目录上的 ＋ 添加脚本" />
-        ) : visible.length === 0 ? (
+        ) : searching && visible.length === 0 ? (
+          // 只有搜索无结果才整体替换成提示;非搜索态即使 0 脚本也要渲染树,
+          // 否则「有分组但还没有脚本」的新用户会看不到任何 ＋ 入口(创建功能死路)
           <CenteredHint text="没有匹配的脚本" />
         ) : (
           <>

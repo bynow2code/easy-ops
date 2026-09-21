@@ -245,10 +245,29 @@ describe('悬停菜单', () => {
     expect(screen.queryByText('新建脚本')).toBeNull()
     expect(screen.getByText('新建分组')).toBeTruthy()
 
-    fireEvent.click(screen.getByLabelText('在此目录新建脚本'))
+    fireEvent.click(screen.getByLabelText('新建未分组脚本'))
 
     await waitFor(() =>
       expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: null })
     )
+  })
+
+  it('有分组但 0 个脚本时,树仍然渲染(分组行上的 ＋ 是唯一建脚本入口)', async () => {
+    const api = setupApi()
+    api.scripts.list.mockResolvedValue([])
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    ])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+
+    // 回归:这里若显示「没有匹配的脚本」占位,树不渲染,用户将没有任何建脚本入口
+    expect(screen.queryByText('没有匹配的脚本')).toBeNull()
+    expect(screen.getByLabelText('在此目录新建脚本')).toBeTruthy()
+    expect(screen.getByText('暂无脚本')).toBeTruthy()
   })
 })
