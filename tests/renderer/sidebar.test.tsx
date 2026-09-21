@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Script } from '../../src/shared/types'
+import type { Group, Script } from '../../src/shared/types'
 import { installJsdomShims } from './jsdomShims'
 
 import { Sidebar } from '../../src/renderer/src/components/Sidebar'
@@ -136,5 +136,38 @@ describe('脚本行的复制按钮', () => {
     await waitFor(() => expect(api.scripts.duplicate).toHaveBeenCalled())
     expect(useAppStore.getState().form).toEqual({ type: 'none' })
     expect(api.scripts.remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('嵌套树渲染', () => {
+  function setupNested(): void {
+    const parent: Group = { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    const child: Group = { id: 'g2', name: 'pda', order: 0, parentId: 'g1', createdAt: '' }
+    const s1: Script = { ...script, id: 's1', name: '拣货', groupId: 'g2' }
+    ;(window as unknown as { api: unknown }).api = {
+      scripts: { list: vi.fn(async () => [s1]) },
+      groups: { list: vi.fn(async () => [parent, child]) }
+    }
+  }
+
+  it('子目录缩进渲染在父目录下,脚本挂到子目录', async () => {
+    setupNested()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+    expect(screen.getByText('pda')).toBeTruthy()
+    expect(screen.getByText('拣货')).toBeTruthy()
+    // 父目录计数 = 其下所有脚本总数(含子目录)
+    expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1)
+
+    // 嵌套结构断言:pda 的分组头在 wms 的展开容器内(平铺实现下两者是兄弟,此断言失败)
+    const wmsHead = screen.getByText('wms').closest('.app-group-head') as HTMLElement
+    const pdaHead = screen.getByText('pda').closest('.app-group-head') as HTMLElement
+    expect(wmsHead.parentElement!.contains(pdaHead)).toBe(true)
+    // 层级缩进:depth 1 的分组头 paddingLeft = 4 + 1 * TREE_INDENT
+    expect(pdaHead.style.paddingLeft).toBe('43px')
   })
 })

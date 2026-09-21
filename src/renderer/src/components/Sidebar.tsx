@@ -27,8 +27,23 @@ function matches(script: Script, keyword: string): boolean {
  * 树形缩进:分组头 = 折叠箭头 + 文件夹图标 + 名称,
  * 脚本行与分组名称左对齐(参考 API 工具的接口树)。
  * 39 = 分组头左 padding 4 + 箭头 10 + gap 6 + 文件夹图标 13 + gap 6。
+ * 递归渲染时同一单位也作为每层目录的水平缩进,保证父子视觉层级一致。
  */
 const TREE_INDENT = 39
+
+/** 「未分组」伪分组的 key;脚本无 groupId 或 groupId 指向已删分组时都归到这里 */
+const UNGROUPED_KEY = '__ungrouped__'
+
+/** 递归树的节点:目录 + 子目录 + 直接挂的脚本 + 后序聚合的脚本总数 */
+interface GroupNode {
+  group: Group
+  /** 直接子目录(按 order 排) */
+  children: GroupNode[]
+  /** 直接挂的脚本(按 order 排) */
+  scripts: Script[]
+  /** 该目录下所有脚本总数(含子目录),用于计数 chip */
+  total: number
+}
 
 /** 分组名后面的计数 chip。中性色,把「强调」留给选中态 */
 const countChipStyle = {
@@ -75,16 +90,46 @@ export function Sidebar(): JSX.Element {
 
   const visible = useMemo(() => scripts.filter((s) => matches(s, search)), [scripts, search])
 
-  const grouped = useMemo(() => {
-    const byGroup = new Map<string | null, Script[]>()
-    byGroup.set(null, [])
-    for (const g of groups) byGroup.set(g.id, [])
-    for (const s of visible) {
-      const key = s.groupId && byGroup.has(s.groupId) ? s.groupId : null
-      byGroup.get(key)!.push(s)
+  // 整树构建:目录按 order 排好后按 parentId 挂到父节点,父缺失的(含旧孤儿数据)落顶层;
+  // 脚本归到所属目录,groupId 缺失或指向已删目录的归入「未分组」虚拟节点
+  const tree = useMemo((): GroupNode[] => {
+    const nodes = new Map<string, GroupNode>()
+    for (const g of [...groups].sort((a, b) => a.order - b.order)) {
+      nodes.set(g.id, { group: g, children: [], scripts: [], total: 0 })
     }
-    return byGroup
-  }, [visible, groups])
+    const roots: GroupNode[] = []
+    for (const node of nodes.values()) {
+      const parent = node.group.parentId ? nodes.get(node.group.parentId) : undefined
+      if (parent) parent.children.push(node)
+      else roots.push(node)
+    }
+    const ungroupedScripts: Script[] = []
+    for (const s of visible) {
+      const key = s.groupId && nodes.has(s.groupId) ? s.groupId : null
+      if (key) nodes.get(key)!.scripts.push(s)
+      else ungroupedScripts.push(s)
+    }
+    // 后序遍历:total = 直接脚本数 + 子目录 total 之和,计数 chip 展示整棵子树的脚本量
+    const fill = (node: GroupNode): number => {
+      node.total = node.scripts.length + node.children.reduce((sum, c) => sum + fill(c), 0)
+      return node.total
+    }
+    for (const root of roots) fill(root)
+    // 「未分组」并入树:与其他目录共用同一套折叠/计数/展开语义,固定排在所有目录之后
+    roots.push({
+      group: {
+        id: UNGROUPED_KEY,
+        name: '未分组',
+        order: Number.MAX_SAFE_INTEGER,
+        parentId: null,
+        createdAt: ''
+      },
+      children: [],
+      scripts: ungroupedScripts,
+      total: ungroupedScripts.length
+    })
+    return roots
+  }, [groups, visible])
 
   const searching = search.trim().length > 0
   const isExpanded = (key: string): boolean => searching || !collapsedIds.has(key)
@@ -102,7 +147,7 @@ export function Sidebar(): JSX.Element {
 
   // 新建/复制脚本落在某个分组里时,若该分组是折叠的,自动展开让新行可见
   const selectedScript = scripts.find((s) => s.id === selectedScriptId)
-  const selectedGroupId = selectedScript ? (selectedScript.groupId ?? '__ungrouped__') : null
+  const selectedGroupId = selectedScript ? (selectedScript.groupId ?? UNGROUPED_KEY) : null
   useEffect(() => {
     if (!selectedGroupId || !collapsedIds.has(selectedGroupId)) return
     setCollapsedIds((prev) => {
@@ -181,7 +226,7 @@ export function Sidebar(): JSX.Element {
     })
   }
 
-  const renderScript = (script: Script): JSX.Element => {
+  const renderScript = (script: Script, depth: number): JSX.Element => {
     const selected = selectedScriptId === script.id
     return (
       <div
@@ -196,7 +241,8 @@ export function Sidebar(): JSX.Element {
           justifyContent: 'space-between',
           gap: 8,
           padding: '4px 8px 4px 8px',
-          marginLeft: TREE_INDENT - 8,
+          // 缩进随目录层级加深,脚本名称与所在分组头的名称左对齐
+          marginLeft: depth * TREE_INDENT + (TREE_INDENT - 8),
           marginBottom: 1,
           borderRadius: 'var(--app-radius)',
           cursor: 'pointer'
@@ -259,16 +305,44 @@ export function Sidebar(): JSX.Element {
     )
   }
 
-  const renderGroupRow = (
-    key: string,
-    name: string,
-    items: Script[],
-    actions: JSX.Element | null
-  ): JSX.Element => {
+  /** 目录行操作区:沿用现有平铺按钮(＋/编辑/删除),任务 4 再替换为菜单 */
+  const renderGroupActions = (group: Group): JSX.Element => (
+    <Space size={0}>
+      <Tooltip title="在此分组新建脚本">
+        <Button
+          type="text"
+          size="small"
+          icon={<PlusOutlined />}
+          onClick={() => openForm({ type: 'script-create', groupId: group.id })}
+        />
+      </Tooltip>
+      <Tooltip title="编辑分组">
+        <Button
+          type="text"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={() => openForm({ type: 'group-edit', group })}
+        />
+      </Tooltip>
+      <Tooltip title="删除分组">
+        <Button
+          type="text"
+          size="small"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={() => handleDeleteGroup(group)}
+        />
+      </Tooltip>
+    </Space>
+  )
+
+  const renderGroupNode = (node: GroupNode, depth: number): JSX.Element => {
+    const key = node.group.id
     const expanded = isExpanded(key)
+    const indent = depth * TREE_INDENT
     return (
       <div style={{ marginBottom: 6 }} key={key}>
-        {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称,整行可点用于展开/收起 */}
+        {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称 + 总数 chip,整行可点用于展开/收起;缩进随层级加深 */}
         <div
           className="app-group-head"
           onClick={() => toggleGroup(key)}
@@ -278,6 +352,7 @@ export function Sidebar(): JSX.Element {
             justifyContent: 'space-between',
             gap: 6,
             padding: '3px 4px',
+            paddingLeft: 4 + indent,
             borderRadius: 'var(--app-radius)',
             cursor: 'pointer',
             userSelect: 'none'
@@ -293,29 +368,30 @@ export function Sidebar(): JSX.Element {
               ellipsis
               style={{ fontSize: 13, fontWeight: 400, opacity: 0.85, minWidth: 0 }}
             >
-              {name}
+              {node.group.name}
             </Typography.Text>
-            <span style={countChipStyle}>{items.length}</span>
+            {/* 计数 = 该目录下所有脚本总数(含子目录) */}
+            <span style={countChipStyle}>{node.total}</span>
           </Space>
-          {actions ? (
-            // 分组操作按钮不触发展开/收起
+          {/* 「未分组」没有目录级操作;其余目录的操作按钮不触发展开/收起 */}
+          {key === UNGROUPED_KEY ? null : (
             <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
-              {actions}
+              {renderGroupActions(node.group)}
             </span>
-          ) : null}
+          )}
         </div>
         {expanded ? (
           <div style={{ marginTop: 2 }}>
-            {items.length === 0 ? (
+            {node.children.map((c) => renderGroupNode(c, depth + 1))}
+            {node.scripts.map((s) => renderScript(s, depth + 1))}
+            {node.children.length === 0 && node.scripts.length === 0 ? (
               <Typography.Text
                 type="secondary"
-                style={{ fontSize: 12, paddingLeft: TREE_INDENT }}
+                style={{ fontSize: 12, paddingLeft: TREE_INDENT + depth * TREE_INDENT }}
               >
                 暂无脚本
               </Typography.Text>
-            ) : (
-              items.map(renderScript)
-            )}
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -350,42 +426,8 @@ export function Sidebar(): JSX.Element {
           <CenteredHint text="没有匹配的脚本" />
         ) : (
           <>
-            {groups.map((group) => {
-              const items = grouped.get(group.id) ?? []
-              return renderGroupRow(
-                group.id,
-                group.name,
-                items,
-                <Space size={0}>
-                  <Tooltip title="在此分组新建脚本">
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<PlusOutlined />}
-                      onClick={() => openForm({ type: 'script-create', groupId: group.id })}
-                    />
-                  </Tooltip>
-                  <Tooltip title="编辑分组">
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => openForm({ type: 'group-edit', group })}
-                    />
-                  </Tooltip>
-                  <Tooltip title="删除分组">
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDeleteGroup(group)}
-                    />
-                  </Tooltip>
-                </Space>
-              )
-            })}
-            {renderGroupRow('__ungrouped__', '未分组', grouped.get(null) ?? [], null)}
+            {/* 整棵目录树递归渲染;「未分组」是树里的虚拟顶层节点,语义与其他目录一致 */}
+            {tree.map((node) => renderGroupNode(node, 0))}
           </>
         )}
       </div>
