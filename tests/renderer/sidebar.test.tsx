@@ -172,17 +172,17 @@ describe('嵌套树渲染', () => {
     const wmsHead = screen.getByText('wms').closest('.app-group-head') as HTMLElement
     const pdaHead = screen.getByText('pda').closest('.app-group-head') as HTMLElement
     expect(wmsHead.parentElement!.contains(pdaHead)).toBe(true)
-    // 层级缩进:depth 1 的分组头 paddingLeft = 4 + 1 * TREE_INDENT
-    expect(pdaHead.style.paddingLeft).toBe('43px')
-    // 脚本行与所在分组头名称左对齐:depth 1 的脚本 marginLeft = 1 * TREE_INDENT + 31,
-    // 加上行内 padding 8 后文字起点 = 78px,与 pda 分组名文字起点(43 + 35)一致
+    // 层级缩进(Postman 式):depth 1 的分组头 paddingLeft = 4 + 1 * 20
+    expect(pdaHead.style.paddingLeft).toBe('24px')
+    // 脚本行比所在分组名深一级:pda(depth1) 的脚本以 depth2 渲染,marginLeft = 2*20+31,
+    // 文字起点 79px = 分组名文字起点(24+35=59) + 20px
     const row = screen.getByText('拣货').closest('.app-row') as HTMLElement
-    expect(row.style.marginLeft).toBe('70px')
+    expect(row.style.marginLeft).toBe('71px')
 
-    // 层级对齐线:每层展开容器各一条,与本层折叠箭头中心对齐(4 + depth*39 + 5)
+    // 层级对齐线:与子项折叠箭头中心列对齐 = 4 + (depth+1)*20 + 5
     const guides = [...document.querySelectorAll('.app-guide')] as HTMLElement[]
     expect(guides.length).toBe(2)
-    expect(guides.map((g) => g.style.left).sort()).toEqual(['48px', '9px'])
+    expect(guides.map((g) => g.style.left).sort()).toEqual(['29px', '49px'])
   })
 })
 

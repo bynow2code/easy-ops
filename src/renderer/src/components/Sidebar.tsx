@@ -27,12 +27,12 @@ function matches(script: Script, keyword: string): boolean {
 }
 
 /**
- * 树形缩进:分组头 = 折叠箭头 + 文件夹图标 + 名称,
- * 脚本行与所在分组头的名称左对齐(参考 API 工具的接口树)。
- * 39 = 分组头左 padding 4 + 箭头 10 + gap 6 + 文件夹图标 13 + gap 6。
+ * 树形缩进(Postman 式):子项(脚本/子目录)比父目录名深一级(20px),
+ * 层级对齐线画在子项折叠箭头的中心列,父名 → 对齐线 → 子内容逐层递进。
+ * 39 = 分组头左 padding 4 + 箭头 10 + gap 6 + 文件夹图标 13 + gap 6,即 depth 0 的分组名文字起点。
  * 递归渲染时同一单位也作为每层目录的水平缩进,保证父子视觉层级一致。
  */
-const TREE_INDENT = 39
+const TREE_INDENT = 20
 
 /** 目录行 ⋯ 菜单的固定项;具体行为(新建子目录/重命名/删除)在 onClick 里按 key 分发 */
 const groupMenuItems: MenuProps['items'] = [
@@ -386,9 +386,9 @@ export function Sidebar(): JSX.Element {
           justifyContent: 'space-between',
           gap: 8,
           padding: '3px 8px',
-          // 脚本行与所在分组头的名称左对齐(分组名文字起点 = depth*39+39 = marginLeft 31 + padding 8),
-          // 子目录则比脚本深一级,层级关系由缩进表达
-          marginLeft: depth * TREE_INDENT + (TREE_INDENT - 8),
+          // Postman 式缩进:调用方传入的是「分组 depth + 1」,脚本文字起点 = 39 + depth*20,
+          // 比所在分组名(39 + (depth-1)*20)深一级 20px;marginLeft = 文字起点 - padding 8
+          marginLeft: depth * TREE_INDENT + 31,
           marginBottom: 1,
           borderRadius: 'var(--app-radius)',
           cursor: 'pointer',
@@ -573,18 +573,18 @@ export function Sidebar(): JSX.Element {
         </div>
         {expanded ? (
           <div style={{ marginTop: 2, position: 'relative' }}>
-            {/* 层级对齐线:与本层折叠箭头中心对齐,悬停列表时显现(Postman 式层级参照) */}
+            {/* 层级对齐线:与子项折叠箭头的中心列对齐(子项比本层深一级),悬停列表时显现 */}
             <span
               className="app-guide"
-              style={{ left: 4 + depth * TREE_INDENT + 5 }}
+              style={{ left: 4 + (depth + 1) * TREE_INDENT + 5 }}
               aria-hidden="true"
             />
             {node.children.map((c) => renderGroupNode(c, depth + 1))}
-            {node.scripts.map((s) => renderScript(s, depth))}
+            {node.scripts.map((s) => renderScript(s, depth + 1))}
             {node.children.length === 0 && node.scripts.length === 0 ? (
               <Typography.Text
                 type="secondary"
-                style={{ fontSize: 12, paddingLeft: TREE_INDENT + depth * TREE_INDENT }}
+                style={{ fontSize: 12, paddingLeft: 39 + (depth + 1) * TREE_INDENT }}
               >
                 暂无脚本
               </Typography.Text>
