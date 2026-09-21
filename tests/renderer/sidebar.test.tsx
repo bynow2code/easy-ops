@@ -178,6 +178,11 @@ describe('嵌套树渲染', () => {
     // 加上行内 padding 8 后文字起点 = 78px,与 pda 分组名文字起点(43 + 35)一致
     const row = screen.getByText('拣货').closest('.app-row') as HTMLElement
     expect(row.style.marginLeft).toBe('70px')
+
+    // 层级对齐线:每层展开容器各一条,与本层折叠箭头中心对齐(4 + depth*39 + 5)
+    const guides = [...document.querySelectorAll('.app-guide')] as HTMLElement[]
+    expect(guides.length).toBe(2)
+    expect(guides.map((g) => g.style.left).sort()).toEqual(['48px', '9px'])
   })
 })
 

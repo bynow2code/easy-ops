@@ -143,6 +143,22 @@ body {
   font-size: 13px;
 }
 
+/* ── 树形层级对齐线:悬停列表时显现,与各层折叠箭头中心对齐 ── */
+.app-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--app-hairline-strong);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+
+.app-tree:hover .app-guide {
+  opacity: 1;
+}
+
 /* ── 分组头:操作按钮同理,减少常态噪音 ─────────────────── */
 .app-group-actions {
   opacity: 0;

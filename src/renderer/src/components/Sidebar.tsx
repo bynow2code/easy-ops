@@ -572,7 +572,13 @@ export function Sidebar(): JSX.Element {
           </span>
         </div>
         {expanded ? (
-          <div style={{ marginTop: 2 }}>
+          <div style={{ marginTop: 2, position: 'relative' }}>
+            {/* 层级对齐线:与本层折叠箭头中心对齐,悬停列表时显现(Postman 式层级参照) */}
+            <span
+              className="app-guide"
+              style={{ left: 4 + depth * TREE_INDENT + 5 }}
+              aria-hidden="true"
+            />
             {node.children.map((c) => renderGroupNode(c, depth + 1))}
             {node.scripts.map((s) => renderScript(s, depth))}
             {node.children.length === 0 && node.scripts.length === 0 ? (
@@ -612,9 +618,11 @@ export function Sidebar(): JSX.Element {
       </Space>
 
       {/* 树容器同时是「拖出目录」的落点:把脚本拖到列表空白处 = 移到顶层(groupId 置空)。
-          行自身的 onDrop 会 stopPropagation,只有落在行间空白才会冒到这里 */}
+          行自身的 onDrop 会 stopPropagation,只有落在行间空白才会冒到这里。
+          className 供 .app-tree:hover 触发层级对齐线显形 */}
       <div
-        style={{ flex: 1, overflow: 'auto', minHeight: 0 }}
+        className="app-tree"
+        style={{ flex: 1, overflow: 'auto', minHeight: 0, position: 'relative' }}
         onDragOver={
           dndEnabled && dragItem?.type === 'script' && dragItem.parentId !== null
             ? (e) => e.preventDefault()
