@@ -59,11 +59,51 @@ function iconButton(name: string): HTMLElement {
 
 beforeEach(() => {
   installJsdomShims()
-  useAppStore.setState({ scripts: [], groups: [], selectedScriptId: null, form: { type: 'none' } })
+  useAppStore.setState({
+    scripts: [],
+    groups: [],
+    selectedScriptId: null,
+    openTabs: [],
+    form: { type: 'none' }
+  })
 })
 
 afterEach(() => {
   cleanup()
+})
+
+describe('树形分组的折叠', () => {
+  it('点击分组头收起脚本行,再点展开', async () => {
+    setupApi()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    fireEvent.click(screen.getByText('未分组'))
+    expect(screen.queryByText('构建')).toBeNull()
+
+    fireEvent.click(screen.getByText('未分组'))
+    await screen.findByText('构建')
+  })
+
+  it('折叠状态下搜索,分组强制展开让结果可见', async () => {
+    setupApi()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    fireEvent.click(screen.getByText('未分组'))
+    expect(screen.queryByText('构建')).toBeNull()
+
+    fireEvent.change(screen.getByPlaceholderText('搜索脚本'), { target: { value: '构建' } })
+    await screen.findByText('构建')
+  })
 })
 
 describe('脚本行的复制按钮', () => {

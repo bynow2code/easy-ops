@@ -52,6 +52,7 @@ beforeEach(() => {
     scripts: [script],
     groups: [],
     selectedScriptId: 's1',
+    openTabs: [],
     form: { type: 'none' },
     contentDrafts: {},
     contentFocusRequest: null

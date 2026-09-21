@@ -41,6 +41,8 @@ export interface AppTokenSet {
   hairlineStrong: string
   /** 行悬停底色 */
   rowHover: string
+  /** 选中行/激活页签的中性灰胶囊底色(参考 API 工具的树形列表选中态) */
+  rowSelectedBg: string
   radius: number
   radiusLg: number
   shadowPanel: string
@@ -62,6 +64,7 @@ const LIGHT: AppTokenSet = {
   hairline: 'rgba(16, 24, 40, 0.08)',
   hairlineStrong: 'rgba(16, 24, 40, 0.14)',
   rowHover: 'rgba(16, 24, 40, 0.04)',
+  rowSelectedBg: 'rgba(16, 24, 40, 0.08)',
   radius: 8,
   radiusLg: 10,
   shadowPanel: '0 1px 2px rgba(16, 24, 40, 0.05)'
@@ -84,6 +87,7 @@ const DARK: AppTokenSet = {
   hairline: 'rgba(255, 255, 255, 0.08)',
   hairlineStrong: 'rgba(255, 255, 255, 0.16)',
   rowHover: 'rgba(255, 255, 255, 0.05)',
+  rowSelectedBg: 'rgba(255, 255, 255, 0.12)',
   radius: 8,
   radiusLg: 10,
   shadowPanel: '0 1px 2px rgba(0, 0, 0, 0.4)'

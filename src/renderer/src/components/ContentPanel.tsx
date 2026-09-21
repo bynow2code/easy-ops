@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { EditorView } from '@codemirror/view'
-import { App, Button, Space, Typography } from 'antd'
+import { App, Button } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
 import type { Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
@@ -85,35 +85,32 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
+      {/* 脚本名已在上方页签条展示,这里只保留「未保存」状态与保存入口 */}
       <header
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 8,
-          flex: '0 0 auto'
+          flex: '0 0 auto',
+          minHeight: 22
         }}
       >
-        <Space size={6} align="center" style={{ minWidth: 0 }}>
-          <Typography.Text ellipsis style={{ fontSize: 14, fontWeight: 500, minWidth: 0 }}>
-            {script.name}
-          </Typography.Text>
-          {dirty ? (
-            <span
-              style={{
-                fontSize: 11,
-                lineHeight: '16px',
-                padding: '1px 6px',
-                borderRadius: 6,
-                flex: '0 0 auto',
-                color: 'var(--app-accent-text)',
-                background: 'var(--app-accent-soft)'
-              }}
-            >
-              未保存
-            </span>
-          ) : null}
-        </Space>
+        {dirty ? (
+          <span
+            style={{
+              fontSize: 11,
+              lineHeight: '16px',
+              padding: '1px 6px',
+              borderRadius: 6,
+              flex: '0 0 auto',
+              color: 'var(--app-accent-text)',
+              background: 'var(--app-accent-soft)'
+            }}
+          >
+            未保存
+          </span>
+        ) : null}
         {dirty ? (
           <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void save()}>
             保存

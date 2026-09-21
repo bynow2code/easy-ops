@@ -1,10 +1,12 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { App, Button, Input, Space, Tooltip, Typography } from 'antd'
 import {
+  CaretRightOutlined,
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   FolderAddOutlined,
+  FolderOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   SearchOutlined,
@@ -20,6 +22,13 @@ function matches(script: Script, keyword: string): boolean {
   const k = keyword.toLowerCase()
   return script.name.toLowerCase().includes(k) || script.content.toLowerCase().includes(k)
 }
+
+/**
+ * 树形缩进:分组头 = 折叠箭头 + 文件夹图标 + 名称,
+ * 脚本行与分组名称左对齐(参考 API 工具的接口树)。
+ * 39 = 分组头左 padding 4 + 箭头 10 + gap 6 + 文件夹图标 13 + gap 6。
+ */
+const TREE_INDENT = 39
 
 /** 分组名后面的计数 chip。中性色,把「强调」留给选中态 */
 const countChipStyle = {
@@ -53,8 +62,12 @@ function CenteredHint({ text }: { text: string }): JSX.Element {
 }
 
 export function Sidebar(): JSX.Element {
-  const { scripts, groups, selectedScriptId, search, reload, selectScript, openForm, setSearch } = useAppStore()
+  const { scripts, groups, selectedScriptId, search, reload, selectScript, openForm, setSearch } =
+    useAppStore()
   const { modal, message } = App.useApp()
+
+  /** 折叠的分组 id 集合;搜索时强制全部展开,保证结果可见 */
+  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() => new Set())
 
   useEffect(() => {
     void reload()
@@ -73,7 +86,35 @@ export function Sidebar(): JSX.Element {
     return byGroup
   }, [visible, groups])
 
+  const searching = search.trim().length > 0
+  const isExpanded = (key: string): boolean => searching || !collapsedIds.has(key)
+
+  const toggleGroup = (key: string): void => {
+    // 搜索时分组被强制展开,此时点头部若改折叠状态,视觉无反馈(清掉搜索才会显现),直接忽略
+    if (searching) return
+    setCollapsedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  // 新建/复制脚本落在某个分组里时,若该分组是折叠的,自动展开让新行可见
+  const selectedScript = scripts.find((s) => s.id === selectedScriptId)
+  const selectedGroupId = selectedScript ? (selectedScript.groupId ?? '__ungrouped__') : null
+  useEffect(() => {
+    if (!selectedGroupId || !collapsedIds.has(selectedGroupId)) return
+    setCollapsedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(selectedGroupId)
+      return next
+    })
+  }, [selectedGroupId, collapsedIds])
+
   const handleRun = async (script: Script): Promise<void> => {
+    // 执行也算一次「使用」:先把列表条目选中(同时打开详情页签),再跑脚本
+    selectScript(script.id)
     try {
       const { runId, title } = await window.api.pty.start({
         scriptId: script.id,
@@ -85,6 +126,12 @@ export function Sidebar(): JSX.Element {
     } catch (err) {
       message.error(toUserMessage(err))
     }
+  }
+
+  const handleEditScript = (script: Script): void => {
+    // 编辑同样让条目进入选中态,详情区页签同步打开
+    selectScript(script.id)
+    openForm({ type: 'script-edit', script })
   }
 
   const handleDuplicateScript = async (script: Script): Promise<void> => {
@@ -148,12 +195,11 @@ export function Sidebar(): JSX.Element {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 8,
-          padding: '5px 8px',
-          marginBottom: 2,
+          padding: '4px 8px 4px 8px',
+          marginLeft: TREE_INDENT - 8,
+          marginBottom: 1,
           borderRadius: 'var(--app-radius)',
-          cursor: 'pointer',
-          // 用 inset 阴影而不是 border-left:选中时不会因为多出 2px 边框而让文字抖动
-          boxShadow: selected ? 'inset 2px 0 0 0 var(--app-primary)' : undefined
+          cursor: 'pointer'
         }}
       >
         <Typography.Text
@@ -181,7 +227,7 @@ export function Sidebar(): JSX.Element {
               icon={<EditOutlined />}
               onClick={(e) => {
                 e.stopPropagation()
-                openForm({ type: 'script-edit', script })
+                handleEditScript(script)
               }}
             />
           </Tooltip>
@@ -218,34 +264,63 @@ export function Sidebar(): JSX.Element {
     name: string,
     items: Script[],
     actions: JSX.Element | null
-  ): JSX.Element => (
-    <div style={{ marginBottom: 10 }} key={key}>
-      <div
-        className="app-group-head"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '0 2px' }}
-      >
-        <Space size={6} align="center" style={{ minWidth: 0 }}>
-          <Typography.Text
-            ellipsis
-            style={{ fontSize: 12, fontWeight: 500, opacity: 0.7, letterSpacing: 0.3 }}
-          >
-            {name}
-          </Typography.Text>
-          <span style={countChipStyle}>{items.length}</span>
-        </Space>
-        {actions ? <span className="app-group-actions">{actions}</span> : null}
+  ): JSX.Element => {
+    const expanded = isExpanded(key)
+    return (
+      <div style={{ marginBottom: 6 }} key={key}>
+        {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称,整行可点用于展开/收起 */}
+        <div
+          className="app-group-head"
+          onClick={() => toggleGroup(key)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 6,
+            padding: '3px 4px',
+            borderRadius: 'var(--app-radius)',
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}
+        >
+          <Space size={6} align="center" style={{ minWidth: 0 }}>
+            <CaretRightOutlined
+              rotate={expanded ? 90 : 0}
+              style={{ fontSize: 10, opacity: 0.45, transition: 'transform 0.12s ease' }}
+            />
+            <FolderOutlined style={{ fontSize: 13, opacity: 0.65 }} />
+            <Typography.Text
+              ellipsis
+              style={{ fontSize: 13, fontWeight: 400, opacity: 0.85, minWidth: 0 }}
+            >
+              {name}
+            </Typography.Text>
+            <span style={countChipStyle}>{items.length}</span>
+          </Space>
+          {actions ? (
+            // 分组操作按钮不触发展开/收起
+            <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
+              {actions}
+            </span>
+          ) : null}
+        </div>
+        {expanded ? (
+          <div style={{ marginTop: 2 }}>
+            {items.length === 0 ? (
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, paddingLeft: TREE_INDENT }}
+              >
+                暂无脚本
+              </Typography.Text>
+            ) : (
+              items.map(renderScript)
+            )}
+          </div>
+        ) : null}
       </div>
-      <div style={{ marginTop: 4 }}>
-        {items.length === 0 ? (
-          <Typography.Text type="secondary" style={{ fontSize: 12, paddingLeft: 8 }}>
-            暂无脚本
-          </Typography.Text>
-        ) : (
-          items.map(renderScript)
-        )}
-      </div>
-    </div>
-  )
+    )
+  }
 
   const nothingAtAll = scripts.length === 0 && groups.length === 0
 

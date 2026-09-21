@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Button, Segmented, Space, Typography } from 'antd'
-import { FileTextOutlined, SettingOutlined } from '@ant-design/icons'
+import { CloseOutlined, FileTextOutlined, SettingOutlined } from '@ant-design/icons'
 import {
   DEFAULT_DETAIL_SPLIT_RATIO,
   DEFAULT_MAIN_SPLIT_RATIO,
   clampSplitRatio,
   type ThemeMode
 } from '../../shared/types'
+import type { Script } from '../../shared/types'
 import { ThemeProvider, useTheme } from './theme/provider'
 import { Sidebar } from './components/Sidebar'
 import { ScriptFormModal } from './components/ScriptFormModal'
@@ -104,9 +105,17 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element
 function ScriptDetail(): JSX.Element {
   const selectedScriptId = useAppStore((s) => s.selectedScriptId)
   const scripts = useAppStore((s) => s.scripts)
-  const selected = scripts.find((s) => s.id === selectedScriptId) ?? null
+  const openTabs = useAppStore((s) => s.openTabs)
+  const selectScript = useAppStore((s) => s.selectScript)
+  const closeTab = useAppStore((s) => s.closeTab)
 
-  if (!selected) {
+  const selected = scripts.find((s) => s.id === selectedScriptId) ?? null
+  // 页签按打开顺序展示;脚本可能刚被删,reload 会收掉对应页签,这里再兜一层底
+  const tabScripts = openTabs
+    .map((id) => scripts.find((s) => s.id === id))
+    .filter((s): s is Script => Boolean(s))
+
+  if (tabScripts.length === 0 || !selected) {
     return (
       <div
         style={{
@@ -126,8 +135,68 @@ function ScriptDetail(): JSX.Element {
     )
   }
 
-  // key 用脚本 id:切换脚本时重挂面板,CodeMirror 的 undo 历史等内部状态不跨脚本串
-  return <ContentPanel key={selected.id} script={selected} />
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
+      {/* 页签条:打开过的脚本排成一排,当前选中的是灰胶囊(参考 API 工具的编辑区页签) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          overflowX: 'auto',
+          flex: '0 0 auto',
+          minHeight: 0
+        }}
+      >
+        {tabScripts.map((tab) => {
+          const active = tab.id === selectedScriptId
+          return (
+            <div
+              key={tab.id}
+              className={active ? 'app-tab app-tab-active' : 'app-tab'}
+              onClick={() => selectScript(tab.id)}
+              title={tab.name}
+            >
+              <Typography.Text
+                ellipsis
+                style={{
+                  fontSize: 13,
+                  fontWeight: active ? 500 : 400,
+                  color: active ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                  maxWidth: 170
+                }}
+              >
+                {tab.name}
+              </Typography.Text>
+              <span
+                className="app-tab-close"
+                role="button"
+                tabIndex={0}
+                aria-label={`关闭页签 ${tab.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  closeTab(tab.id)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    closeTab(tab.id)
+                  }
+                }}
+              >
+                <CloseOutlined />
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      {/* key 用脚本 id:切换脚本时重挂面板,CodeMirror 的 undo 历史等内部状态不跨脚本串 */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ContentPanel key={selected.id} script={selected} />
+      </div>
+    </div>
+  )
 }
 
 function Workspace(): JSX.Element {
