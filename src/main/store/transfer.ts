@@ -190,7 +190,8 @@ export function toLegacyMigration(input: unknown): LegacyMigrationResult {
       } else {
         const id = genId('group')
         groupIdByName.set(rawGroup, id)
-        groups.push({ id, name: rawGroup.slice(0, GROUP_NAME_MAX), order: groups.length, createdAt: now })
+        // CSV 导入的分组一律是顶层;嵌套目前只在 store 内产生
+        groups.push({ id, name: rawGroup.slice(0, GROUP_NAME_MAX), parentId: null, order: groups.length, createdAt: now })
         groupId = id
       }
     }

@@ -40,7 +40,7 @@ function makeScript(over: Partial<Script> = {}): Script {
 }
 
 function makeGroup(over: Partial<Group> = {}): Group {
-  return { id: 'g1', name: '后端', order: 0, createdAt: '2026-01-01T00:00:00.000Z', ...over }
+  return { id: 'g1', name: '后端', parentId: null, order: 0, createdAt: '2026-01-01T00:00:00.000Z', ...over }
 }
 
 describe('buildExportPayload', () => {

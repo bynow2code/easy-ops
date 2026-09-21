@@ -29,8 +29,9 @@ export interface ScriptsStore {
   updateScript: (id: string, patch: ScriptPatch) => Script
   deleteScript: (id: string) => void
   reorderScripts: (ids: string[]) => void
-  createGroup: (name: string) => Group
+  createGroup: (name: string, parentId?: string | null) => Group
   updateGroup: (id: string, name: string) => Group
+  moveGroup: (id: string, parentId: string | null) => void
   deleteGroup: (id: string) => void
   reorderGroups: (ids: string[]) => void
   replaceAll: (data: ScriptsData) => ScriptsData
@@ -48,6 +49,11 @@ function normalizeOrder<T extends { order: number }>(items: T[]): T[] {
   return [...items]
     .sort((a, b) => a.order - b.order)
     .map((item, index) => ({ ...item, order: index }))
+}
+
+/** 旧版本落盘的 groups 没有 parentId,读取时统一补成 null */
+function normalizeGroups(groups: Group[]): Group[] {
+  return groups.map((g) => ({ ...g, parentId: g.parentId ?? null }))
 }
 
 function applyOrderById<T extends { id: string; order: number }>(items: T[], ids: string[]): T[] {
@@ -88,7 +94,7 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
     const raw = persistence.read()
     return {
       scripts: Array.isArray(raw?.scripts) ? raw.scripts : [],
-      groups: Array.isArray(raw?.groups) ? raw.groups : []
+      groups: normalizeGroups(Array.isArray(raw?.groups) ? raw.groups : [])
     }
   }
 
@@ -200,14 +206,21 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
       commit({ ...data, scripts: applyOrderById(data.scripts, ids) })
     },
 
-    createGroup(name) {
+    createGroup(name, parentId = null) {
       const nameCheck = validateGroupName(name)
       if (!nameCheck.ok) throw new Error(nameCheck.message)
       const data = state()
+      const parent = parentId ?? null
+      if (parent && !data.groups.some((g) => g.id === parent)) {
+        throw new Error(`父分组不存在: ${parent}`)
+      }
+      // order 只在兄弟之间递增,嵌套后全局混排会让子目录 order 虚高
+      const siblings = data.groups.filter((g) => (g.parentId ?? null) === parent)
       const group: Group = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name,
-        order: nextOrder(data.groups),
+        parentId: parent,
+        order: nextOrder(siblings),
         createdAt: nowIso()
       }
       commit({ ...data, groups: [...data.groups, group] })
@@ -226,12 +239,40 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
       return groups[index]
     },
 
-    deleteGroup(id) {
+    moveGroup(id, parentId) {
+      const target = parentId ?? null
+      if (id === target) throw new Error('不能把目录移动到自己')
       const data = state()
       if (!data.groups.some((g) => g.id === id)) throw new Error(`分组不存在: ${id}`)
+      if (target && !data.groups.some((g) => g.id === target)) {
+        throw new Error(`父分组不存在: ${target}`)
+      }
+      // 防环:目标父目录不能是自己旗下任意后代。先建「父 → 子」索引,再从 id 往下走
+      const childrenOf = new Map<string | null, string[]>()
+      for (const g of data.groups) {
+        const key = g.parentId ?? null
+        childrenOf.set(key, [...(childrenOf.get(key) ?? []), g.id])
+      }
+      const stack = [...(childrenOf.get(id) ?? [])]
+      while (stack.length > 0) {
+        const cur = stack.pop()!
+        if (cur === target) throw new Error('不能把目录移动到自己的子目录')
+        stack.push(...(childrenOf.get(cur) ?? []))
+      }
+      commit({ ...data, groups: data.groups.map((g) => (g.id === id ? { ...g, parentId: target } : g)) })
+    },
+
+    deleteGroup(id) {
+      const data = state()
+      const target = data.groups.find((g) => g.id === id)
+      if (!target) throw new Error(`分组不存在: ${id}`)
+      // 不级联删除:子目录与脚本都上移到被删目录的父级,数据零丢失
+      const parent = target.parentId ?? null
       commit({
-        groups: data.groups.filter((g) => g.id !== id),
-        scripts: data.scripts.map((s) => (s.groupId === id ? { ...s, groupId: null } : s))
+        groups: data.groups
+          .map((g) => (g.parentId === id ? { ...g, parentId: parent } : g))
+          .filter((g) => g.id !== id),
+        scripts: data.scripts.map((s) => (s.groupId === id ? { ...s, groupId: parent } : s))
       })
     },
 
@@ -243,7 +284,7 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
     replaceAll(next) {
       return commit({
         scripts: Array.isArray(next.scripts) ? next.scripts : [],
-        groups: Array.isArray(next.groups) ? next.groups : []
+        groups: normalizeGroups(Array.isArray(next.groups) ? next.groups : [])
       })
     }
   }

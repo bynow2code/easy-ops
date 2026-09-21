@@ -13,6 +13,8 @@ export interface Group {
   id: string
   name: string
   order: number
+  /** 父目录 id;null = 顶层。旧数据读取时 normalize 为 null */
+  parentId: string | null
   createdAt: string
 }
 

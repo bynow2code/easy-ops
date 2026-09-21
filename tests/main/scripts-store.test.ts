@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { SCRIPT_NAME_MAX, validateScriptName } from '../../src/shared/types'
+import { SCRIPT_NAME_MAX, validateScriptName, type Group } from '../../src/shared/types'
 import { createScriptsStore, type ScriptsData } from '../../src/main/store/scripts'
 
 let data: ScriptsData
@@ -47,6 +47,62 @@ describe('分组', () => {
 
   it('更新不存在的分组抛错', () => {
     expect(() => store.updateGroup('nope', 'X')).toThrowError(/不存在/)
+  })
+
+  describe('嵌套分组', () => {
+    it('创建子分组挂在父分组下,order 在兄弟间递增', () => {
+      const root = store.createGroup('wms')
+      const child1 = store.createGroup('pda', root.id)
+      const child2 = store.createGroup('pda2', root.id)
+      expect(child1.parentId).toBe(root.id)
+      expect(child2.parentId).toBe(root.id)
+      expect(child1.order).toBe(0)
+      expect(child2.order).toBe(1)
+    })
+
+    it('不传 parentId 时创建顶层分组,parentId 为 null', () => {
+      expect(store.createGroup('顶层').parentId).toBeNull()
+    })
+
+    it('创建时父分组不存在则抛错', () => {
+      expect(() => store.createGroup('孤儿', 'nope')).toThrowError(/父分组不存在/)
+    })
+
+    it('moveGroup 换父', () => {
+      const a = store.createGroup('a')
+      const b = store.createGroup('b')
+      store.moveGroup(a.id, b.id)
+      expect(store.listGroups().find((g) => g.id === a.id)!.parentId).toBe(b.id)
+    })
+
+    it('moveGroup 不能把目录移到自己或自己的后代(防环)', () => {
+      const root = store.createGroup('root')
+      const child = store.createGroup('child', root.id)
+      const grand = store.createGroup('grand', child.id)
+      expect(() => store.moveGroup(root.id, root.id)).toThrowError(/自己/)
+      expect(() => store.moveGroup(root.id, grand.id)).toThrowError(/子目录/)
+    })
+
+    it('删除中间目录:子分组与脚本上移到父级,不级联删除', () => {
+      const root = store.createGroup('root')
+      const mid = store.createGroup('mid', root.id)
+      const leaf = store.createGroup('leaf', mid.id)
+      const s = store.createScript({ name: 'a', content: 'echo', groupId: mid.id })
+      store.deleteGroup(mid.id)
+      const groups = store.listGroups()
+      expect(groups.find((g) => g.id === leaf.id)!.parentId).toBe(root.id)
+      expect(store.listScripts().find((x) => x.id === s.id)!.groupId).toBe(root.id)
+      expect(groups.some((g) => g.id === mid.id)).toBe(false)
+    })
+
+    it('读取旧数据(无 parentId)时 normalize 为 null', () => {
+      data = {
+        scripts: [],
+        // 模拟旧版本落盘:groups 没有 parentId 字段
+        groups: [{ id: 'g1', name: '旧', order: 0, createdAt: '2026-01-01T00:00:00.000Z' }] as Group[]
+      }
+      expect(store.listGroups()[0].parentId).toBeNull()
+    })
   })
 })
 

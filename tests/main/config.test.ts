@@ -69,7 +69,9 @@ function makeScript(over: Partial<Script> = {}): Script {
   }
 }
 
-const GROUPS: Group[] = [{ id: 'g1', name: '后端', order: 0, createdAt: '2026-01-01T00:00:00.000Z' }]
+const GROUPS: Group[] = [
+  { id: 'g1', name: '后端', parentId: null, order: 0, createdAt: '2026-01-01T00:00:00.000Z' }
+]
 
 let tmpDir = ''
 let scripts: ReturnType<typeof createScriptsStore>
