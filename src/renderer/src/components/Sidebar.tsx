@@ -28,14 +28,11 @@ function matches(script: Script, keyword: string): boolean {
 
 /**
  * 树形缩进:分组头 = 折叠箭头 + 文件夹图标 + 名称,
- * 脚本行与子目录条目同层缩进(参考 API 工具的接口树)。
+ * 脚本行与所在分组头的名称左对齐(参考 API 工具的接口树)。
  * 39 = 分组头左 padding 4 + 箭头 10 + gap 6 + 文件夹图标 13 + gap 6。
  * 递归渲染时同一单位也作为每层目录的水平缩进,保证父子视觉层级一致。
  */
 const TREE_INDENT = 39
-
-/** 「未分组」伪分组的 key;脚本无 groupId 或 groupId 指向已删分组时都归到这里 */
-const UNGROUPED_KEY = '__ungrouped__'
 
 /** 目录行 ⋯ 菜单的固定项;具体行为(新建子目录/重命名/删除)在 onClick 里按 key 分发 */
 const groupMenuItems: MenuProps['items'] = [
@@ -108,8 +105,8 @@ export function Sidebar(): JSX.Element {
   const visible = useMemo(() => scripts.filter((s) => matches(s, search)), [scripts, search])
 
   // 整树构建:目录按 order 排好后按 parentId 挂到父节点,父缺失的(含旧孤儿数据)落顶层;
-  // 脚本归到所属目录,groupId 缺失或指向已删目录的归入「未分组」虚拟节点
-  const tree = useMemo((): GroupNode[] => {
+  // 无分组脚本(groupId 缺失或指向已删目录)直接作为顶层行渲染,排在所有顶层目录之后
+  const { tree, rootScripts } = useMemo((): { tree: GroupNode[]; rootScripts: Script[] } => {
     const nodes = new Map<string, GroupNode>()
     for (const g of [...groups].sort((a, b) => a.order - b.order)) {
       nodes.set(g.id, { group: g, children: [], scripts: [], total: 0 })
@@ -120,11 +117,11 @@ export function Sidebar(): JSX.Element {
       if (parent) parent.children.push(node)
       else roots.push(node)
     }
-    const ungroupedScripts: Script[] = []
+    const rootScripts: Script[] = []
     for (const s of visible) {
       const key = s.groupId && nodes.has(s.groupId) ? s.groupId : null
       if (key) nodes.get(key)!.scripts.push(s)
-      else ungroupedScripts.push(s)
+      else rootScripts.push(s)
     }
     // 后序遍历:total = 直接脚本数 + 子目录 total 之和,计数 chip 展示整棵子树的脚本量
     const fill = (node: GroupNode): number => {
@@ -132,20 +129,7 @@ export function Sidebar(): JSX.Element {
       return node.total
     }
     for (const root of roots) fill(root)
-    // 「未分组」并入树:与其他目录共用同一套折叠/计数/展开语义,固定排在所有目录之后
-    roots.push({
-      group: {
-        id: UNGROUPED_KEY,
-        name: '未分组',
-        order: Number.MAX_SAFE_INTEGER,
-        parentId: null,
-        createdAt: ''
-      },
-      children: [],
-      scripts: ungroupedScripts,
-      total: ungroupedScripts.length
-    })
-    return roots
+    return { tree: roots, rootScripts }
   }, [groups, visible])
 
   const searching = search.trim().length > 0
@@ -164,7 +148,7 @@ export function Sidebar(): JSX.Element {
 
   // 新建/复制脚本落在某个分组里时,若该分组是折叠的,自动展开让新行可见
   const selectedScript = scripts.find((s) => s.id === selectedScriptId)
-  const selectedGroupId = selectedScript ? (selectedScript.groupId ?? UNGROUPED_KEY) : null
+  const selectedGroupId = selectedScript?.groupId ?? null
   useEffect(() => {
     if (!selectedGroupId || !collapsedIds.has(selectedGroupId)) return
     setCollapsedIds((prev) => {
@@ -360,7 +344,6 @@ export function Sidebar(): JSX.Element {
     const scriptCount = scripts.filter((s) => s.groupId != null && ids.has(s.groupId)).length
     // 同一批收集到的 id 里去掉目录自身,剩下的就是将被上移的子目录数
     const subCount = ids.size - 1
-    // '__ungrouped__' 是树渲染用的伪分组 key,不在 groups 里,不会被上面收集到,无需处理
     const parentName = group.parentId ? groups.find((g) => g.id === group.parentId)?.name : null
     const target = parentName ? `「${parentName}」` : '顶层'
     modal.confirm({
@@ -474,14 +457,14 @@ export function Sidebar(): JSX.Element {
     )
   }
 
-  /** ＋ 直达新建脚本;groupId 传 null 表示建到「未分组」 */
-  const renderAddScriptAction = (groupId: string | null): JSX.Element => (
-    <Tooltip title={groupId ? '在此目录新建脚本' : '新建未分组脚本'}>
+  /** ＋ 直达新建脚本,建到当前目录 */
+  const renderAddScriptAction = (groupId: string): JSX.Element => (
+    <Tooltip title="在此目录新建脚本">
       <Button
         type="text"
         size="small"
         icon={<PlusOutlined />}
-        aria-label={groupId ? '在此目录新建脚本' : '新建未分组脚本'}
+        aria-label="在此目录新建脚本"
         onClick={(e) => {
           e.stopPropagation()
           openForm({ type: 'script-create', groupId })
@@ -526,8 +509,6 @@ export function Sidebar(): JSX.Element {
     const key = node.group.id
     const expanded = isExpanded(key)
     const indent = depth * TREE_INDENT
-    // 「未分组」是渲染层伪分组,不参与拖拽(它的"父目录"无数据语义)
-    const dndTarget = dndEnabled && key !== UNGROUPED_KEY
     const hint = dropHint?.id === key ? dropHint.position : null
     return (
       <div style={{ marginBottom: 4 }} key={key}>
@@ -535,20 +516,20 @@ export function Sidebar(): JSX.Element {
         <div
           className="app-group-head"
           onClick={() => toggleGroup(key)}
-          draggable={dndTarget}
+          draggable={dndEnabled}
           onDragStart={
-            dndTarget
+            dndEnabled
               ? handleDragStart({ id: key, type: 'group', parentId: node.group.parentId ?? null })
               : undefined
           }
-          onDragEnd={dndTarget ? handleDragEnd : undefined}
+          onDragEnd={dndEnabled ? handleDragEnd : undefined}
           onDragOver={
-            dndTarget
+            dndEnabled
               ? handleDragOver({ id: key, type: 'group', parentId: node.group.parentId ?? null })
               : undefined
           }
-          onDragLeave={dndTarget ? handleDragLeave(key) : undefined}
-          onDrop={dndTarget ? handleDrop({ id: key, type: 'group', parentId: node.group.parentId ?? null }) : undefined}
+          onDragLeave={dndEnabled ? handleDragLeave(key) : undefined}
+          onDrop={dndEnabled ? handleDrop({ id: key, type: 'group', parentId: node.group.parentId ?? null }) : undefined}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -585,9 +566,9 @@ export function Sidebar(): JSX.Element {
             {/* 计数 = 该目录下所有脚本总数(含子目录) */}
             <span style={countChipStyle}>{node.total}</span>
           </Space>
-          {/* 「未分组」只给 ＋(建未分组脚本);其余目录的操作按钮不触发展开/收起 */}
+          {/* 目录操作按钮不触发展开/收起 */}
           <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
-            {key === UNGROUPED_KEY ? renderAddScriptAction(null) : renderGroupActions(node.group)}
+            {renderGroupActions(node.group)}
           </span>
         </div>
         {expanded ? (
@@ -620,7 +601,7 @@ export function Sidebar(): JSX.Element {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      {/* 顶部只留「新建分组」:脚本一律通过目录行悬停 ＋ 创建(含未分组),入口归一 */}
+      {/* 顶部只留「新建分组」:脚本一律通过目录行悬停 ＋ 创建,入口归一 */}
       <Space size={8}>
         <Button
           icon={<FolderAddOutlined />}
@@ -630,7 +611,40 @@ export function Sidebar(): JSX.Element {
         </Button>
       </Space>
 
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      {/* 树容器同时是「拖出目录」的落点:把脚本拖到列表空白处 = 移到顶层(groupId 置空)。
+          行自身的 onDrop 会 stopPropagation,只有落在行间空白才会冒到这里 */}
+      <div
+        style={{ flex: 1, overflow: 'auto', minHeight: 0 }}
+        onDragOver={
+          dndEnabled && dragItem?.type === 'script' && dragItem.parentId !== null
+            ? (e) => e.preventDefault()
+            : undefined
+        }
+        onDrop={
+          dndEnabled && dragItem?.type === 'script' && dragItem.parentId !== null
+            ? (e) => {
+                e.preventDefault()
+                const drag = dragItem
+                setDragItem(null)
+                setDropHint(null)
+                void (async () => {
+                  try {
+                    const latest = useAppStore.getState()
+                    await window.api.scripts.update(drag.id, { groupId: null })
+                    const rootSiblings = latest.scripts
+                      .filter((s) => s.id !== drag.id && (s.groupId ?? null) === null)
+                      .sort((a, b) => a.order - b.order)
+                      .map((s) => s.id)
+                    await window.api.scripts.reorder([...rootSiblings, drag.id])
+                    await reload()
+                  } catch (err) {
+                    message.error(toUserMessage(err))
+                  }
+                })()
+              }
+            : undefined
+        }
+      >
         {nothingAtAll ? (
           <CenteredHint text="还没有脚本,先新建一个分组,再通过目录上的 ＋ 添加脚本" />
         ) : searching && visible.length === 0 ? (
@@ -639,8 +653,9 @@ export function Sidebar(): JSX.Element {
           <CenteredHint text="没有匹配的脚本" />
         ) : (
           <>
-            {/* 整棵目录树递归渲染;「未分组」是树里的虚拟顶层节点,语义与其他目录一致 */}
+            {/* 整棵目录树递归渲染;无分组脚本直接作为顶层行,排在所有顶层目录之后 */}
             {tree.map((node) => renderGroupNode(node, 0))}
+            {rootScripts.map((s) => renderScript(s, 0))}
           </>
         )}
       </div>

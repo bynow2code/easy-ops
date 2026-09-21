@@ -9,7 +9,7 @@ export type DropPosition = 'before' | 'after' | 'into'
 export interface DragItem {
   id: string
   type: DragType
-  /** 当前所在父目录;null = 顶层/未分组 */
+  /** 当前所在父目录;null = 顶层 */
   parentId: string | null
 }
 

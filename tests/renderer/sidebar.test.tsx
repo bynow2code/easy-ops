@@ -65,8 +65,18 @@ afterEach(() => {
 })
 
 describe('树形分组的折叠', () => {
+  /** 一个顶层分组「wms」+ 其下脚本「构建」,供折叠相关用例共用 */
+  function setupGrouped(): ApiMock {
+    const api = setupApi()
+    const g1: Group = { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    const grouped: Script = { ...script, groupId: 'g1' }
+    api.groups.list.mockResolvedValue([g1])
+    api.scripts.list.mockResolvedValue([grouped])
+    return api
+  }
+
   it('点击分组头收起脚本行,再点展开', async () => {
-    setupApi()
+    setupGrouped()
     render(
       <ThemeProvider mode="light" onModeChange={() => undefined}>
         <Sidebar />
@@ -74,15 +84,15 @@ describe('树形分组的折叠', () => {
     )
     await screen.findByText('构建')
 
-    fireEvent.click(screen.getByText('未分组'))
+    fireEvent.click(screen.getByText('wms'))
     expect(screen.queryByText('构建')).toBeNull()
 
-    fireEvent.click(screen.getByText('未分组'))
+    fireEvent.click(screen.getByText('wms'))
     await screen.findByText('构建')
   })
 
   it('折叠状态下搜索,分组强制展开让结果可见', async () => {
-    setupApi()
+    setupGrouped()
     render(
       <ThemeProvider mode="light" onModeChange={() => undefined}>
         <Sidebar />
@@ -90,7 +100,7 @@ describe('树形分组的折叠', () => {
     )
     await screen.findByText('构建')
 
-    fireEvent.click(screen.getByText('未分组'))
+    fireEvent.click(screen.getByText('wms'))
     expect(screen.queryByText('构建')).toBeNull()
 
     fireEvent.change(screen.getByPlaceholderText('搜索脚本'), { target: { value: '构建' } })
@@ -232,8 +242,8 @@ describe('悬停菜单', () => {
     )
   })
 
-  it('未分组行的悬停 + 号打开 groupId 为 null 的新建脚本表单,顶部不再有新建脚本按钮', async () => {
-    setupApi() // 一条未分组脚本
+  it('无分组脚本直接渲染为顶层行,不再有「未分组」伪目录', async () => {
+    setupApi() // 一条 groupId 为 null 的脚本
     render(
       <ThemeProvider mode="light" onModeChange={() => undefined}>
         <Sidebar />
@@ -241,15 +251,14 @@ describe('悬停菜单', () => {
     )
     await screen.findByText('构建')
 
-    // 顶部按钮已移除,「新建脚本」只能通过未分组行的悬停 ＋ 进入
+    // 顶部按钮已移除,「新建脚本」入口只存在于目录行悬停 ＋
     expect(screen.queryByText('新建脚本')).toBeNull()
     expect(screen.getByText('新建分组')).toBeTruthy()
 
-    fireEvent.click(screen.getByLabelText('新建未分组脚本'))
-
-    await waitFor(() =>
-      expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: null })
-    )
+    // 伪目录已移除:行直接在顶层,不再套「未分组」折叠头
+    expect(screen.queryByText('未分组')).toBeNull()
+    const row = screen.getByText('构建').closest('.app-row') as HTMLElement
+    expect(row.style.marginLeft).toBe('31px') // depth 0:0*39 + 31,与顶层分组名对齐
   })
 
   it('有分组但 0 个脚本时,树仍然渲染(分组行上的 ＋ 是唯一建脚本入口)', async () => {
