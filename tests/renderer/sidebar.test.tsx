@@ -231,4 +231,24 @@ describe('悬停菜单', () => {
       expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: 'g1' })
     )
   })
+
+  it('未分组行的悬停 + 号打开 groupId 为 null 的新建脚本表单,顶部不再有新建脚本按钮', async () => {
+    setupApi() // 一条未分组脚本
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    // 顶部按钮已移除,「新建脚本」只能通过未分组行的悬停 ＋ 进入
+    expect(screen.queryByText('新建脚本')).toBeNull()
+    expect(screen.getByText('新建分组')).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('在此目录新建脚本'))
+
+    await waitFor(() =>
+      expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: null })
+    )
+  })
 })

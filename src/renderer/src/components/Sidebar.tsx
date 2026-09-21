@@ -340,21 +340,26 @@ export function Sidebar(): JSX.Element {
     )
   }
 
+  /** ＋ 直达新建脚本;groupId 传 null 表示建到「未分组」 */
+  const renderAddScriptAction = (groupId: string | null): JSX.Element => (
+    <Tooltip title={groupId ? '在此目录新建脚本' : '新建未分组脚本'}>
+      <Button
+        type="text"
+        size="small"
+        icon={<PlusOutlined />}
+        aria-label="在此目录新建脚本"
+        onClick={(e) => {
+          e.stopPropagation()
+          openForm({ type: 'script-create', groupId })
+        }}
+      />
+    </Tooltip>
+  )
+
   /** 目录行操作区:＋ 直达新建脚本,其余操作收进 ⋯ 菜单(Postman 式) */
   const renderGroupActions = (group: Group): JSX.Element => (
     <Space size={0}>
-      <Tooltip title="在此目录新建脚本">
-        <Button
-          type="text"
-          size="small"
-          icon={<PlusOutlined />}
-          aria-label="在此目录新建脚本"
-          onClick={(e) => {
-            e.stopPropagation()
-            openForm({ type: 'script-create', groupId: group.id })
-          }}
-        />
-      </Tooltip>
+      {renderAddScriptAction(group.id)}
       <Dropdown
         trigger={['click']}
         menu={{
@@ -420,12 +425,10 @@ export function Sidebar(): JSX.Element {
             {/* 计数 = 该目录下所有脚本总数(含子目录) */}
             <span style={countChipStyle}>{node.total}</span>
           </Space>
-          {/* 「未分组」没有目录级操作;其余目录的操作按钮不触发展开/收起 */}
-          {key === UNGROUPED_KEY ? null : (
-            <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
-              {renderGroupActions(node.group)}
-            </span>
-          )}
+          {/* 「未分组」只给 ＋(建未分组脚本);其余目录的操作按钮不触发展开/收起 */}
+          <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
+            {key === UNGROUPED_KEY ? renderAddScriptAction(null) : renderGroupActions(node.group)}
+          </span>
         </div>
         {expanded ? (
           <div style={{ marginTop: 2 }}>
@@ -457,10 +460,8 @@ export function Sidebar(): JSX.Element {
         onChange={(e) => setSearch(e.target.value)}
       />
 
+      {/* 顶部只留「新建分组」:脚本一律通过目录行悬停 ＋ 创建(含未分组),入口归一 */}
       <Space size={8}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm({ type: 'script-create', groupId: null })}>
-          新建脚本
-        </Button>
         <Button
           icon={<FolderAddOutlined />}
           onClick={() => openForm({ type: 'group-create', parentId: null })}
@@ -471,7 +472,7 @@ export function Sidebar(): JSX.Element {
 
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {nothingAtAll ? (
-          <CenteredHint text="还没有脚本,点上方「新建脚本」开始" />
+          <CenteredHint text="还没有脚本,先新建一个分组,再通过目录上的 ＋ 添加脚本" />
         ) : visible.length === 0 ? (
           <CenteredHint text="没有匹配的脚本" />
         ) : (
