@@ -22,9 +22,12 @@ const api = {
   },
   groups: {
     list: (): Promise<Group[]> => ipcRenderer.invoke('group:list'),
-    create: (name: string): Promise<Group> => ipcRenderer.invoke('group:create', { name }),
+    create: (name: string, parentId?: string | null): Promise<Group> =>
+      ipcRenderer.invoke('group:create', { name, parentId: parentId ?? null }),
     update: (id: string, name: string): Promise<Group> => ipcRenderer.invoke('group:update', { id, name }),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('group:delete', { id }),
+    move: (id: string, parentId: string | null): Promise<void> =>
+      ipcRenderer.invoke('group:move', { id, parentId: parentId ?? null }),
     reorder: (ids: string[]): Promise<void> => ipcRenderer.invoke('group:reorder', { ids })
   },
   shell: {

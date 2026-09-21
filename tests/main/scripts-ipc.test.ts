@@ -15,7 +15,9 @@ vi.mock('electron', () => {
 
 import * as electronMock from 'electron'
 import { registerScriptIpc } from '../../src/main/ipc/scripts'
+import { registerGroupIpc } from '../../src/main/ipc/groups'
 import { createScriptsStore, type ScriptsData } from '../../src/main/store/scripts'
+import type { Group } from '../../src/shared/types'
 
 const mock = electronMock as unknown as { __handlers: Map<string, (...args: any[]) => any> }
 
@@ -32,6 +34,7 @@ beforeEach(() => {
     }
   })
   registerScriptIpc(store)
+  registerGroupIpc(store)
   invoke = (channel, payload) =>
     mock.__handlers.get(channel)!(null, payload) as unknown
 })
@@ -65,6 +68,21 @@ describe('script:duplicate', () => {
 
   it('复制不存在的脚本时抛错', () => {
     expect(() => invoke('script:duplicate', { id: 'nope' })).toThrowError(/不存在/)
+  })
+})
+
+describe('group:create 的 parentId 透传与 group:move', () => {
+  it('group:create 透传 parentId,group:move 校验后落盘', () => {
+    const parent = invoke('group:create', { name: '父' }) as Group
+    const child = invoke('group:create', { name: '子', parentId: parent.id }) as Group
+    expect(child.parentId).toBe(parent.id)
+
+    const g = invoke('group:create', { name: '移动我' }) as Group
+    invoke('group:move', { id: g.id, parentId: parent.id })
+    const listed = invoke('group:list') as Group[]
+    expect(listed.find((x: Group) => x.id === g.id)!.parentId).toBe(parent.id)
+
+    expect(() => invoke('group:move', { id: parent.id, parentId: g.id })).toThrowError(/子目录/)
   })
 })
 
