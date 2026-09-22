@@ -54,6 +54,8 @@ beforeEach(() => {
   useAppStore.setState({
     scripts: [],
     groups: [],
+    // search 也必须复位:搜索用例会把它留在上一个关键词上,污染后续用例的树
+    search: '',
     selectedScriptId: null,
     openTabs: [],
     form: { type: 'none' }
@@ -165,25 +167,26 @@ describe('嵌套树渲染', () => {
     await screen.findByText('wms')
     expect(screen.getByText('pda')).toBeTruthy()
     expect(screen.getByText('拣货')).toBeTruthy()
-    // 父目录计数 = 其下所有脚本总数(含子目录)
-    expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1)
 
     // 嵌套结构断言:pda 的分组头在 wms 的展开容器内(平铺实现下两者是兄弟,此断言失败)
     const wmsHead = screen.getByText('wms').closest('.app-group-head') as HTMLElement
     const pdaHead = screen.getByText('pda').closest('.app-group-head') as HTMLElement
     expect(wmsHead.parentElement!.contains(pdaHead)).toBe(true)
-    // 层级缩进(Postman 式):depth 1 的分组头 paddingLeft = 4 + 1 * 20
-    expect(pdaHead.style.paddingLeft).toBe('24px')
-    // 脚本内容紧贴对齐线右侧:pda(depth1) 的脚本以 depth2 渲染,marginLeft = 2*20+3,
-    // 对齐线在 2*20+9,内容起点 43+8=51,比子目录名(24+35=59)靠左 8px
+    // 层级缩进(截图实测:每级 8px):depth 1 的分组头 paddingLeft = 4 + 1 * 8
+    expect(pdaHead.style.paddingLeft).toBe('12px')
+    // 脚本名与同级目录名同列:depth 2 的名称列 = 39(箭头10+gap6+图标13+gap6) + 2 * 8
     const row = screen.getByText('拣货').closest('.app-row') as HTMLElement
-    expect(row.style.marginLeft).toBe('43px')
+    expect(row.style.paddingLeft).toBe('55px')
+    // 不再用 marginLeft 内缩:悬停胶囊从行首开始铺满,与目录行一致
+    expect(row.style.marginLeft).toBe('')
 
-    // 层级对齐线:每个展开目录一条贯通整列,与本层子项箭头中心对齐(4 + (depth+1)*20 + 5)
-    // wms(depth0) 的线在 29px,pda(depth1) 的线在 49px
+    // 层级对齐线:画在**本目录**箭头中心列(4 + depth*8 + 5),贯通整个子项块
+    // wms(depth0) 的线在 9px,pda(depth1) 的线在 17px
     const guides = [...document.querySelectorAll('.app-guide')] as HTMLElement[]
     expect(guides.length).toBe(2)
-    expect(guides.map((g) => g.style.left).sort()).toEqual(['29px', '49px'])
+    expect(guides.map((g) => g.style.left).sort()).toEqual(['17px', '9px'])
+    // 关键回归:线落在父项箭头中心(旧实现落在子项箭头中心,线会穿过子项箭头字形)
+    expect(parseFloat(guides[0].style.left)).toBe(parseFloat(wmsHead.style.paddingLeft) + 5)
   })
 })
 
@@ -329,14 +332,17 @@ describe('悬停菜单', () => {
     )
     await screen.findByText('构建')
 
-    // 顶部按钮已移除,「新建脚本」入口只存在于目录行悬停 ＋
+    // 顶部工具栏:搜索 + 两个图标按钮(带 aria-label,无文字);「新建脚本」文字只出现在空目录引导块里
     expect(screen.queryByText('新建脚本')).toBeNull()
-    expect(screen.getByText('新建分组')).toBeTruthy()
+    expect(screen.queryByText('新建分组')).toBeNull()
+    expect(screen.getByLabelText('新建脚本')).toBeTruthy()
+    expect(screen.getByLabelText('新建分组')).toBeTruthy()
 
     // 伪目录已移除:行直接在顶层,不再套「未分组」折叠头
     expect(screen.queryByText('未分组')).toBeNull()
     const row = screen.getByText('构建').closest('.app-row') as HTMLElement
-    expect(row.style.marginLeft).toBe('3px') // depth 0:0*20 + 3,内容紧贴根对齐线列(与 Postman 的 New Request 一致)
+    // depth 0 的脚本名与同级目录名同列:4(行内边距) + 10(箭头) + 6 + 13(图标) + 6
+    expect(row.style.paddingLeft).toBe('39px')
   })
 
   it('有分组但 0 个脚本时,树仍然渲染(分组行上的 ＋ 是唯一建脚本入口)', async () => {
@@ -355,7 +361,62 @@ describe('悬停菜单', () => {
     // 回归:这里若显示「没有匹配的脚本」占位,树不渲染,用户将没有任何建脚本入口
     expect(screen.queryByText('没有匹配的脚本')).toBeNull()
     expect(screen.getByLabelText('在此目录新建脚本')).toBeTruthy()
-    // 空目录不再渲染「暂无脚本」占位(Postman 式)
+    // 空目录展开后给一行提示,不再是一片空白
+    expect(screen.getByText('暂无脚本')).toBeTruthy()
+  })
+
+  it('「暂无脚本」提示只出现在真正空的那一层,折叠后不显示', async () => {
+    const api = setupApi()
+    api.scripts.list.mockResolvedValue([])
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' },
+      { id: 'g2', name: 'pda', order: 0, parentId: 'g1', createdAt: '' }
+    ])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    const pdaHead = (await screen.findByText('pda')).closest('.app-group-head') as HTMLElement
+
+    // wms 有子目录,所以只有 pda 那层提示
+    const hints = screen.getAllByText('暂无脚本')
+    expect(hints.length).toBe(1)
+    // 引导块挂在自己那一层的子项容器里(分组头之后紧跟的兄弟节点)
+    const block = hints[0].parentElement as HTMLElement
+    expect(pdaHead.nextElementSibling!.contains(block)).toBe(true)
+    // 左沿对齐子项的图标列:4 + 箭头10 + gap6 + 2 * 8(depth1 的子项 = depth2)
+    expect(block.style.paddingLeft).toBe('36px')
+
+    // 引导块带两个直达按钮,替代「目录行悬停 ＋」这条唯一入口的不可发现性
+    fireEvent.click(screen.getByText('新建脚本'))
+    await waitFor(() => expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: 'g2' }))
+
+    // 收起后该层不渲染任何内容,提示随之消失
+    fireEvent.click(screen.getByText('pda'))
     expect(screen.queryByText('暂无脚本')).toBeNull()
+    expect(screen.queryByText('新建脚本')).toBeNull()
+  })
+
+  it('把顶层脚本拖到空目录引导块 = 移入该目录,而不是被树容器接管成「移到顶层」', async () => {
+    const api = setupApi() // 一条 groupId 为 null 的顶层脚本「构建」
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    ])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+    const row = screen.getByText('构建').closest('.app-row') as HTMLElement
+    const block = screen.getByText('暂无脚本').parentElement as HTMLElement
+
+    const dt = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn(() => '') }
+    fireEvent.dragStart(row, { dataTransfer: dt })
+    fireEvent.dragOver(block, { dataTransfer: dt })
+    fireEvent.drop(block, { dataTransfer: dt })
+
+    await waitFor(() => expect(api.scripts.update).toHaveBeenCalledWith('s1', { groupId: 'g1' }))
   })
 })

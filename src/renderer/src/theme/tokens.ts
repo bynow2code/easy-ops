@@ -63,7 +63,9 @@ const LIGHT: AppTokenSet = {
   subtleBg: '#F7F8FA',
   hairline: 'rgba(16, 24, 40, 0.08)',
   hairlineStrong: 'rgba(16, 24, 40, 0.14)',
-  rowHover: 'rgba(16, 24, 40, 0.04)',
+  // 两档行底按 Postman 实测标定:悬停 delta≈12(0.05),选中/编辑中 delta≈19(0.08)
+  // —— 悬停永远比「正在编辑」浅一档,两者一眼可分
+  rowHover: 'rgba(16, 24, 40, 0.05)',
   rowSelectedBg: 'rgba(16, 24, 40, 0.08)',
   radius: 8,
   radiusLg: 10,
@@ -86,8 +88,9 @@ const DARK: AppTokenSet = {
   subtleBg: '#151517',
   hairline: 'rgba(255, 255, 255, 0.08)',
   hairlineStrong: 'rgba(255, 255, 255, 0.16)',
+  // 与浅色同一套两档关系;选中档 0.10 对齐 Postman 深色实测(#262626 底上 10% 白 ≈ #3B3B3B)
   rowHover: 'rgba(255, 255, 255, 0.05)',
-  rowSelectedBg: 'rgba(255, 255, 255, 0.12)',
+  rowSelectedBg: 'rgba(255, 255, 255, 0.10)',
   radius: 8,
   radiusLg: 10,
   shadowPanel: '0 1px 2px rgba(0, 0, 0, 0.4)'

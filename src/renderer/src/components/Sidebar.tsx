@@ -19,23 +19,37 @@ import { terminalActions } from '../store/useTerminalStore'
 import { toUserMessage } from '../utils/toUserMessage'
 import { computeDropAction, insertIntoSiblings, type DragItem, type DropPosition, type DropTarget } from '../utils/treeDnd'
 
-/** 搜索按「名称」匹配(Postman 式):内容不参与,避免出现名称对不上却命中结果的困惑 */
-function matches(script: Script, keyword: string): boolean {
-  if (!keyword) return true
-  return nameContains(script.name, keyword)
-}
-
+/**
+ * 搜索按「名称」匹配(Postman 式):内容不参与,避免出现名称对不上却命中结果的困惑。
+ * 现在只服务于 prune 里的脚本/目录名比对(整树喂的是全量 scripts)。
+ */
 function nameContains(name: string, keyword: string): boolean {
   return name.toLowerCase().includes(keyword.toLowerCase())
 }
 
 /**
- * 树形缩进(Postman 式):子项(脚本/子目录)比父目录名深一级(20px),
- * 层级对齐线画在子项折叠箭头的中心列,父名 → 对齐线 → 子内容逐层递进。
- * 39 = 分组头左 padding 4 + 箭头 10 + gap 6 + 文件夹图标 13 + gap 6,即 depth 0 的分组名文字起点。
- * 递归渲染时同一单位也作为每层目录的水平缩进,保证父子视觉层级一致。
+ * 树形几何(按 Postman 侧边栏截图实测换算:行高 24px,每级缩进 8px = 行高的 1/3)。
+ * 行内列自左向右:箭头槽 10px → gap 6 → 文件夹图标 13px → gap 6 → 名称(距行左 39px);
+ * 脚本行没有箭头/图标,靠同样的 paddingLeft 把名称对齐到**目录名同一列**。
+ * 递归渲染时 TREE_INDENT 也作为每层目录的水平缩进,保证父子视觉层级一致。
  */
-const TREE_INDENT = 20
+const TREE_INDENT = 8
+/** 行高:分组头与脚本行一致,行与行严丝合缝(截图里行距 = 行高) */
+const ROW_HEIGHT = 24
+/** 行左内边距(depth 0 的箭头起点),也用于目录头与脚本行对齐 */
+const ROW_PAD = 4
+const CARET_BOX = 10
+const ROW_GAP = 6
+const ICON_SIZE = 13
+/** 名称列起点 = 4 + 10 + 6 + 13 + 6,depth 0 的目录名与脚本名都从这里开始 */
+const NAME_LEFT = ROW_PAD + CARET_BOX + ROW_GAP + ICON_SIZE + ROW_GAP
+
+/**
+ * 某层折叠箭头的水平中心。
+ * 层级对齐线画在**父项**箭头中心列(= 子项箭头中心 - 一个缩进):截图里线正落在父箭头
+ * 正下方,子项箭头整体在它右侧;若画在子项箭头中心(旧实现),线会直接穿过子项箭头字形。
+ */
+const caretCenter = (depth: number): number => ROW_PAD + depth * TREE_INDENT + CARET_BOX / 2
 
 /** 目录行 ⋯ 菜单的固定项;具体行为(新建子目录/重命名/删除)在 onClick 里按 key 分发 */
 const groupMenuItems: MenuProps['items'] = [
@@ -51,15 +65,13 @@ const scriptMenuItems: MenuProps['items'] = [
   { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true }
 ]
 
-/** 递归树的节点:目录 + 子目录 + 直接挂的脚本 + 后序聚合的脚本总数 */
+/** 递归树的节点:目录 + 子目录 + 直接挂的脚本 */
 interface GroupNode {
   group: Group
   /** 直接子目录(按 order 排) */
   children: GroupNode[]
   /** 直接挂的脚本(按 order 排) */
   scripts: Script[]
-  /** 该目录下所有脚本总数(含子目录),用于计数 chip */
-  total: number
 }
 
 /**
@@ -93,17 +105,6 @@ function TreeCaret({ expanded }: { expanded: boolean }): JSX.Element {
   )
 }
 
-/** 分组名后面的计数 chip。中性色,把「强调」留给选中态 */
-const countChipStyle = {
-  fontSize: 11,
-  lineHeight: '16px',
-  padding: '0 5px',
-  borderRadius: 6,
-  background: 'var(--app-hairline)',
-  color: 'var(--color-text)',
-  opacity: 0.55
-} as const
-
 function CenteredHint({ text }: { text: string }): JSX.Element {
   return (
     <div
@@ -136,14 +137,13 @@ export function Sidebar(): JSX.Element {
     void reload()
   }, [reload])
 
-  const visible = useMemo(() => scripts.filter((s) => matches(s, search)), [scripts, search])
-
   const searching = search.trim().length > 0
 
   // 整树构建:目录按 order 排好后按 parentId 挂到父节点,父缺失的(含旧孤儿数据)落顶层;
   // 无分组脚本(groupId 缺失或指向已删目录)直接作为顶层行渲染,排在所有顶层目录之后。
-  // 搜索按 Postman 逻辑过滤:保留名称命中的脚本;目录「自身名称命中」则整棵子树保留,
-  // 否则仅当含命中后代时作为路径保留(只带命中项);没有命中内容的分支整个隐藏。
+  // 搜索按 Postman 逻辑剪枝(在 prune 里做,这里喂全量 scripts):
+  // 目录「自身名称命中」则整棵子树保留(含未命中的脚本/子目录);否则只保留命中脚本,
+  // 子目录仅当含命中内容时作为路径保留;没有命中内容的分支整个隐藏。
   const { tree, rootScripts, searchEmpty } = useMemo((): {
     tree: GroupNode[]
     rootScripts: Script[]
@@ -151,7 +151,7 @@ export function Sidebar(): JSX.Element {
   } => {
     const nodes = new Map<string, GroupNode>()
     for (const g of [...groups].sort((a, b) => a.order - b.order)) {
-      nodes.set(g.id, { group: g, children: [], scripts: [], total: 0 })
+      nodes.set(g.id, { group: g, children: [], scripts: [] })
     }
     const roots: GroupNode[] = []
     for (const node of nodes.values()) {
@@ -160,30 +160,26 @@ export function Sidebar(): JSX.Element {
       else roots.push(node)
     }
     const rootScripts: Script[] = []
-    for (const s of visible) {
+    for (const s of scripts) {
       const key = s.groupId && nodes.has(s.groupId) ? s.groupId : null
       if (key) nodes.get(key)!.scripts.push(s)
       else rootScripts.push(s)
     }
 
     if (!searching) {
-      // 非搜索态:全量展示。后序遍历,total = 直接脚本数 + 子目录 total 之和
-      const fill = (node: GroupNode): number => {
-        node.total = node.scripts.length + node.children.reduce((sum, c) => sum + fill(c), 0)
-        return node.total
-      }
-      for (const root of roots) fill(root)
+      // 非搜索态:全量展示,不剪枝
       return { tree: roots, rootScripts, searchEmpty: false }
     }
 
     const prune = (node: GroupNode): GroupNode | null => {
       const selfMatch = nameContains(node.group.name, search)
-      const children = node.children.map(prune).filter((c): c is GroupNode => c !== null)
+      // 目录自身命中 → 整棵子树原样保留(含未命中后代);否则子目录按命中递归剪枝
+      const children = selfMatch
+        ? node.children
+        : node.children.map(prune).filter((c): c is GroupNode => c !== null)
       const scripts = selfMatch ? node.scripts : node.scripts.filter((s) => nameContains(s.name, search))
       if (!selfMatch && children.length === 0 && scripts.length === 0) return null
-      const kept: GroupNode = { ...node, children, scripts, total: 0 }
-      kept.total = kept.scripts.length + kept.children.reduce((sum, c) => sum + c.total, 0)
-      return kept
+      return { ...node, children, scripts }
     }
     const prunedRoots = roots.map(prune).filter((n): n is GroupNode => n !== null)
     const prunedRootScripts = rootScripts.filter((s) => nameContains(s.name, search))
@@ -192,7 +188,7 @@ export function Sidebar(): JSX.Element {
       rootScripts: prunedRootScripts,
       searchEmpty: prunedRoots.length === 0 && prunedRootScripts.length === 0
     }
-  }, [groups, visible, searching, search])
+  }, [groups, scripts, searching, search])
 
   const isExpanded = (key: string): boolean => searching || !collapsedIds.has(key)
 
@@ -390,8 +386,8 @@ export function Sidebar(): JSX.Element {
 
   const handleDeleteGroup = (group: Group): void => {
     // 确认文案要交代删除后果:脚本/子目录都是上移而非删除,数字必须基于全量数据统计。
-    // 为什么不用 tree:tree 的 total 基于 visible(搜索过滤后的脚本)聚合,搜索态下
-    // 匹配 0 条时会把「全部上移」误报成「0 个脚本上移」,误导用户执行不可逆操作。
+    // 为什么不用 tree:搜索态下 tree 是剪枝后的视图,匹配 0 条时会把「全部上移」
+    // 误报成「0 个脚本上移」,误导用户执行不可逆操作。
     // 因此这里直接对 groups 递归收集该目录及全部后代 id,再从全量 scripts 里数命中数。
     const ids = new Set<string>([group.id])
     const collect = (parentId: string): void => {
@@ -448,11 +444,10 @@ export function Sidebar(): JSX.Element {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 8,
-          padding: '3px 8px',
-          // Postman 式:脚本内容紧贴对齐线右侧(线在 depth*20+9,内容起点 depth*20+11),
-          // 比子目录名(depth*20+39)再靠左 8px —— 目录行有箭头+图标占位,脚本行没有
-          marginLeft: depth * TREE_INDENT + 3,
-          marginBottom: 1,
+          height: ROW_HEIGHT,
+          padding: '0 8px',
+          // 名称与同级目录名同列(截图里叶子行的首列与父目录文件夹图标同列,名称与目录名同列)
+          paddingLeft: NAME_LEFT + depth * TREE_INDENT,
           borderRadius: 'var(--app-radius)',
           cursor: 'pointer',
           userSelect: 'none',
@@ -575,8 +570,8 @@ export function Sidebar(): JSX.Element {
     const indent = depth * TREE_INDENT
     const hint = dropHint?.id === key ? dropHint.position : null
     return (
-      // position relative:父目录的层级对齐线段以本块为定位基准,贯穿整块高度
-      <div style={{ marginBottom: 4, position: 'relative' }} key={key}>
+      // position relative:本层子项的层级对齐线段以本块为定位基准,贯穿整块高度
+      <div style={{ position: 'relative' }} key={key}>
         {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称 + 总数 chip,整行可点用于展开/收起;缩进随层级加深 */}
         <div
           className="app-group-head"
@@ -600,8 +595,9 @@ export function Sidebar(): JSX.Element {
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 6,
-            padding: '3px 4px',
-            paddingLeft: 4 + indent,
+            height: ROW_HEIGHT,
+            padding: '0 4px',
+            paddingLeft: ROW_PAD + indent,
             borderRadius: 'var(--app-radius)',
             cursor: 'pointer',
             userSelect: 'none',
@@ -618,15 +614,11 @@ export function Sidebar(): JSX.Element {
         >
           <Space size={6} align="center" style={{ minWidth: 0 }}>
             <TreeCaret expanded={expanded} />
-            <FolderOutlined style={{ fontSize: 13, opacity: 0.7 }} />
-            <Typography.Text
-              ellipsis
-              style={{ fontSize: 13, fontWeight: 400, opacity: 0.9, minWidth: 0 }}
-            >
+            <FolderOutlined style={{ fontSize: ICON_SIZE, opacity: 0.7 }} />
+            {/* 名称不降透明度:目录名与脚本名同色同级(Postman 里两者灰度一致) */}
+            <Typography.Text ellipsis style={{ fontSize: 13, fontWeight: 400, minWidth: 0 }}>
               {node.group.name}
             </Typography.Text>
-            {/* 计数 = 该目录下所有脚本总数(含子目录) */}
-            <span style={countChipStyle}>{node.total}</span>
           </Space>
           {/* 目录操作按钮不触发展开/收起 */}
           <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
@@ -634,14 +626,80 @@ export function Sidebar(): JSX.Element {
           </span>
         </div>
         {expanded ? (
-          // 空目录不渲染任何内容(Postman 式):「暂无脚本」占位会造成树形噪音
-          <div style={{ marginTop: 2, position: 'relative' }}>
-            {/* 层级对齐线:贯通整列,与本层子项的折叠箭头中心对齐;悬停列表时显现 */}
-            <span
-              className="app-guide"
-              style={{ left: 4 + (depth + 1) * TREE_INDENT + 5 }}
-              aria-hidden="true"
-            />
+          <div style={{ position: 'relative' }}>
+            {/* 层级对齐线:常显(不依赖悬停),画在本目录折叠箭头的中心列,贯通整个子项块 */}
+            <span className="app-guide" style={{ left: caretCenter(depth) }} aria-hidden="true" />
+            {node.children.length === 0 && node.scripts.length === 0 ? (
+              // 空目录引导块(参考 Postman 的「Folder is empty」):标题 + 说明 + 两个直达按钮。
+              // 标题与说明同为次级灰、只靠字重区分(截图实测两者同色 #A6A6A6,按钮文字才是亮色);
+              // 左沿对齐**子项的图标列**(= 本层图标列 + 一个缩进,截图实测 39 = 31 + 8)。
+              // 整块是「拖进来归组」的落点(文案承诺了):不接管的话事件冒到树容器,
+              // 会按「拖出目录 = 移到顶层」处理,与文案正好相反。
+              <div
+                className="app-empty"
+                onDragOver={
+                  dndEnabled
+                    ? (e) => {
+                        // 自拖自放:拖本目录经过自己的引导块,高亮了却落不下去,不误导
+                        // 防环无需 isDescendantGroup:块只在 children.length===0 时渲染,
+                        // 空目录没有后代,天然不成环 —— 若将来放宽渲染条件,这里要补后代检查
+                        if (!dragItem || dragItem.id === key) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        e.dataTransfer.dropEffect = 'move'
+                        // 落点固定为「移入本目录」:块内没有兄弟可排序,不需要上/下三分
+                        if (dropHint?.id !== key || dropHint.position !== 'into') {
+                          setDropHint({ id: key, position: 'into' })
+                        }
+                      }
+                    : undefined
+                }
+                onDragLeave={dndEnabled ? handleDragLeave(key) : undefined}
+                onDrop={
+                  dndEnabled
+                    ? handleDrop({ id: key, type: 'group', parentId: node.group.parentId ?? null })
+                    : undefined
+                }
+                style={{
+                  paddingTop: 10,
+                  paddingBottom: 12,
+                  paddingRight: 8,
+                  paddingLeft: ROW_PAD + CARET_BOX + ROW_GAP + (depth + 1) * TREE_INDENT,
+                  borderRadius: 'var(--app-radius)',
+                  // 拖到上方时整块高亮,与目录头用同一个落点状态
+                  background: hint === 'into' ? 'var(--app-row-selected-bg)' : undefined
+                }}
+              >
+                <Typography.Text
+                  type="secondary"
+                  style={{ display: 'block', fontSize: 13, fontWeight: 500, lineHeight: '20px' }}
+                >
+                  暂无脚本
+                </Typography.Text>
+                <Typography.Text
+                  type="secondary"
+                  style={{ display: 'block', fontSize: 13, lineHeight: '20px', maxWidth: 240, marginTop: 2 }}
+                >
+                  新建脚本或子目录,也可以把条目拖到这里归组。
+                </Typography.Text>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 7, marginTop: 12 }}>
+                  <Button
+                    size="small"
+                    icon={<PlusOutlined />}
+                    onClick={() => openForm({ type: 'script-create', groupId: node.group.id })}
+                  >
+                    新建脚本
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<FolderAddOutlined />}
+                    onClick={() => openForm({ type: 'group-create', parentId: node.group.id })}
+                  >
+                    新建子目录
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             {node.children.map((c) => renderGroupNode(c, depth + 1))}
             {node.scripts.map((s) => renderScript(s, depth + 1))}
           </div>
@@ -654,27 +712,42 @@ export function Sidebar(): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
-      <Input
-        allowClear
-        prefix={<SearchOutlined />}
-        placeholder="搜索脚本"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      {/* 顶部只留「新建分组」:脚本一律通过目录行悬停 ＋ 创建,入口归一 */}
-      <Space size={8}>
-        <Button
-          icon={<FolderAddOutlined />}
-          onClick={() => openForm({ type: 'group-create', parentId: null })}
-        >
-          新建分组
-        </Button>
-      </Space>
+      {/* 工具栏一行放下搜索与新建入口(Postman 式布局):输入框吃满剩余宽度,
+          右侧是 24px 图标按钮;「新建脚本」为主操作带一层软底,「新建分组」为纯图标。
+          顶层新建脚本 groupId 为 null,条目落在列表顶层(和拖出目录同一去向) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Input
+          allowClear
+          size="small"
+          prefix={<SearchOutlined />}
+          placeholder="搜索脚本"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <Tooltip title="新建脚本">
+          <Button
+            size="small"
+            type="text"
+            className="app-toolbar-primary"
+            icon={<PlusOutlined />}
+            aria-label="新建脚本"
+            onClick={() => openForm({ type: 'script-create', groupId: null })}
+          />
+        </Tooltip>
+        <Tooltip title="新建分组">
+          <Button
+            size="small"
+            type="text"
+            icon={<FolderAddOutlined />}
+            aria-label="新建分组"
+            onClick={() => openForm({ type: 'group-create', parentId: null })}
+          />
+        </Tooltip>
+      </div>
 
       {/* 树容器同时是「拖出目录」的落点:把脚本拖到列表空白处 = 移到顶层(groupId 置空)。
-          行自身的 onDrop 会 stopPropagation,只有落在行间空白才会冒到这里。
-          className 供 .app-tree:hover 触发层级对齐线显形 */}
+          行自身的 onDrop 会 stopPropagation,只有落在行间空白才会冒到这里。 */}
       <div
         className="app-tree"
         style={{ flex: 1, overflow: 'auto', minHeight: 0, position: 'relative' }}

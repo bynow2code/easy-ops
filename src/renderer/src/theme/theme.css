@@ -143,20 +143,45 @@ body {
   font-size: 13px;
 }
 
-/* ── 树形层级对齐线:悬停列表时显现,与各层折叠箭头中心对齐 ── */
+/* ── 树形层级对齐线:常显,颜色与行悬停/选中底色同值 ──────────
+ * 取「选中行底色」而不是发丝线色,是按 Postman 侧边栏实测的取值:
+ * 那里的竖线与选中行底是同一个值(深色下折合 10% 白),比发丝线更轻。
+ * 位置由 Sidebar 算出(父项折叠箭头的中心列),这里只管画。 */
 .app-guide {
   position: absolute;
-  top: 0;
+  /* 顶边向上探 14px = 折叠箭头字形上沿(箭头在 24px 行内垂直居中,墨迹上沿距行底 ≈14):
+     让线「挂在箭头下」,而不是与父行之间断开一截(Postman 实测线顶 = 箭头墨迹顶) */
+  top: -14px;
   bottom: 0;
   width: 1px;
-  background: var(--app-hairline-strong);
-  opacity: 0;
-  transition: opacity 0.12s ease;
+  background: var(--app-row-selected-bg);
   pointer-events: none;
+  /* 脚本行是 position:relative,悬停/选中胶囊会盖住同一层的线;抬一层让线压在行底之上,
+     否则选中某个脚本时,那一行的对齐线会断掉 */
+  z-index: 1;
 }
 
-.app-tree:hover .app-guide {
-  opacity: 1;
+/* ── 空目录引导块:整块是「把条目拖进来归组」的落点 ───────────
+ * 悬停给一层行底(与目录行/脚本行的悬停同一档),拖曳到上方时由内联样式
+ * 升级为选中档底色 —— 参考 Postman 空文件夹那块圆角底。 */
+.app-empty {
+  border-radius: var(--app-radius);
+  transition: background 0.12s ease;
+}
+
+.app-empty:hover {
+  background: var(--app-row-hover);
+}
+
+/* ── 工具栏主操作图标按钮(＋新建脚本)──────────────────────
+ * 常态就有一层「选中档」软底;inline style 会压过 antd 的 hover 态,
+ * 所以走类选择器,并把 hover 也钉在同一档(antd text hover 比这更浅,会倒挂) */
+.app-toolbar-primary.ant-btn {
+  background: var(--app-row-selected-bg);
+}
+
+.app-toolbar-primary.ant-btn:not(:disabled):hover {
+  background: var(--app-row-selected-bg);
 }
 
 /* ── 分组头:操作按钮同理,减少常态噪音 ─────────────────── */
