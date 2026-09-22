@@ -18,6 +18,7 @@ import { UnsavedDraftGuard } from './components/UnsavedDraftGuard'
 import { Splitter } from './components/Splitter'
 import { TerminalDock } from './components/TerminalDock'
 import { useAppStore } from './store/useAppStore'
+import { useUpdateDot } from './hooks/useUpdateDot'
 
 /** 牌子标记,与 build/icon.png 同源:青色提示符 + 白色光标块 */
 function BrandMark(): JSX.Element {
@@ -35,7 +36,13 @@ function BrandMark(): JSX.Element {
   )
 }
 
-function TopBar({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element {
+function TopBar({
+  onOpenSettings,
+  hasUpdate
+}: {
+  onOpenSettings: () => void
+  hasUpdate: boolean
+}): JSX.Element {
   const { mode, setMode } = useTheme()
   const [version, setVersion] = useState('')
 
@@ -89,23 +96,46 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element
             { label: '跟随系统', value: 'system' }
           ]}
         />
-        <Button
-          size="small"
-          className="app-topbar-btn"
-          icon={<SettingOutlined />}
-          onClick={onOpenSettings}
-        >
-          设置
-        </Button>
+        {/* 有待知晓的更新时在按钮右上角点亮小圆点;颜色取 BrandMark 同款品牌青,
+            不引入第三种彩色。wrapper 撑起定位锚点,圆点 pointer-events 关掉避免挡点击 */}
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <Button
+            size="small"
+            className="app-topbar-btn"
+            icon={<SettingOutlined />}
+            onClick={onOpenSettings}
+          >
+            设置
+          </Button>
+          {hasUpdate ? (
+            <span
+              role="img"
+              aria-label="有可用更新"
+              title="有可用更新"
+              style={{
+                position: 'absolute',
+                top: -3,
+                right: -3,
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: '#4FD1E0',
+                boxShadow: '0 0 0 2px var(--app-topbar-bg)',
+                pointerEvents: 'none'
+              }}
+            />
+          ) : null}
+        </span>
       </Space>
     </div>
   )
 }
 
-function ScriptDetail(): JSX.Element {
+export function ScriptDetail(): JSX.Element {
   const selectedScriptId = useAppStore((s) => s.selectedScriptId)
   const scripts = useAppStore((s) => s.scripts)
   const openTabs = useAppStore((s) => s.openTabs)
+  const contentDrafts = useAppStore((s) => s.contentDrafts)
   const selectScript = useAppStore((s) => s.selectScript)
   const closeTab = useAppStore((s) => s.closeTab)
 
@@ -150,6 +180,10 @@ function ScriptDetail(): JSX.Element {
       >
         {tabScripts.map((tab) => {
           const active = tab.id === selectedScriptId
+          // 未保存判定与 UnsavedDraftGuard 同口径:草稿存在且不等于已存内容
+          // (改了又改回原样的不算未保存,不亮点)
+          const draft = contentDrafts[tab.id]
+          const isDirty = draft !== undefined && draft !== tab.content
           return (
             <div
               key={tab.id}
@@ -178,24 +212,31 @@ function ScriptDetail(): JSX.Element {
               >
                 {tab.name}
               </Typography.Text>
-              <span
-                className="app-tab-close"
-                role="button"
-                tabIndex={0}
-                aria-label={`关闭页签 ${tab.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeTab(tab.id)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+              {/* 右侧槽位 16×16:未保存点与关闭符叠放同一位置 —— 平时有未保存改动显示橙点,
+                  悬停/键盘聚焦时点让位给关闭符(与 API 工具页签同款交互,tab 宽度不跳动) */}
+              <span className="app-tab-slot">
+                {isDirty ? (
+                  <span className="app-tab-dirty" role="img" aria-label={`未保存 ${tab.name}`} />
+                ) : null}
+                <span
+                  className="app-tab-close"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`关闭页签 ${tab.name}`}
+                  onClick={(e) => {
                     e.stopPropagation()
-                    e.preventDefault()
                     closeTab(tab.id)
-                  }
-                }}
-              >
-                <CloseOutlined />
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      closeTab(tab.id)
+                    }
+                  }}
+                >
+                  <CloseOutlined />
+                </span>
               </span>
             </div>
           )
@@ -317,6 +358,8 @@ function Workspace(): JSX.Element {
 export default function App(): JSX.Element {
   const [mode, setMode] = useState<ThemeMode>('system')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 设置按钮小圆点:有 available/downloaded 更新事件时点亮
+  const [hasUpdate, dismissUpdateDot] = useUpdateDot()
 
   useEffect(() => {
     window.api.settings.get().then((s) => setMode(s.theme))
@@ -325,6 +368,12 @@ export default function App(): JSX.Element {
   const handleModeChange = (next: ThemeMode): void => {
     setMode(next)
     void window.api.settings.update({ theme: next })
+  }
+
+  // 打开设置即视为「已知晓更新」:更新面板就在设置里,圆点的提醒使命完成
+  const handleOpenSettings = (): void => {
+    setSettingsOpen(true)
+    dismissUpdateDot()
   }
 
   return (
@@ -338,7 +387,7 @@ export default function App(): JSX.Element {
           background: 'var(--app-layout-bg)'
         }}
       >
-        <TopBar onOpenSettings={() => setSettingsOpen(true)} />
+        <TopBar onOpenSettings={handleOpenSettings} hasUpdate={hasUpdate} />
         <Workspace />
       </div>
       <GroupFormModal />

@@ -238,6 +238,38 @@ body {
   background: var(--app-row-hover);
 }
 
+/* 页签右侧槽位:未保存点与关闭符叠放在同一个 16×16 里,tab 宽度不因状态跳动 */
+.app-tab-slot {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+/* 未保存点:7px 橙点(与参考的 API 工具页签同款);pointer-events 关掉,
+   点击落回页签本身。悬停/键盘聚焦到页签时让位给关闭符(与关闭符出现条件对称) */
+.app-tab-dirty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.app-tab-dirty::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fa8c16;
+}
+
+.app-tab:hover .app-tab-dirty,
+.app-tab:focus-within .app-tab-dirty {
+  display: none;
+}
+
 /* ── 可拖动的分割条 ────────────────────────────────────── */
 /* 命中区 10px,中间只画一条 2px 的发丝线;悬停/拖动/聚焦时才点亮成主色 */
 .app-splitter {
