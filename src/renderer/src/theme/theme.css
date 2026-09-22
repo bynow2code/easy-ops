@@ -136,7 +136,10 @@ body {
 .app-topbar-segmented.ant-segmented {
   background: var(--app-topbar-control-bg);
   border: 1px solid var(--app-topbar-control-border);
-  padding: 1px;
+  /* 必须 0:antd 的这段 padding 本是给动画 thumb 留的悬浮轨道,而这里选中底色直接画在
+     item 上、并无 thumb —— 留着它会让选中块四周露出一圈更亮的容器底(实测 2px、差
+     19 灰阶),看起来就像「按钮和它的框没贴紧」。选中段要贴满内缘,与 macOS 原生一致 */
+  padding: 0;
   /* macOS 分段控件是胶囊形 */
   border-radius: 999px;
 }
