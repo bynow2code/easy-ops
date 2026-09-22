@@ -60,6 +60,18 @@ const accentTagStyle = {
   border: 'none'
 } as const
 
+/**
+ * 判断两次检测结果是否完全一致。不能直接 JSON.stringify 整个数组比:
+ * 那样对数组顺序与对象键序都敏感(前者在「合并自定义 shell」等来源下不保证稳定);
+ * 以 id 为稳定键排序后逐项比较,消除这两个隐式契约。
+ */
+function sameShells(a: ShellInfo[], b: ShellInfo[]): boolean {
+  if (a.length !== b.length) return false
+  const sortedA = [...a].sort((x, y) => x.id.localeCompare(y.id))
+  const sortedB = [...b].sort((x, y) => x.id.localeCompare(y.id))
+  return sortedA.every((s, i) => JSON.stringify(s) === JSON.stringify(sortedB[i]))
+}
+
 export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
   const { message, modal } = App.useApp()
   // 主题切换只在顶栏;这里保留 setMode 是因为导入配置后要把新的主题同步过来
@@ -71,6 +83,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [checkOnLaunch, setCheckOnLaunch] = useState(true)
   const [customPath, setCustomPath] = useState('')
   const [busy, setBusy] = useState(false)
+  const [detecting, setDetecting] = useState(false)
 
   const refreshShells = useCallback(async () => {
     const list = await window.api.shell.detect()
@@ -123,11 +136,20 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
+  // 重新检测:实测全程只要 ~96ms,「看起来没反应」的根因是完成后列表若没变化连 DOM
+  // 都不会动。loading 负责点击瞬间的状态可见,完成后只在「结果无变化」时补一条提示 ——
+  // 有变化时列表自己会多/少一行,比一条笼统的「检测到 N 个」更贴合用户意图
   const handleRefreshShells = async (): Promise<void> => {
+    setDetecting(true)
     try {
-      await refreshShells()
+      const list = await refreshShells()
+      if (sameShells(list, shells)) {
+        message.info('未发现新的 shell')
+      }
     } catch (err) {
       message.error(toUserMessage(err))
+    } finally {
+      setDetecting(false)
     }
   }
 
@@ -343,7 +365,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
         <Section
           title="Shell"
           extra={
-            <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => void handleRefreshShells()}>
+            <Button size="small" type="text" icon={<ReloadOutlined />} loading={detecting} onClick={() => void handleRefreshShells()}>
               重新检测
             </Button>
           }
