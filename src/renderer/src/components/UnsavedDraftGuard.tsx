@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { App as AntdApp } from 'antd'
 import { useAppStore } from '../store/useAppStore'
+import { toUserMessage } from '../utils/toUserMessage'
 
 /**
  * 关窗拦截:有未保存的内容草稿时,给一次「保存并退出 / 放弃更改」的机会。
@@ -51,7 +52,8 @@ export function UnsavedDraftGuard(): null {
             await useAppStore.getState().reload()
             window.close()
           } catch (err) {
-            message.error(`保存失败:${err instanceof Error ? err.message : String(err)}`)
+            // ipcMain.handle 的错误带 "Error invoking remote method" 包装前缀,必须过 toUserMessage
+            message.error(`保存失败:${toUserMessage(err)}`)
           }
         },
         onCancel: () => {

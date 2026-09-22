@@ -163,6 +163,9 @@ export function toLegacyMigration(input: unknown): LegacyMigrationResult {
   const groupIdByName = new Map<string, string>()
   const scripts: Script[] = []
   const now = new Date().toISOString()
+  // 文件内 id 去重:旧版数据没有任何唯一性保证,重复 id 落盘后 updateScript 只改第一条、
+  // deleteScript 会把同 id 记录一次全删掉、渲染层 key 冲突 —— 都比「名字重复」严重得多
+  const seenScriptIds = new Set<string>()
 
   input.forEach((record, index) => {
     if (!looksLikeLegacyRecord(record)) {
@@ -199,8 +202,13 @@ export function toLegacyMigration(input: unknown): LegacyMigrationResult {
     const order =
       typeof record.orderNum === 'number' && Number.isFinite(record.orderNum) ? record.orderNum : scripts.length
 
+    // id 透传旧版数据以便还原时间线;但撞上文件内已有的 id 时重新生成,唯一性是落盘底线
+    const rawId = typeof record.id === 'string' && record.id.length > 0 ? record.id : null
+    const id = rawId !== null && !seenScriptIds.has(rawId) ? rawId : genId('script')
+    seenScriptIds.add(id)
+
     scripts.push({
-      id: typeof record.id === 'string' && record.id.length > 0 ? record.id : genId('script'),
+      id,
       name: record.name as string,
       content: record.content as string,
       groupId,

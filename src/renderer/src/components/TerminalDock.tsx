@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { App, Badge, Button, Tag, Tooltip, Typography } from 'antd'
 import { CloseOutlined, CodeOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons'
 import { terminalActions, useTerminalStore } from '../store/useTerminalStore'
@@ -17,7 +17,6 @@ export function TerminalDock(): JSX.Element {
 
   const writers = useRef(new Map<string, (chunk: string) => void>())
   const buffers = useRef(new Map<string, string[]>())
-  const [, forceRender] = useState(0)
 
   const registerWriter = useCallback((runId: string, writer: (chunk: string) => void) => {
     writers.current.set(runId, writer)
@@ -48,10 +47,11 @@ export function TerminalDock(): JSX.Element {
       message.error(toUserMessage(err))
       return
     }
+    // 先从 store 移除会话,再清 writer/缓冲:两步之间到达的迟到 chunk
+    // 会被上方「会话不存在」检查直接丢弃,不会重建无主的 pending 缓冲
+    terminalActions.remove(runId)
     writers.current.delete(runId)
     buffers.current.delete(runId)
-    terminalActions.remove(runId)
-    forceRender((n) => n + 1)
   }
 
   const handleCloseAll = async (): Promise<void> => {
@@ -64,7 +64,6 @@ export function TerminalDock(): JSX.Element {
     writers.current.clear()
     buffers.current.clear()
     useTerminalStore.setState({ sessions: [], activeRunId: null, maximizedRunId: null })
-    forceRender((n) => n + 1)
   }
 
   if (sessions.length === 0) {

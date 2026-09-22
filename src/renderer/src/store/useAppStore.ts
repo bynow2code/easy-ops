@@ -38,6 +38,8 @@ interface AppState {
   setSearch: (value: string) => void
   setContentDraft: (scriptId: string, value: string) => void
   clearContentDraft: (scriptId: string) => void
+  /** 清空全部草稿:导入配置整体覆盖脚本后调用,旧草稿留着会被误当成「未保存改动」覆盖导入内容 */
+  clearAllContentDrafts: () => void
   requestContentFocus: (scriptId: string) => void
   clearContentFocus: () => void
 }
@@ -58,9 +60,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const [scripts, groups] = await Promise.all([window.api.scripts.list(), window.api.groups.list()])
       const { selectedScriptId: selected, openTabs, contentDrafts } = get()
-      // 页签先过滤掉已删除的脚本,选中失效时落到第一个剩余页签(与 closeTab 的落点语义一致)
+      // 页签先过滤掉已删除的脚本
       const remainingTabs = openTabs.filter((id) => scripts.some((s) => s.id === id))
       const selectedValid = selected && scripts.some((s) => s.id === selected)
+      // 选中失效时的落点与 closeTab 同语义:被移除页签的位置上,右邻优先、无则靠左邻
+      const removedIdx = openTabs.indexOf(selected ?? '')
+      const fallback = remainingTabs[Math.min(removedIdx, remainingTabs.length - 1)] ?? null
       // 被删脚本的草稿与页签一起作废,不留孤儿条目
       const nextDrafts: Record<string, string> = {}
       for (const [id, value] of Object.entries(contentDrafts)) {
@@ -70,7 +75,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         scripts,
         groups,
         loading: false,
-        selectedScriptId: selectedValid ? selected : (remainingTabs[0] ?? null),
+        selectedScriptId: selectedValid ? selected : fallback,
         openTabs: remainingTabs,
         contentDrafts: nextDrafts
       })
@@ -154,6 +159,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = { ...get().contentDrafts }
     delete next[scriptId]
     set({ contentDrafts: next })
+  },
+
+  clearAllContentDrafts() {
+    set({ contentDrafts: {} })
   },
 
   requestContentFocus(scriptId) {

@@ -48,7 +48,11 @@ function TopBar({
   const [version, setVersion] = useState('')
 
   useEffect(() => {
-    window.api.app.info().then((info) => setVersion(info.version))
+    // 失败只有控制台留痕:版本徽标拿不到就隐藏,不阻塞界面
+    window.api.app
+      .info()
+      .then((info) => setVersion(info.version))
+      .catch((err) => console.error('[App] 应用信息读取失败:', err))
   }, [])
 
   // 方案 B:macOS 的 titleBarStyle: 'hidden' 会自动叠系统红绿灯在左上角,
@@ -362,6 +366,9 @@ function Workspace(): JSX.Element {
   const [mainRatio, setMainRatio] = useState(DEFAULT_MAIN_SPLIT_RATIO)
   const [detailRatio, setDetailRatio] = useState(DEFAULT_DETAIL_SPLIT_RATIO)
   const [loaded, setLoaded] = useState(false)
+  // 已落盘的基线快照「main|detail」:与 Sidebar 折叠态的 lastWrittenRef 同款守卫,
+  // 避免 loaded 翻 true 触发 effect 时把从未被用户动过的比例幂等回写一次盘
+  const lastWrittenRef = useRef<string | null>(null)
 
   useEffect(() => {
     // 读失败按默认布局处理,不阻塞工作区渲染(与 Sidebar 折叠态读失败的降级策略一致)
@@ -370,10 +377,12 @@ function Workspace(): JSX.Element {
       .then((s) => {
         setMainRatio(s.mainSplitRatio)
         setDetailRatio(s.detailSplitRatio)
+        lastWrittenRef.current = `${s.mainSplitRatio}|${s.detailSplitRatio}`
         setLoaded(true)
       })
       .catch((err) => {
         console.error('[App] 设置读取失败,使用默认布局:', err)
+        lastWrittenRef.current = `${DEFAULT_MAIN_SPLIT_RATIO}|${DEFAULT_DETAIL_SPLIT_RATIO}`
         setLoaded(true)
       })
   }, [])
@@ -383,9 +392,14 @@ function Workspace(): JSX.Element {
   // 写失败静默降级:布局留在内存,下次拖动或重启自然重试(与折叠态写回同一策略,仅 console 留痕)
   useEffect(() => {
     if (!loaded) return
+    const snapshot = `${mainRatio}|${detailRatio}`
+    if (snapshot === lastWrittenRef.current) return
     const timer = setTimeout(() => {
-      void window.api.settings
+      window.api.settings
         .update({ mainSplitRatio: mainRatio, detailSplitRatio: detailRatio })
+        .then(() => {
+          lastWrittenRef.current = snapshot
+        })
         .catch((err) => {
           console.error('[App] 布局比例写盘失败:', err)
         })
@@ -468,7 +482,11 @@ export default function App(): JSX.Element {
   const [hasUpdate, dismissUpdateDot] = useUpdateDot()
 
   useEffect(() => {
-    window.api.settings.get().then((s) => setMode(s.theme))
+    // 失败只有控制台留痕:主题回落默认的 system
+    window.api.settings
+      .get()
+      .then((s) => setMode(s.theme))
+      .catch((err) => console.error('[App] 主题设置读取失败:', err))
   }, [])
 
   const handleModeChange = (next: ThemeMode): void => {

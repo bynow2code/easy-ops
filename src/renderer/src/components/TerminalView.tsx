@@ -35,7 +35,13 @@ export function TerminalView({
     term.loadAddon(fit)
     term.loadAddon(new WebLinksAddon())
     term.open(container)
-    fit.fit()
+    // 首次 fit 与下方 ResizeObserver 路径同防护:最大化期间新开的会话以 display:none 挂载,
+    // 容器尺寸为 0 时 fit 会抛错,渲染层没有 ErrorBoundary,炸了就是整树白屏
+    try {
+      fit.fit()
+    } catch {
+      // 尺寸为 0 时跳过;unhide 后 ResizeObserver 会自动重新 fit + resize
+    }
 
     termRef.current = term
     fitRef.current = fit

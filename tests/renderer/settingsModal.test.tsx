@@ -71,6 +71,60 @@ describe('设置弹窗', () => {
   })
 })
 
+describe('导入配置后的草稿清理', () => {
+  function renderModal(): void {
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <App>
+          <SettingsModal open onClose={() => undefined} />
+        </App>
+      </ThemeProvider>
+    )
+  }
+
+  function mockScriptApis(): void {
+    const api = (window as unknown as { api: Record<string, Record<string, ReturnType<typeof vi.fn>>> }).api
+    api.scripts = { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn(), reorder: vi.fn() }
+    api.groups = { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), remove: vi.fn(), move: vi.fn(), reorder: vi.fn() }
+  }
+
+  it('导入成功后清空全部内容草稿:旧草稿留着会被误判为未保存改动,保存时覆盖导入内容', async () => {
+    mockScriptApis()
+    const api = (window as unknown as { api: { config: { import: ReturnType<typeof vi.fn> } } }).api
+    api.config.import.mockResolvedValue({ canceled: false, stats: { imported: 2, groups: 1, warnings: [] } })
+    useAppStore.setState({ contentDrafts: { s1: 'echo old-draft', s2: 'echo other-draft' } })
+
+    renderModal()
+
+    // antd Button(icon + 文本)的可访问名不稳定,直接按文本定位、依赖冒泡点按钮
+    fireEvent.click(screen.getByText('导入配置'))
+    fireEvent.click(await screen.findByText('覆盖导入'))
+
+    await waitFor(() => expect(useAppStore.getState().contentDrafts).toEqual({}))
+  })
+
+  it('用户取消导入(文件对话框 canceled)时草稿原样保留', async () => {
+    const api = (window as unknown as { api: Record<string, Record<string, ReturnType<typeof vi.fn>>> }).api
+    // 列表里保留 s1:模拟真实场景(取消导入数据未变),reload 的 prune 不会清掉幸存脚本的草稿
+    api.scripts = {
+      list: vi.fn(async () => [{ id: 's1', name: 'a', content: 'echo stored', groupId: null, shellId: null, order: 0, createdAt: '', updatedAt: '' }]),
+      create: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn(), reorder: vi.fn()
+    }
+    api.groups = { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), remove: vi.fn(), move: vi.fn(), reorder: vi.fn() }
+    api.config.import.mockResolvedValue({ canceled: true })
+    useAppStore.setState({ contentDrafts: { s1: 'echo old-draft' } })
+
+    renderModal()
+
+    fireEvent.click(screen.getByText('导入配置'))
+    fireEvent.click(await screen.findByText('覆盖导入'))
+
+    await waitFor(() => expect(api.config.import).toHaveBeenCalled())
+    // 草稿必须还在:取消导入没有覆盖任何数据,清草稿反而丢用户输入
+    expect(useAppStore.getState().contentDrafts).toEqual({ s1: 'echo old-draft' })
+  })
+})
+
 describe('Shell 重新检测', () => {
   // 两个用例共同覆盖的判定:重新检测完成后,「结果无变化」必须有一条可见的提示,
   // 否则(实测检测只要 ~96ms、列表连 DOM diff 都不会动)按钮点起来就像坏的

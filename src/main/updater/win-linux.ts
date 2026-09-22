@@ -34,10 +34,18 @@ export function createWinLinuxUpdater(emit: (event: UpdateEvent) => void): Updat
         emit({ status: 'error', message: '开发模式不支持检查更新' })
         return
       }
-      await autoUpdater.checkForUpdates()
+      try {
+        await autoUpdater.checkForUpdates()
+      } catch {
+        // 失败已经过 error 事件通道推送;这里再抛会让 IPC handler 也报一次,渲染层弹两个一样的错误
+      }
     },
     async download() {
-      await autoUpdater.downloadUpdate()
+      try {
+        await autoUpdater.downloadUpdate()
+      } catch {
+        // 同 check:错误走事件通道,避免 IPC 层二次抛出
+      }
     },
     install() {
       autoUpdater.quitAndInstall()

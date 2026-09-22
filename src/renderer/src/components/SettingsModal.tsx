@@ -77,6 +77,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   // 主题切换只在顶栏;这里保留 setMode 是因为导入配置后要把新的主题同步过来
   const { setMode } = useTheme()
   const reloadScripts = useAppStore((s) => s.reload)
+  const clearAllContentDrafts = useAppStore((s) => s.clearAllContentDrafts)
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [shells, setShells] = useState<ShellInfo[]>([])
   const [selectedShellId, setSelectedShellId] = useState<string | null>(null)
@@ -280,8 +281,13 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     })
     if (!applied) return
     try {
-      const result = await window.api.config.import('v2')
-      if (!result.canceled) reportStats(result.stats)
+      const result = await window.api.config.import()
+      if (!result.canceled) {
+        // 导入按脚本 id 整体覆盖,旧草稿若不清掉会被误判为「未保存改动」,
+        // Cmd+S 或退出保存就会拿导入前的内容静默覆盖刚导入的脚本 —— 必须整体作废
+        clearAllContentDrafts()
+        reportStats(result.stats)
+      }
     } catch (err) {
       message.error(toUserMessage(err))
     } finally {
@@ -304,8 +310,12 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     })
     if (!applied) return
     try {
-      const result = await window.api.config.import('legacy')
-      if (!result.canceled) reportStats(result.stats)
+      const result = await window.api.config.import()
+      if (!result.canceled) {
+        // 与 v2 导入同口径:整体覆盖后旧草稿一律作废
+        clearAllContentDrafts()
+        reportStats(result.stats)
+      }
     } catch (err) {
       message.error(toUserMessage(err))
     } finally {

@@ -214,4 +214,24 @@ describe('reload 与页签/选中/草稿的一致性', () => {
     expect(state.openTabs).toEqual([])
     expect(state.selectedScriptId).toBeNull()
   })
+
+  it('选中的页签在中间被删时,落点与 closeTab 同语义:同位置的右邻', async () => {
+    // 磁盘上只剩 a、c;b 已删且是当前选中,remaining = [a, c],b 原位置 1 → 落 c
+    mockApi([makeScript('a'), makeScript('c')])
+    useAppStore.setState({ selectedScriptId: 'b', openTabs: ['a', 'b', 'c'] })
+
+    await useAppStore.getState().reload()
+
+    expect(useAppStore.getState().selectedScriptId).toBe('c')
+  })
+})
+
+describe('clearAllContentDrafts', () => {
+  it('清空全部草稿(导入配置整体覆盖脚本后调用,防旧草稿覆盖导入内容)', () => {
+    useAppStore.setState({ contentDrafts: { a: 'echo a', b: 'echo b' } })
+
+    useAppStore.getState().clearAllContentDrafts()
+
+    expect(useAppStore.getState().contentDrafts).toEqual({})
+  })
 })

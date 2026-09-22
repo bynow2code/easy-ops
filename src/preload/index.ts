@@ -81,10 +81,10 @@ const api = {
   },
   config: {
     export: (): Promise<{ canceled: boolean; path?: string }> => ipcRenderer.invoke('config:export'),
-    import: (mode: 'v2' | 'legacy'): Promise<{
+    import: (): Promise<{
       canceled: boolean
       stats?: { imported: number; groups: number; warnings: string[] }
-    }> => ipcRenderer.invoke('config:import', { mode })
+    }> => ipcRenderer.invoke('config:import')
   }
 }
 

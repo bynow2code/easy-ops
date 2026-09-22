@@ -62,7 +62,9 @@ export function buildReplaceScript(input: {
     `mv ${q(staged)} ${q(appPath)} || fail '替换新版本失败'`,
     `xattr -dr com.apple.quarantine ${q(appPath)} 2>/dev/null || true`,
     `open ${q(appPath)}`,
-    `rm -rf ${q(workDir)}`
+    `rm -rf ${q(workDir)}`,
+    // 清理脚本自身,不留 easyops-replace-*.sh 残留在 /tmp($0 是脚本自己的路径)
+    `rm -f "$0"`
   ].join('\n')
 }
 

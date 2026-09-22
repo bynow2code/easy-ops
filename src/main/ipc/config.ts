@@ -51,7 +51,8 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
     return { canceled: false, path: filePath }
   })
 
-  ipcMain.handle('config:import', async (_event, payload: { mode: 'v2' | 'legacy' }) => {
+  // 格式(v2/legacy)由 parseImport 对文件内容嗅探,不需要调用方声明 mode
+  ipcMain.handle('config:import', async () => {
     const filePath = await pickOpenPath(deps.getWindow())
     if (!filePath) return { canceled: true }
 

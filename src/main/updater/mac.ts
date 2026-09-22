@@ -14,6 +14,11 @@ import type { UpdateEvent } from './win-linux'
 const REPO = 'bynow2code/easy-ops'
 const WORK_DIR_PREFIX = 'easyops-update-'
 
+/** API / 清单这类轻量请求的整体超时;GitHub 连接挂起时不能让检查更新永远悬着 */
+const FETCH_TIMEOUT_MS = 15_000
+/** zip 下载的空闲超时:整体时限在慢速网络下不可行,只惩罚「长时间一个字节都不来」的死连接 */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000
+
 /** mac 自研替换脚本的失败现场落点;注册 updater IPC 时消费并转为可回放的 error 事件 */
 export const MAC_UPDATE_ERROR_FILE = path.join(os.tmpdir(), 'easyops-update-error.log')
 
@@ -51,7 +56,8 @@ interface Release {
 
 async function fetchLatestRelease(): Promise<Release> {
   const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'EasyOps' }
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'EasyOps' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
   })
   if (!response.ok) throw new Error(`获取最新版本失败:HTTP ${response.status}`)
   const json = (await response.json()) as {
@@ -102,6 +108,9 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
   let pendingRelease: Release | null = null
   let extractedAppPath: string | null = null
   let workDir: string | null = null
+  // 下载重入保护:并发进入时后者开头的 cleanupStaleWorkDirs 会删掉前者正在写的 workDir,
+  // 首个下载流随即报错,用户看到莫名的 error。IPC 层直接拦下第二次调用
+  let downloading = false
 
   const openReleasePage = async (url: string): Promise<void> => {
     await shell.openExternal(url)
@@ -137,6 +146,10 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
         emit({ status: 'error', message: '请先检查更新' })
         return
       }
+      if (downloading) {
+        emit({ status: 'error', message: '正在下载更新,请稍候' })
+        return
+      }
 
       const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
       // 严格匹配当前架构:fallback 到任意架构的 zip 会装上跑不起来的包(还是替换掉旧版之后),
@@ -158,13 +171,18 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
         return
       }
 
-      await cleanupStaleWorkDirs()
-      workDir = await fs.mkdtemp(path.join(os.tmpdir(), WORK_DIR_PREFIX))
-      const zipPath = path.join(workDir, asset.name)
-      const manifestPath = path.join(workDir, 'latest-mac.yml')
-
+      // 到这里为止没有 await,不存在重入窗口;标志在第一个 await 前置位,finally 必然释放
+      downloading = true
       try {
-        const manifestResponse = await fetch(manifestAsset.browser_download_url, { redirect: 'follow' })
+        await cleanupStaleWorkDirs()
+        workDir = await fs.mkdtemp(path.join(os.tmpdir(), WORK_DIR_PREFIX))
+        const zipPath = path.join(workDir, asset.name)
+        const manifestPath = path.join(workDir, 'latest-mac.yml')
+
+        const manifestResponse = await fetch(manifestAsset.browser_download_url, {
+          redirect: 'follow',
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+        })
         if (!manifestResponse.ok || !manifestResponse.body) {
           throw new Error(`下载更新清单失败:HTTP ${manifestResponse.status}`)
         }
@@ -173,7 +191,22 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
         const expectedSha512 = checksums[asset.name]
         if (!expectedSha512) throw new Error(`更新清单中没有 ${asset.name} 的校验值`)
 
-        const response = await fetch(asset.browser_download_url, { redirect: 'follow' })
+        // 空闲超时:每收到一个 chunk 就重置计时器,超过阈值一个字节都不来视为死连接,
+        // abort 整条流。不能套整体超时 —— 100MB 的包在慢速网络下要下好几分钟
+        const idleController = new AbortController()
+        let idleTimer: ReturnType<typeof setTimeout> | null = null
+        const armIdleTimer = (): void => {
+          if (idleTimer) clearTimeout(idleTimer)
+          idleTimer = setTimeout(
+            () => idleController.abort(new Error(`下载超时:超过 ${DOWNLOAD_IDLE_TIMEOUT_MS / 1000} 秒没有收到数据`)),
+            DOWNLOAD_IDLE_TIMEOUT_MS
+          )
+        }
+
+        const response = await fetch(asset.browser_download_url, {
+          redirect: 'follow',
+          signal: idleController.signal
+        })
         if (!response.ok || !response.body) throw new Error(`下载失败:HTTP ${response.status}`)
 
         // 更新包有 100MB 以上,慢速网络下要下几分钟 —— 进度必须边下边报。
@@ -187,17 +220,23 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
         )
         let receivedBytes = 0
 
-        await pipeline(
-          Readable.fromWeb(response.body as never),
-          new Transform({
-            transform(chunk: Buffer, _encoding, callback) {
-              receivedBytes += chunk.length
-              reportProgress(receivedBytes, totalBytes)
-              callback(null, chunk)
-            }
-          }),
-          createWriteStream(zipPath)
-        )
+        try {
+          armIdleTimer()
+          await pipeline(
+            Readable.fromWeb(response.body as never),
+            new Transform({
+              transform(chunk: Buffer, _encoding, callback) {
+                armIdleTimer()
+                receivedBytes += chunk.length
+                reportProgress(receivedBytes, totalBytes)
+                callback(null, chunk)
+              }
+            }),
+            createWriteStream(zipPath)
+          )
+        } finally {
+          if (idleTimer) clearTimeout(idleTimer)
+        }
 
         const actualSha512 = await sha512File(zipPath)
         if (actualSha512 !== expectedSha512) {
@@ -222,6 +261,8 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
       } catch (err) {
         emit({ status: 'error', message: err instanceof Error ? err.message : String(err) })
         await openReleasePage(pendingRelease.htmlUrl)
+      } finally {
+        downloading = false
       }
     },
 

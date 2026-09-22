@@ -371,10 +371,14 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
     },
 
     replaceAll(next) {
-      return commit({
-        scripts: Array.isArray(next.scripts) ? next.scripts : [],
-        groups: normalizeGroups(Array.isArray(next.groups) ? next.groups : [])
-      })
+      const groups = normalizeGroups(Array.isArray(next.groups) ? next.groups : [])
+      // 导入数据只校验了各自结构,不保证脚本引用的分组还在文件里;
+      // 悬空引用落盘后渲染层虽有兜底,但数据不干净且语义含糊 —— 统一归位为「未分组」
+      const groupIds = new Set(groups.map((g) => g.id))
+      const scripts = (Array.isArray(next.scripts) ? next.scripts : []).map((s) =>
+        s.groupId && !groupIds.has(s.groupId) ? { ...s, groupId: null } : s
+      )
+      return commit({ scripts, groups })
     }
   }
 }

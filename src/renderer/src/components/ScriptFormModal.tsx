@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { App, Form, Input, Modal, Select, Typography } from 'antd'
 import { SCRIPT_NAME_MAX, validateScriptName } from '../../../shared/types'
 import type { ShellInfo } from '../../../shared/types'
@@ -31,6 +31,9 @@ export function ScriptFormModal(): JSX.Element {
   const [shells, setShells] = useState<ShellInfo[]>([])
   const [globalShellId, setGlobalShellId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // 重入保护用 ref 而不是只看 state:setSubmitting 触发的重渲染之前连点 OK
+  // 读到的仍是旧值,并发跑两次 create 就会重复建脚本
+  const submittingRef = useRef(false)
 
   const isCreate = form.type === 'script-create'
   const isEdit = form.type === 'script-edit'
@@ -68,8 +71,10 @@ export function ScriptFormModal(): JSX.Element {
   const nameCheck = validateScriptName(name)
 
   const handleOk = async (): Promise<void> => {
+    if (submittingRef.current) return
     if (!nameCheck.ok) return void message.error(nameCheck.message)
 
+    submittingRef.current = true
     setSubmitting(true)
     try {
       if (isCreate) {
@@ -86,6 +91,7 @@ export function ScriptFormModal(): JSX.Element {
     } catch (err) {
       message.error(toUserMessage(err))
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }

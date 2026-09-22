@@ -222,6 +222,21 @@ describe('toLegacyMigration', () => {
     expect(result.scripts[0].id.length).toBeGreaterThan(0)
   })
 
+  it('文件内重复的 id 只保留第一条,后续重新生成,避免落盘后静默分叉', () => {
+    const result = toLegacyMigration([
+      { id: 'dup-1', name: 'a', content: 'x' },
+      { id: 'dup-1', name: 'b', content: 'y' },
+      { id: 'ok', name: 'c', content: 'z' }
+    ])
+    expect(result.scripts[0].id).toBe('dup-1')
+    // 第二条同 id 记录被重新生成,与第一条和第三条都不同
+    expect(result.scripts[1].id).not.toBe('dup-1')
+    expect(result.scripts[1].id).not.toBe('ok')
+    expect(result.scripts[2].id).toBe('ok')
+    const ids = new Set(result.scripts.map((s) => s.id))
+    expect(ids.size).toBe(result.scripts.length)
+  })
+
   it('非数组输入返回空结果', () => {
     const result = toLegacyMigration(null)
     expect(result.scripts).toHaveLength(0)

@@ -1,5 +1,5 @@
 import type { ShellInfo } from '../../shared/types'
-import { buildSourceCommand } from './runner'
+import { buildSourceCommand, buildWslSourceCommand, isWslShell } from './runner'
 import { nextTitle } from './title'
 import type { PtyLike, PtySpawnFn } from './types'
 
@@ -140,7 +140,11 @@ export function createPtyManager(deps: PtyManagerDeps): PtyManager {
       // spawn 后立刻写的话,输入会先被 tty 原样回显成一行裸命令,
       // 等 shell 就绪打印提示符后 readline 又把缓冲的输入显示一遍 —— 终端里同一命令出现两次。
       // 提示符出现后才注入,回显自然落在提示符后面,只显示一次。
-      let pendingCommand = buildSourceCommand(tempFile)
+      // WSL 入口(wsl.exe)拿到的 tempFile 是 Windows 路径,Linux bash 里不存在,
+      // 必须经 wslpath 换算成 /mnt/... 再 source;其余 shell 维持原样注入
+      let pendingCommand = isWslShell(input.shell.path)
+        ? buildWslSourceCommand(tempFile)
+        : buildSourceCommand(tempFile)
       let outputTail = ''
       const flushCommand = (): void => {
         if (session.commandTimer) {

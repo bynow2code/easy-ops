@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { SCRIPT_NAME_MAX, validateScriptName, type Group } from '../../src/shared/types'
+import { SCRIPT_NAME_MAX, validateScriptName, type Group, type Script } from '../../src/shared/types'
 import { createScriptsStore, type ScriptsData } from '../../src/main/store/scripts'
 
 let data: ScriptsData
@@ -231,6 +231,22 @@ describe('分组', () => {
       const groups = store.listGroups()
       expect(groups).toHaveLength(2)
       expect(groups.filter((g) => g.parentId === null)).toHaveLength(1)
+    })
+
+    it('replaceAll 清洗脚本里悬空的 groupId 引用为未分组', () => {
+      // 导入文件只校验各自结构,不保证脚本引用的分组存在;落盘前统一归位
+      store.replaceAll({
+        scripts: [
+          { id: 's1', name: '有分组', content: '', groupId: 'real', shellId: null, order: 0, createdAt: '', updatedAt: '' },
+          { id: 's2', name: '悬空', content: '', groupId: 'ghost', shellId: null, order: 1, createdAt: '', updatedAt: '' },
+          { id: 's3', name: '未分组', content: '', groupId: null, shellId: null, order: 2, createdAt: '', updatedAt: '' }
+        ] as Script[],
+        groups: [{ id: 'real', name: 'R', order: 0, parentId: null, createdAt: '2026-01-01T00:00:00.000Z' }]
+      })
+      const scripts = store.listScripts()
+      expect(scripts.find((s) => s.id === 's1')!.groupId).toBe('real')
+      expect(scripts.find((s) => s.id === 's2')!.groupId).toBeNull()
+      expect(scripts.find((s) => s.id === 's3')!.groupId).toBeNull()
     })
 
     it('子目录挂在被清洗为顶层的目录下时仍保持父子关系', () => {

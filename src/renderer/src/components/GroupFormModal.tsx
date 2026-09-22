@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { App, Form, Input, Modal } from 'antd'
 import { GROUP_NAME_MAX, validateGroupName } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
@@ -11,6 +11,9 @@ export function GroupFormModal(): JSX.Element | null {
   const reload = useAppStore((s) => s.reload)
   const [name, setName] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // 重入保护用 ref 而不是只看 state:setSubmitting 触发的重渲染之前,连按回车/连点 OK
+  // 读到的仍是旧值,并发跑两次 create 就会重复建分组
+  const submittingRef = useRef(false)
 
   const isCreate = form.type === 'group-create'
   const isEdit = form.type === 'group-edit'
@@ -24,11 +27,13 @@ export function GroupFormModal(): JSX.Element | null {
   if (!open) return null
 
   const handleOk = async (): Promise<void> => {
+    if (submittingRef.current) return
     const check = validateGroupName(name)
     if (!check.ok) {
       message.error(check.message)
       return
     }
+    submittingRef.current = true
     setSubmitting(true)
     try {
       // 创建时透传 parentId(null = 顶层分组),子目录建到指定父级下
@@ -40,6 +45,7 @@ export function GroupFormModal(): JSX.Element | null {
     } catch (err) {
       message.error(toUserMessage(err))
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
