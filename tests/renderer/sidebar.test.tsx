@@ -485,10 +485,9 @@ describe('悬停菜单', () => {
     )
     await screen.findByText('构建')
 
-    // 顶部工具栏:搜索 + 两个图标按钮(带 aria-label,无文字);「新建脚本」文字只出现在空目录引导块里
+    // 顶部工具栏:搜索 + 新建分组图标;新建脚本已收敛到层级内(目录 ＋ / 空目录引导块)
     expect(screen.queryByText('新建脚本')).toBeNull()
-    expect(screen.queryByText('新建分组')).toBeNull()
-    expect(screen.getByLabelText('新建脚本')).toBeTruthy()
+    expect(screen.queryByLabelText('新建脚本')).toBeNull()
     expect(screen.getByLabelText('新建分组')).toBeTruthy()
 
     // 伪目录已移除:行直接在顶层,不再套「未分组」折叠头

@@ -819,9 +819,10 @@ export function Sidebar(): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
-      {/* 工具栏一行放下搜索与新建入口(Postman 式布局):输入框吃满剩余宽度,
-          右侧是 24px 图标按钮;「新建脚本」为主操作带一层软底,「新建分组」为纯图标。
-          顶层新建脚本 groupId 为 null,条目落在列表顶层(和拖出目录同一去向) */}
+      {/* 工具栏一行放下搜索与新建分组入口(Postman 式布局):输入框吃满剩余宽度,
+          右侧是 24px 纯图标按钮。顶层不提供「新建脚本」——脚本新建只发生在层级内
+          (目录行 ＋ / 空目录引导块),保证每条新建路径都有明确的归组落点;
+          顶层脚本只能由「拖出目录」产生 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <Input
           allowClear
@@ -832,16 +833,6 @@ export function Sidebar(): JSX.Element {
           onChange={(e) => setSearch(e.target.value)}
           style={{ flex: 1, minWidth: 0 }}
         />
-        <Tooltip title="新建脚本">
-          <Button
-            size="small"
-            type="text"
-            className="app-toolbar-primary"
-            icon={<PlusOutlined />}
-            aria-label="新建脚本"
-            onClick={() => openForm({ type: 'script-create', groupId: null })}
-          />
-        </Tooltip>
         <Tooltip title="新建分组">
           <Button
             size="small"
@@ -894,7 +885,7 @@ export function Sidebar(): JSX.Element {
         }
       >
         {nothingAtAll ? (
-          <CenteredHint text="还没有脚本,用上方的新建按钮创建第一个脚本或分组" />
+          <CenteredHint text="还没有脚本,先用上方的新建分组建目录,再通过目录上的 ＋ 添加脚本" />
         ) : searchEmpty ? (
           // 搜索无任何命中(脚本名与目录名都没匹配):整树替换成提示;
           // 非搜索态即使 0 脚本也要渲染树,否则「有分组但还没有脚本」的新用户会看不到任何 ＋ 入口

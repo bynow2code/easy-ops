@@ -176,17 +176,6 @@ body {
   background: var(--app-row-hover);
 }
 
-/* ── 工具栏主操作图标按钮(＋新建脚本)──────────────────────
- * 常态就有一层「选中档」软底;inline style 会压过 antd 的 hover 态,
- * 所以走类选择器,并把 hover 也钉在同一档(antd text hover 比这更浅,会倒挂) */
-.app-toolbar-primary.ant-btn {
-  background: var(--app-row-selected-bg);
-}
-
-.app-toolbar-primary.ant-btn:not(:disabled):hover {
-  background: var(--app-row-selected-bg);
-}
-
 /* ── 分组头:操作按钮同理,减少常态噪音 ─────────────────── */
 .app-group-actions {
   opacity: 0;
