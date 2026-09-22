@@ -109,6 +109,82 @@ describe('树形分组的折叠', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索脚本'), { target: { value: '构建' } })
     await screen.findByText('构建')
   })
+
+  it('选中深层脚本时,祖先目录仍可手动折叠(自动展开不得撤销用户的折叠操作)', async () => {
+    // 复现「点击 OMS 无法合并」:OMS > 后端 > OMS-后端-DEV(选中态,对应截图)
+    const api = setupApi()
+    api.groups.list.mockResolvedValue([
+      { id: 'g-oms', name: 'OMS', order: 0, parentId: null, createdAt: '' },
+      { id: 'g-be', name: '后端', order: 0, parentId: 'g-oms', createdAt: '' }
+    ])
+    api.scripts.list.mockResolvedValue([
+      { ...script, id: 's-dev', name: 'OMS-后端-DEV', groupId: 'g-be' }
+    ])
+    useAppStore.setState({ selectedScriptId: 's-dev', openTabs: ['s-dev'] })
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('OMS-后端-DEV')
+
+    fireEvent.click(screen.getByText('OMS'))
+    // 修复前:折叠动作本身触发自动展开 effect,把 OMS 立即顶回展开态,脚本行依然可见
+    expect(screen.queryByText('OMS-后端-DEV')).toBeNull()
+
+    fireEvent.click(screen.getByText('OMS'))
+    await screen.findByText('OMS-后端-DEV')
+  })
+
+  it('搜索选中深层脚本后清空搜索,祖先链保持展开,选中行可见', async () => {
+    const api = setupApi()
+    api.groups.list.mockResolvedValue([
+      { id: 'g-oms', name: 'OMS', order: 0, parentId: null, createdAt: '' },
+      { id: 'g-be', name: '后端', order: 0, parentId: 'g-oms', createdAt: '' }
+    ])
+    api.scripts.list.mockResolvedValue([
+      { ...script, id: 's-dev', name: 'OMS-后端-DEV', groupId: 'g-be' }
+    ])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('OMS-后端-DEV')
+
+    // 先折叠 OMS,模拟「搜索前用户收起过顶层」
+    fireEvent.click(screen.getByText('OMS'))
+    expect(screen.queryByText('OMS-后端-DEV')).toBeNull()
+
+    // 搜索命中深层脚本(强制展开),点击选中
+    fireEvent.change(screen.getByPlaceholderText('搜索脚本'), { target: { value: 'DEV' } })
+    await screen.findByText('OMS-后端-DEV')
+    fireEvent.click(screen.getByText('OMS-后端-DEV'))
+
+    // 清空搜索 → 祖先链保持展开,选中行可见(只展开直接父目录时 OMS 仍折叠,行看不见)
+    fireEvent.change(screen.getByPlaceholderText('搜索脚本'), { target: { value: '' } })
+    await screen.findByText('OMS-后端-DEV')
+  })
+
+  it('在折叠的目录上点 ＋ 新建脚本,目录自动展开让落点可见', async () => {
+    setupGrouped()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    fireEvent.click(screen.getByText('wms'))
+    expect(screen.queryByText('构建')).toBeNull()
+
+    // ＋ 的事件驱动展开:与「新建子目录」菜单行为一致,不依赖自动展开 effect
+    fireEvent.click(screen.getByLabelText('在此目录新建脚本'))
+    await waitFor(() =>
+      expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: 'g1' })
+    )
+    await screen.findByText('构建')
+  })
 })
 
 describe('脚本行更多操作菜单', () => {

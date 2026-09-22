@@ -216,15 +216,18 @@ export function Sidebar(): JSX.Element {
     })
   }
 
-  // 新建/复制脚本落在某个分组里时,若该分组是折叠的,自动展开让新行可见。
-  // 必须沿祖先链逐级展开:只展开直接父目录时,更上层的祖先仍折叠,
-  // 「搜索选中深层脚本 → 清空搜索」后选中行依然看不见
+  // 新建/复制/搜索选中脚本落在某个分组里时,沿祖先链自动展开让该行可见。
+  // 只在「可见性需求变化」的时刻触发:选中变化(selectedGroupId)与搜索态切换(searching)。
+  // collapsedIds 绝不能进依赖:否则用户折叠选中脚本祖先的操作会被这里立即撤销,
+  // 表现为「点分组头无法收起」(回归:截图反馈的「点击 OMS 无法合并」即此因)。
+  // groups 经 getState 取最新值且不进依赖,避免无关 reload 触发重跑。
   const selectedScript = scripts.find((s) => s.id === selectedScriptId)
   const selectedGroupId = selectedScript?.groupId ?? null
   useEffect(() => {
     if (!selectedGroupId) return
+    const { groups: latestGroups } = useAppStore.getState()
     // store 层已保证 parentId 无环,seen 只是防御性兜底,避免坏数据拖死渲染进程
-    const parentOf = new Map(groups.map((g) => [g.id, g.parentId ?? null]))
+    const parentOf = new Map(latestGroups.map((g) => [g.id, g.parentId ?? null]))
     const chain: string[] = []
     const seen = new Set<string>()
     let cur: string | null = selectedGroupId
@@ -233,14 +236,15 @@ export function Sidebar(): JSX.Element {
       chain.push(cur)
       cur = parentOf.get(cur) ?? null
     }
-    const hidden = chain.filter((id) => collapsedIds.has(id))
-    if (hidden.length === 0) return
     setCollapsedIds((prev) => {
+      const hidden = chain.filter((id) => prev.has(id))
+      // 无事可做时返回原引用,避免一次多余的全树渲染
+      if (hidden.length === 0) return prev
       const next = new Set(prev)
       for (const id of hidden) next.delete(id)
       return next
     })
-  }, [selectedGroupId, collapsedIds, groups])
+  }, [selectedGroupId, searching])
 
   // ── 拖拽排序 / 跨目录移动 ────────────────────────────────
   // 搜索态禁用拖拽:过滤后的树只含匹配子集,基于它算兄弟顺序会打乱未展示条目的排序
@@ -552,7 +556,7 @@ export function Sidebar(): JSX.Element {
     )
   }
 
-  /** ＋ 直达新建脚本,建到当前目录 */
+  /** ＋ 直达新建脚本,建到当前目录;目录若被折叠则顺手展开(事件驱动,与「新建子目录」菜单一致) */
   const renderAddScriptAction = (groupId: string): JSX.Element => (
     <Tooltip title="在此目录新建脚本">
       <Button
@@ -562,6 +566,12 @@ export function Sidebar(): JSX.Element {
         aria-label="在此目录新建脚本"
         onClick={(e) => {
           e.stopPropagation()
+          setCollapsedIds((prev) => {
+            if (!prev.has(groupId)) return prev
+            const next = new Set(prev)
+            next.delete(groupId)
+            return next
+          })
           openForm({ type: 'script-create', groupId })
         }}
       />
