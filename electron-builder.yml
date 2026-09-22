@@ -61,6 +61,17 @@ nsis:
 linux:
   icon: build/icon.png
   category: Development
+  # 让安装进系统的 .desktop 跟随 package.json 的 desktopName。缺了它,Electron 会把
+  # app_id / WM_CLASS 取成 desktopName(缺省 <name>.desktop → "easyops"),而这里生成的
+  # StartupWMClass 会 fallback 到 productName("EasyOps")—— 大小写不一致,桌面环境就
+  # 关联不上运行中的窗口,任务栏读不到 .desktop 里的 Icon=。
+  syncDesktopName: true
+  # AppImage 是便携格式:它的 AppRun 只设 PATH/LD_LIBRARY_PATH 然后 exec,不会把
+  # .desktop 与图标装进系统,于是任务栏只能回落到窗口自身的 _NET_WM_ICON。
+  # 把这份图标打进 resources/,主进程在 Linux 打包后据此 setIcon。
+  extraResources:
+    - from: build/icon.png
+      to: icon.png
   # deb 包必须有 maintainer,而 package.json 的 author 没有邮箱。
   # 用 GitHub noreply 身份而非个人邮箱:此字段会写进 deb/rpm 控制信息并随公开 Release 分发
   maintainer: EasyOps <bynow2code@users.noreply.github.com>

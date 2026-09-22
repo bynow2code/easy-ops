@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import * as os from 'node:os'
-import { join } from 'node:path'
+import { resolveAppIcon } from './appIcon'
 import { registerIpc } from './ipc'
 import { registerPtyIpc } from './ipc/pty'
 import { probePty } from './pty/probe'
@@ -32,17 +32,23 @@ if (!gotLock) {
   })
 
   /**
-   * dev 下补上应用图标:窗口与 Dock 否则会显示 Electron 默认图标。
-   * 打包后不需要 —— 各平台各用自己那份资源(mac .icns / win .ico / linux .desktop)。
+   * 补上应用图标。判断依据集中在 resolveAppIcon(见 src/main/appIcon.ts):
+   * 打包后的 Linux **也要设** —— AppImage 不会把 .desktop 装进系统,桌面环境拿不到
+   * .desktop 的 Icon=,只能回落到窗口自己的 _NET_WM_ICON,不设就是 Electron 默认图标。
    */
   const applyAppIcon = (win: BrowserWindow): void => {
-    if (app.isPackaged) return
-    const iconPath = join(app.getAppPath(), 'build', 'icon.png')
+    const plan = resolveAppIcon({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath()
+    })
+    if (!plan.apply) return
     if (process.platform === 'darwin') {
       // macOS 的 Dock 图标只能这样设;BrowserWindow.icon 在 macOS 无效
-      if (app.dock) app.dock.setIcon(iconPath)
+      if (app.dock) app.dock.setIcon(plan.path)
     } else {
-      win.setIcon(iconPath)
+      win.setIcon(plan.path)
     }
   }
 
