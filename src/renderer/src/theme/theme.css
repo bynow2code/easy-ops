@@ -53,6 +53,33 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── 全局滚动条:细条、无箭头、无轨道底 ────────────────────
+   Windows 默认滚动条是宽轨道 + 两端箭头按钮;一旦自定义 ::-webkit-scrollbar,
+   Chromium 改走自绘,默认箭头不再出现。滑块颜色用文字色调透明度,深浅主题自动适配。
+   页签条有自己的隐藏规则(.app-tabstrip),不受这里影响 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text) 28%, transparent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+
 /* ── 顶栏:两种模式下都保持深色 ───────────────────────────── */
 .app-topbar {
   background: var(--app-topbar-bg);
@@ -201,7 +228,12 @@ body {
   border-radius: var(--app-radius);
   cursor: pointer;
   transition: background 0.12s ease;
-  flex: 0 0 auto;
+  /* 不可生长但可压缩:页签超出条宽时按比例压文字(配合条上 overflow hidden,不出滚动条)。
+     压缩下限 146px = 文字区保底 104px(13px 字号约 8 个中文字)+ 固定开销 42;
+     外面套 min(…, max-content) 让下限只在「需要压」时生效 —— 自然宽不足 146 的短页签
+     不会被撑宽,关闭符右侧不留空档(Chromium 117+ 支持内在尺寸进 min(),Electron 37 满足) */
+  flex: 0 1 auto;
+  min-width: min(146px, max-content);
   max-width: 220px;
 }
 
@@ -268,6 +300,34 @@ body {
 .app-tab:hover .app-tab-dirty,
 .app-tab:focus-within .app-tab-dirty {
   display: none;
+}
+
+/* 页签条滚动:滚动条隐藏(滚轮横向滚是唯一滚动方式),两端渐隐提示还有更多页签 */
+.app-tabstrip {
+  scrollbar-width: none;
+}
+
+.app-tabstrip::-webkit-scrollbar {
+  display: none;
+}
+
+.app-tabstrip-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.app-tabstrip-fade-left {
+  left: 0;
+  background: linear-gradient(to right, var(--color-bg-container), transparent);
+}
+
+.app-tabstrip-fade-right {
+  right: 0;
+  background: linear-gradient(to left, var(--color-bg-container), transparent);
 }
 
 /* ── 可拖动的分割条 ────────────────────────────────────── */

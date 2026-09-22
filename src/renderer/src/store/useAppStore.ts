@@ -30,6 +30,9 @@ interface AppState {
   reload: () => Promise<void>
   selectScript: (id: string | null) => void
   closeTab: (id: string) => void
+  closeAllTabs: () => void
+  closeTabsToLeft: (id: string) => void
+  closeTabsToRight: (id: string) => void
   openForm: (form: NameFormState) => void
   closeForm: () => void
   setSearch: (value: string) => void
@@ -97,6 +100,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 关掉的是当前页签时,优先落到同位置的下一个,没有则靠右邻,再没有就清空选中
       selectedScriptId:
         selectedScriptId === id ? (next[Math.min(idx, next.length - 1)] ?? null) : selectedScriptId
+    })
+  },
+
+  // 右键菜单「关闭全部」:连选中一起清,详情区回空态
+  closeAllTabs() {
+    set({ openTabs: [], selectedScriptId: null })
+  },
+
+  // 右键菜单「关闭左边」:保留被点页签及其右侧;选中被波及时落到被点页签
+  closeTabsToLeft(id) {
+    const { openTabs, selectedScriptId } = get()
+    const idx = openTabs.indexOf(id)
+    if (idx <= 0) return
+    const next = openTabs.slice(idx)
+    set({
+      openTabs: next,
+      selectedScriptId:
+        selectedScriptId !== null && next.includes(selectedScriptId) ? selectedScriptId : id
+    })
+  },
+
+  // 右键菜单「关闭右边」:保留被点页签及其左侧,选中落点同款
+  closeTabsToRight(id) {
+    const { openTabs, selectedScriptId } = get()
+    const idx = openTabs.indexOf(id)
+    if (idx === -1 || idx >= openTabs.length - 1) return
+    const next = openTabs.slice(0, idx + 1)
+    set({
+      openTabs: next,
+      selectedScriptId:
+        selectedScriptId !== null && next.includes(selectedScriptId) ? selectedScriptId : id
     })
   },
 

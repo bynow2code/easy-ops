@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { Button, Segmented, Space, Typography } from 'antd'
+import { Button, Dropdown, Segmented, Space, Typography } from 'antd'
 import { CloseOutlined, FileTextOutlined, SettingOutlined } from '@ant-design/icons'
 import {
   DEFAULT_DETAIL_SPLIT_RATIO,
@@ -19,6 +19,7 @@ import { Splitter } from './components/Splitter'
 import { TerminalDock } from './components/TerminalDock'
 import { useAppStore } from './store/useAppStore'
 import { useUpdateDot } from './hooks/useUpdateDot'
+import { useTabStripScroll } from './hooks/useTabStripScroll'
 
 /** 牌子标记,与 build/icon.png 同源:青色提示符 + 白色光标块 */
 function BrandMark(): JSX.Element {
@@ -138,12 +139,18 @@ export function ScriptDetail(): JSX.Element {
   const contentDrafts = useAppStore((s) => s.contentDrafts)
   const selectScript = useAppStore((s) => s.selectScript)
   const closeTab = useAppStore((s) => s.closeTab)
+  const closeAllTabs = useAppStore((s) => s.closeAllTabs)
+  const closeTabsToLeft = useAppStore((s) => s.closeTabsToLeft)
+  const closeTabsToRight = useAppStore((s) => s.closeTabsToRight)
 
   const selected = scripts.find((s) => s.id === selectedScriptId) ?? null
   // 页签按打开顺序展示;脚本可能刚被删,reload 会收掉对应页签,这里再兜一层底
   const tabScripts = openTabs
     .map((id) => scripts.find((s) => s.id === id))
     .filter((s): s is Script => Boolean(s))
+
+  // 页签条滚动态:滚轮横滚接管 + 两端渐隐的显隐(依赖页签数量变化校正)
+  const { stripRef, canScrollLeft, canScrollRight } = useTabStripScroll(tabScripts.length)
 
   if (tabScripts.length === 0 || !selected) {
     return (
@@ -167,46 +174,77 @@ export function ScriptDetail(): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 8 }}>
-      {/* 页签条:打开过的脚本排成一排,当前选中的是灰胶囊(参考 API 工具的编辑区页签) */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          overflowX: 'auto',
-          flex: '0 0 auto',
-          minHeight: 0
-        }}
-      >
+      {/* 页签条:打开过的脚本排成一排,当前选中的是灰胶囊(参考 API 工具的编辑区页签)。
+          外层 wrap 提供渐隐定位锚点;条本身横向可滚(滚轮接管),滚动条隐藏,
+          两端渐隐提示对应方向还有页签 */}
+      <div style={{ position: 'relative', flex: '0 0 auto', minWidth: 0 }}>
+        <div
+          ref={stripRef}
+          className="app-tabstrip"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            // 页签可压缩(flex-shrink,下限 min(146px, max-content) 见 .app-tab,文字区保底约 8 个中文字,
+            // 且短页签不被下限撑宽);压到下限仍放不下时才真正溢出 —— 滚轮横滚,滚动条隐藏
+            overflowX: 'auto',
+            minHeight: 0
+          }}
+        >
         {tabScripts.map((tab) => {
           const active = tab.id === selectedScriptId
           // 未保存判定与 UnsavedDraftGuard 同口径:草稿存在且不等于已存内容
           // (改了又改回原样的不算未保存,不亮点)
           const draft = contentDrafts[tab.id]
           const isDirty = draft !== undefined && draft !== tab.content
+          // 右键菜单的置灰条件:该侧已经没有页签(用 openTabs 取位,页签数与它一致)
+          const tabIndex = openTabs.indexOf(tab.id)
           return (
-            <div
+            <Dropdown
               key={tab.id}
-              className={active ? 'app-tab app-tab-active' : 'app-tab'}
-              onClick={() => selectScript(tab.id)}
-              // 键盘可达:纯 onClick 的 div 键盘用户无法切换页签
-              role="tab"
-              aria-selected={active}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  selectScript(tab.id)
-                }
+              trigger={['contextMenu']}
+              menu={{
+                items: [
+                  { key: 'close-all', label: '关闭全部', onClick: () => closeAllTabs() },
+                  {
+                    key: 'close-left',
+                    label: '关闭左边',
+                    disabled: tabIndex === 0,
+                    onClick: () => closeTabsToLeft(tab.id)
+                  },
+                  {
+                    key: 'close-right',
+                    label: '关闭右边',
+                    disabled: tabIndex === openTabs.length - 1,
+                    onClick: () => closeTabsToRight(tab.id)
+                  }
+                ]
               }}
-              title={tab.name}
             >
+              <div
+                className={active ? 'app-tab app-tab-active' : 'app-tab'}
+                onClick={() => selectScript(tab.id)}
+                // 键盘可达:纯 onClick 的 div 键盘用户无法切换页签
+                role="tab"
+                aria-selected={active}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    selectScript(tab.id)
+                  }
+                }}
+                title={tab.name}
+              >
               <Typography.Text
                 ellipsis
                 style={{
                   fontSize: 13,
                   fontWeight: active ? 500 : 400,
                   color: active ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                  // minWidth 0 让文字区可随页签压缩(否则 flex 项最小宽度取内容宽),
+                  // maxWidth 170 仍限制页签少时的单签宽度
+                  minWidth: 0,
                   maxWidth: 170
                 }}
               >
@@ -238,9 +276,14 @@ export function ScriptDetail(): JSX.Element {
                   <CloseOutlined />
                 </span>
               </span>
-            </div>
+              </div>
+            </Dropdown>
           )
         })}
+        </div>
+        {/* 两端渐隐:对应方向还有页签时显示,滚到头自动消失(纯提示,不挡点击) */}
+        {canScrollLeft ? <div className="app-tabstrip-fade app-tabstrip-fade-left" /> : null}
+        {canScrollRight ? <div className="app-tabstrip-fade app-tabstrip-fade-right" /> : null}
       </div>
       {/* key 用脚本 id:切换脚本时重挂面板,CodeMirror 的 undo 历史等内部状态不跨脚本串 */}
       <div style={{ flex: 1, minHeight: 0 }}>

@@ -102,6 +102,68 @@ describe('closeTab 的落点逻辑', () => {
   })
 })
 
+describe('批量关闭页签(页签右键菜单)', () => {
+  const state = (openTabs: string[], selectedScriptId: string | null): void => {
+    useAppStore.setState({ openTabs, selectedScriptId })
+  }
+
+  it('closeAllTabs 清空全部页签与选中', () => {
+    state(['a', 'b', 'c'], 'b')
+    useAppStore.getState().closeAllTabs()
+    expect(useAppStore.getState().openTabs).toEqual([])
+    expect(useAppStore.getState().selectedScriptId).toBeNull()
+  })
+
+  it('closeTabsToLeft 保留被点页签及其右侧,被波及的选中落到被点页签', () => {
+    state(['a', 'b', 'c', 'd'], 'a')
+    useAppStore.getState().closeTabsToLeft('c')
+    expect(useAppStore.getState().openTabs).toEqual(['c', 'd'])
+    expect(useAppStore.getState().selectedScriptId).toBe('c')
+  })
+
+  it('closeTabsToLeft 时选中在保留区则不变', () => {
+    state(['a', 'b', 'c'], 'c')
+    useAppStore.getState().closeTabsToLeft('b')
+    expect(useAppStore.getState().openTabs).toEqual(['b', 'c'])
+    expect(useAppStore.getState().selectedScriptId).toBe('c')
+  })
+
+  it('closeTabsToLeft 对第一个页签是空操作(对应菜单置灰的前提)', () => {
+    state(['a', 'b'], 'a')
+    useAppStore.getState().closeTabsToLeft('a')
+    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
+    expect(useAppStore.getState().selectedScriptId).toBe('a')
+  })
+
+  it('closeTabsToRight 保留被点页签及其左侧,被波及的选中落到被点页签', () => {
+    state(['a', 'b', 'c', 'd'], 'd')
+    useAppStore.getState().closeTabsToRight('b')
+    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
+    expect(useAppStore.getState().selectedScriptId).toBe('b')
+  })
+
+  it('closeTabsToRight 时选中在保留区则不变', () => {
+    state(['a', 'b', 'c'], 'a')
+    useAppStore.getState().closeTabsToRight('b')
+    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
+    expect(useAppStore.getState().selectedScriptId).toBe('a')
+  })
+
+  it('closeTabsToRight 对最后一个页签是空操作(对应菜单置灰的前提)', () => {
+    state(['a', 'b'], 'b')
+    useAppStore.getState().closeTabsToRight('b')
+    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
+    expect(useAppStore.getState().selectedScriptId).toBe('b')
+  })
+
+  it('批量关闭对不存在的页签是幂等空操作', () => {
+    state(['a', 'b'], 'a')
+    useAppStore.getState().closeTabsToLeft('nope')
+    useAppStore.getState().closeTabsToRight('nope')
+    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
+  })
+})
+
 describe('reload 与页签/选中/草稿的一致性', () => {
   it('脚本被删后:页签过滤、选中失效时回落到第一个剩余页签', async () => {
     // 磁盘上只剩 c;A、B 已被删,当前选中是 B

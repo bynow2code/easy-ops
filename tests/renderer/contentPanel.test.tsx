@@ -71,35 +71,39 @@ function renderPanel(): void {
   )
 }
 
+/** 保存入口只有 Cmd/Ctrl+S(编辑区不再渲染「保存」按钮),组件在 dirty 时接管 window keydown */
+function pressSaveShortcut(): void {
+  fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+}
+
 describe('内容面板', () => {
-  it('无改动时不渲染 header 行:没有「保存」按钮,也不标记未保存', () => {
+  it('干净状态:只有编辑器,不渲染「未保存」chip 与「保存」按钮', () => {
     setupApi()
     renderPanel()
 
     expect(screen.getByTestId('editor')).toBeTruthy()
-    // header 仅在 dirty 时渲染:干净状态不应存在「未保存」chip,保存按钮也不存在
-    // (页签与编辑区间距来源之一,空 header 行会撑出多余间距)
+    // 未保存状态已移到页签的橙点上,编辑区不再有任何状态/保存 UI
     expect(screen.queryByText('未保存')).toBeNull()
     expect(screen.queryByText('保存')).toBeNull()
   })
 
-  it('编辑后出现「保存」按钮与未保存标记,草稿进 store', () => {
+  it('编辑后:草稿进 store,编辑区同样不出现「未保存」/「保存」入口', () => {
     setupApi()
     renderPanel()
 
     fireEvent.change(screen.getByTestId('editor'), { target: { value: 'echo changed' } })
 
-    expect(screen.getByText('保存')).toBeTruthy()
-    expect(screen.getByText('未保存')).toBeTruthy()
     expect(useAppStore.getState().contentDrafts.s1).toBe('echo changed')
+    expect(screen.queryByText('未保存')).toBeNull()
+    expect(screen.queryByText('保存')).toBeNull()
   })
 
-  it('点保存把草稿写到对应脚本,并清掉草稿', async () => {
+  it('Cmd/Ctrl+S 保存:把草稿写到对应脚本并清掉草稿', async () => {
     const api = setupApi('echo changed')
     renderPanel()
 
     fireEvent.change(screen.getByTestId('editor'), { target: { value: 'echo changed' } })
-    fireEvent.click(screen.getByText('保存'))
+    pressSaveShortcut()
 
     await waitFor(() => expect(api.scripts.update).toHaveBeenCalledWith('s1', { content: 'echo changed' }))
     await waitFor(() => expect(useAppStore.getState().contentDrafts.s1).toBeUndefined())
@@ -114,13 +118,12 @@ describe('内容面板', () => {
     )
     renderPanel()
 
-    const editor = screen.getByTestId('editor')
-    fireEvent.change(editor, { target: { value: 'echo changed' } })
-    fireEvent.click(screen.getByText('保存'))
+    fireEvent.change(screen.getByTestId('editor'), { target: { value: 'echo changed' } })
+    pressSaveShortcut()
     expect(api.scripts.update).toHaveBeenCalledWith('s1', { content: 'echo changed' })
 
     // 飞行期间继续输入 → 草稿变成更新的内容
-    fireEvent.change(editor, { target: { value: 'echo changed & more' } })
+    fireEvent.change(screen.getByTestId('editor'), { target: { value: 'echo changed & more' } })
     resolveUpdate({ ...script, content: 'echo changed' })
 
     // 等 save 走到 reload(list 被调用),再冲刷微任务让 clearContentDraft(若会执行)落地,
@@ -138,7 +141,6 @@ describe('内容面板', () => {
     renderPanel()
 
     expect((screen.getByTestId('editor') as HTMLTextAreaElement).value).toBe('echo draft')
-    expect(screen.getByText('保存')).toBeTruthy()
   })
 
   it('选中的是另一个脚本时,显示的是那个脚本的内容而不是别人的草稿', () => {
@@ -151,6 +153,5 @@ describe('内容面板', () => {
     )
 
     expect((screen.getByTestId('editor') as HTMLTextAreaElement).value).toBe('echo deploy')
-    expect(screen.queryByText('保存')).toBeNull()
   })
 })

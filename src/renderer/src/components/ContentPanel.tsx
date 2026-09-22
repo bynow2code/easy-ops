@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { EditorView } from '@codemirror/view'
-import { App, Button } from 'antd'
-import { SaveOutlined } from '@ant-design/icons'
+import { App } from 'antd'
 import type { Script } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 import { ScriptEditor } from './ScriptEditor'
 import { toUserMessage } from '../utils/toUserMessage'
 
 /**
- * 内容面板:选中脚本的内容在这里**真正编辑**并显式保存。
+ * 内容面板:选中脚本的内容在这里**真正编辑**并显式保存(Cmd/Ctrl+S)。
  *
  * 职责划分(有意为之):面板只管内容,名称/分组/Shell 在弹窗里改 ——
  * 这样内容永远只有一个编辑入口,不存在「两处改同一份」的歧义。
@@ -84,37 +83,9 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
   }, [dirty, save])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
-      {/* 脚本名已在上方页签条展示,这里只保留「未保存」状态与保存入口。
-          仅在 dirty 时渲染:干净状态留空行会在页签与编辑区之间撑出多余间距 */}
-      {dirty ? (
-        <header
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-            flex: '0 0 auto'
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              lineHeight: '16px',
-              padding: '1px 6px',
-              borderRadius: 6,
-              flex: '0 0 auto',
-              color: 'var(--app-accent-text)',
-              background: 'var(--app-accent-soft)'
-            }}
-          >
-            未保存
-          </span>
-          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={() => void save()}>
-            保存
-          </Button>
-        </header>
-      ) : null}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* 未保存状态由页签上的橙点承担(编辑区不再放「未保存」chip 与「保存」按钮),
+          保存入口只剩 Cmd/Ctrl+S;草稿语义不变:切走再切回不丢,退出应用仍有保存拦截 */}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ScriptEditor
           value={value}
