@@ -157,13 +157,15 @@ export function TerminalDock(): JSX.Element {
                 flexDirection: 'column',
                 minWidth: 0,
                 height: isMaximized ? '100%' : undefined,
-                // 苹果风格的激活表达:不用彩色描边,用「抬升」—— 边框加重一档 + 面板级柔影,
-                // 未激活的卡片保持贴平;输入落点一眼可辨且不引入主题色以外的颜色
-                border: `1px solid ${isActive && !cardMaximized ? 'var(--app-hairline-strong)' : 'var(--app-hairline)'}`,
+                // 激活态不在卡片层留任何视觉标记,多开终端时卡片长得全一样(用户决策:xterm 的光标就够了)。
+                // ⚠️ activeRunId 与「光标在闪」不是同一个信号:前者是 store 里的逻辑态,只有它落到那一个
+                // xterm 持有 DOM 焦点时才表现为闪烁。焦点落到卡片头部(标题/最大化/关闭)或工具栏时,
+                // 界面上就没有任何激活线索了 —— 这是有意接受的取舍,不是遗漏。
+                // isActive 必须继续往下传:它触发 TerminalView 的 term.focus(),是光标闪烁的唯一来源
+                border: '1px solid var(--app-hairline)',
                 borderRadius: isMaximized ? 0 : 'var(--app-radius-lg)',
                 overflow: 'hidden',
-                background: 'var(--color-bg-container)',
-                boxShadow: isActive && !cardMaximized ? 'var(--app-shadow-panel)' : undefined
+                background: 'var(--color-bg-container)'
               }}
             >
               <div

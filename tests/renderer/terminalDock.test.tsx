@@ -2,9 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { installJsdomShims } from './jsdomShims'
 
-// xterm 在 jsdom 里跑不起来,且本用例只关心「卡片怎么排布与操作」,用替身隔离
+// xterm 在 jsdom 里跑不起来,且本用例只关心「卡片怎么排布与操作」,用替身隔离。
+// active 必须透出来:卡片层不再有视觉标记之后,「谁是激活」只剩这条 prop 往下传
+// (它触发 term.focus() → 光标闪烁);mock 把它丢掉的话,删掉传递也不会红
 vi.mock('../../src/renderer/src/components/TerminalView', () => ({
-  TerminalView: ({ runId }: { runId: string }): JSX.Element => <div data-testid={`view-${runId}`} />
+  TerminalView: ({ runId, active }: { runId: string; active: boolean }): JSX.Element => (
+    <div data-testid={`view-${runId}`} data-active={String(active)} />
+  )
 }))
 
 import { TerminalDock } from '../../src/renderer/src/components/TerminalDock'
@@ -148,6 +152,31 @@ describe('终端瀑布流', () => {
     fireEvent.click(iconButtons('fullscreen')[1])
 
     expect(useTerminalStore.getState().maximizedRunId).toBe('r2')
+  })
+
+  it('激活态不在卡片层留任何视觉标记 —— 焦点交给 xterm 自己闪的光标', () => {
+    setupApi()
+    useTerminalStore.setState({
+      sessions: [session('r1', 'A'), session('r2', 'B')],
+      activeRunId: 'r2',
+      maximizedRunId: null
+    })
+
+    renderDock()
+
+    const cards = Array.from(screen.getByTestId('terminal-list').children) as HTMLElement[]
+    expect(cards).toHaveLength(2)
+    // cards[0] = r1(未激活)、cards[1] = r2(激活):两者外观必须完全一致。
+    // 激活与否只影响 TerminalView 的 focus(→ 光标闪烁),不经由卡片边框/投影表达。
+    const [idle, active] = cards
+    expect(active.style.border).toBe(idle.style.border)
+    expect(active.style.boxShadow).toBe(idle.style.boxShadow)
+    expect(active.style.boxShadow).toBe('')
+
+    // 卡片层零标记之后,「谁是激活」只剩这条 prop 在传 —— 它触发 term.focus(),也就是光标闪烁本身。
+    // 没有这两条断言,把 active 传丢/传错(`active={true}`、传错 runId)全部用例照样绿
+    expect(screen.getByTestId('view-r2').getAttribute('data-active')).toBe('true')
+    expect(screen.getByTestId('view-r1').getAttribute('data-active')).toBe('false')
   })
 
   it('没有终端时给出空态提示', () => {
