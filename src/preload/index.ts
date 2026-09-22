@@ -7,6 +7,12 @@ const api = {
       ipcRenderer.invoke('app:info'),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url })
   },
+  win: {
+    // 自绘标题栏(titleBarStyle: 'hidden')的窗口控件;macOS 用系统红绿灯,不消费这些
+    minimize: (): Promise<void> => ipcRenderer.invoke('win:minimize'),
+    toggleMaximize: (): Promise<void> => ipcRenderer.invoke('win:toggleMaximize'),
+    close: (): Promise<void> => ipcRenderer.invoke('win:close')
+  },
   scripts: {
     list: (): Promise<Script[]> => ipcRenderer.invoke('script:list'),
     create: (input: {

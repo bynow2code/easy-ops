@@ -4,14 +4,16 @@ import { theme as antdTheme } from 'antd'
 export type ResolvedTheme = 'light' | 'dark'
 
 /**
- * 品牌色,与 build/icon.png 同源:深海军蓝底 + 青。
- * 界面里所有「强调」都只从这两个色相里取,不引入第三种彩色。
+ * 强调色 = Apple 系统蓝(浅色 #007AFF / 深色 #0A84FF),与 macOS 系统设置的开关、
+ * 单选、链接同源;海军蓝只保留给品牌标识(应用图标 / 顶栏 BrandMark 的 mark
+ * 图标资产,豁免于界面强调色体系),不参与界面强调。
+ * 语义状态色(终端运行绿 #34C759)单独使用,不参与强调体系。
  */
 export const BRAND = {
   navy: '#0E2439',
   navyDeep: '#0A1A2B',
-  cyan: '#0E7490',
-  cyanBright: '#22B8CF'
+  blue: '#007AFF',
+  blueBright: '#0A84FF'
 } as const
 
 /**
@@ -49,51 +51,52 @@ export interface AppTokenSet {
 }
 
 const LIGHT: AppTokenSet = {
-  primary: BRAND.cyan,
-  topbarBg: BRAND.navy,
-  topbarText: 'rgba(255, 255, 255, 0.94)',
-  topbarMuted: 'rgba(255, 255, 255, 0.55)',
-  topbarControlBg: 'rgba(255, 255, 255, 0.08)',
-  topbarControlBorder: 'rgba(255, 255, 255, 0.18)',
-  topbarControlText: 'rgba(255, 255, 255, 0.86)',
-  topbarSelectedBg: 'rgba(255, 255, 255, 0.18)',
-  accentSoft: '#E8F6F8',
-  accentText: '#0B3B4A',
-  layoutBg: '#F4F6F7',
-  subtleBg: '#F7F8FA',
-  hairline: 'rgba(16, 24, 40, 0.08)',
-  hairlineStrong: 'rgba(16, 24, 40, 0.14)',
-  // 两档行底按 Postman 实测标定:悬停 delta≈12(0.05),选中/编辑中 delta≈19(0.08)
-  // —— 悬停永远比「正在编辑」浅一档,两者一眼可分
-  rowHover: 'rgba(16, 24, 40, 0.05)',
-  rowSelectedBg: 'rgba(16, 24, 40, 0.08)',
-  radius: 8,
-  radiusLg: 10,
-  shadowPanel: '0 1px 2px rgba(16, 24, 40, 0.05)'
+  primary: BRAND.blue,
+  // 方案 B:顶栏与画布同材质(macOS 统一浅色工具栏),靠底部发丝线分层
+  topbarBg: '#F5F5F7',
+  topbarText: 'rgba(0, 0, 0, 0.85)',
+  topbarMuted: 'rgba(0, 0, 0, 0.45)',
+  topbarControlBg: 'rgba(0, 0, 0, 0.05)',
+  topbarControlBorder: 'rgba(0, 0, 0, 0.07)',
+  topbarControlText: 'rgba(0, 0, 0, 0.72)',
+  topbarSelectedBg: 'rgba(0, 0, 0, 0.08)',
+  accentSoft: '#EAF3FF',
+  accentText: '#0A5DC2',
+  layoutBg: '#F5F5F7',
+  subtleBg: '#FAFAFC',
+  hairline: 'rgba(0, 0, 0, 0.06)',
+  hairlineStrong: 'rgba(0, 0, 0, 0.10)',
+  // 行底两档关系保持(悬停永远比选中浅一档),整体比 Postman 标定轻一档,更接近苹果的克制
+  rowHover: 'rgba(0, 0, 0, 0.045)',
+  rowSelectedBg: 'rgba(0, 0, 0, 0.07)',
+  radius: 10,
+  radiusLg: 14,
+  shadowPanel: '0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05)'
 }
 
 const DARK: AppTokenSet = {
-  // 青色在深底上要提亮一档,否则发闷、对比不足
-  primary: BRAND.cyanBright,
-  topbarBg: BRAND.navyDeep,
-  topbarText: 'rgba(255, 255, 255, 0.94)',
+  // 深色强调色提亮一档(Apple 深色系统蓝),否则发闷、对比不足
+  primary: BRAND.blueBright,
+  // 方案 B 深色:中性深灰工具栏(不再用海军蓝,品牌色退到点缀)
+  topbarBg: '#1C1C1E',
+  topbarText: 'rgba(255, 255, 255, 0.92)',
   topbarMuted: 'rgba(255, 255, 255, 0.5)',
   topbarControlBg: 'rgba(255, 255, 255, 0.08)',
-  topbarControlBorder: 'rgba(255, 255, 255, 0.16)',
-  topbarControlText: 'rgba(255, 255, 255, 0.86)',
-  topbarSelectedBg: 'rgba(255, 255, 255, 0.18)',
-  accentSoft: 'rgba(34, 184, 207, 0.16)',
-  accentText: '#8FE6F2',
-  layoutBg: '#0B0B0C',
-  subtleBg: '#151517',
+  topbarControlBorder: 'rgba(255, 255, 255, 0.14)',
+  topbarControlText: 'rgba(255, 255, 255, 0.85)',
+  topbarSelectedBg: 'rgba(255, 255, 255, 0.14)',
+  accentSoft: 'rgba(10, 132, 255, 0.18)',
+  accentText: '#6EB8FF',
+  layoutBg: '#101012',
+  subtleBg: '#232326',
   hairline: 'rgba(255, 255, 255, 0.08)',
-  hairlineStrong: 'rgba(255, 255, 255, 0.16)',
-  // 与浅色同一套两档关系;选中档 0.10 对齐 Postman 深色实测(#262626 底上 10% 白 ≈ #3B3B3B)
-  rowHover: 'rgba(255, 255, 255, 0.05)',
+  hairlineStrong: 'rgba(255, 255, 255, 0.14)',
+  // 与浅色同一套两档关系;选中档 0.10 对齐深色实测
+  rowHover: 'rgba(255, 255, 255, 0.06)',
   rowSelectedBg: 'rgba(255, 255, 255, 0.10)',
-  radius: 8,
-  radiusLg: 10,
-  shadowPanel: '0 1px 2px rgba(0, 0, 0, 0.4)'
+  radius: 10,
+  radiusLg: 14,
+  shadowPanel: '0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.45)'
 }
 
 export function buildAppTokens(resolved: ResolvedTheme): AppTokenSet {
@@ -125,8 +128,11 @@ export function buildAntdTheme(resolved: ResolvedTheme): ThemeConfig {
       colorPrimary: app.primary,
       colorInfo: app.primary,
       colorLink: app.primary,
-      colorLinkHover: resolved === 'dark' ? '#7FE3F0' : '#0B5F75',
+      colorLinkHover: resolved === 'dark' ? '#4CA5FF' : '#0066D6',
       colorBgLayout: app.layoutBg,
+      // 深色卡片对齐 Apple systemGray6(#1C1C1E),弹层用上一档 #232326,
+      // 比深色算法默认的纯灰更接近 macOS 材质
+      ...(resolved === 'dark' ? { colorBgContainer: '#1C1C1E', colorBgElevated: '#232326' } : {}),
       colorSplit: app.hairline,
       fontFamily:
         "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif",
@@ -142,6 +148,12 @@ export function buildAntdTheme(resolved: ResolvedTheme): ThemeConfig {
         defaultShadow: 'none',
         dangerShadow: 'none',
         fontWeight: 500
+      },
+      // 苹果语义:开关「打开」是绿色(iOS/macOS 系统设置同款),不跟随蓝色强调色;
+      // hover 不加深 —— antd 默认会给 colorPrimaryHover 一档变化,绿色上会发脏
+      Switch: {
+        colorPrimary: '#34C759',
+        colorPrimaryHover: '#34C759'
       },
       Segmented: {
         itemSelectedBg: app.topbarSelectedBg
@@ -165,16 +177,16 @@ export function terminalPalette(resolved: ResolvedTheme): {
     return {
       background: '#121316',
       foreground: '#D7DBE0',
-      cursor: BRAND.cyanBright,
+      cursor: BRAND.blueBright,
       cursorAccent: '#121316',
-      selectionBackground: 'rgba(34, 184, 207, 0.3)'
+      selectionBackground: 'rgba(10, 132, 255, 0.35)'
     }
   }
   return {
     background: '#FFFFFF',
     foreground: '#24292F',
-    cursor: BRAND.cyan,
+    cursor: BRAND.blue,
     cursorAccent: '#FFFFFF',
-    selectionBackground: 'rgba(14, 116, 144, 0.22)'
+    selectionBackground: 'rgba(0, 122, 255, 0.22)'
   }
 }

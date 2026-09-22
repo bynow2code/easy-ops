@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { installJsdomShims } from './jsdomShims'
 
 import { SettingsModal } from '../../src/renderer/src/components/SettingsModal'
@@ -34,5 +34,38 @@ describe('设置弹窗', () => {
     expect(body).not.toBeNull()
     expect(body!.style.maxHeight).not.toBe('')
     expect(body!.style.overflowY).toBe('auto')
+  })
+
+  it('自定义 shell:浏览选择后直接添加并校验,没有单独的添加按钮', async () => {
+    const api = (
+      window as unknown as {
+        api: {
+          shell: { browse: ReturnType<typeof vi.fn>; validate: ReturnType<typeof vi.fn> }
+          settings: { update: ReturnType<typeof vi.fn> }
+        }
+      }
+    ).api
+    api.shell.browse.mockResolvedValue('/opt/homebrew/bin/zsh')
+    api.shell.validate.mockResolvedValue({ valid: true })
+
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <SettingsModal open onClose={() => undefined} />
+      </ThemeProvider>
+    )
+
+    // 「添加」按钮已移除,浏览是唯一入口
+    expect(screen.queryByRole('button', { name: '添加' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /浏览/ }))
+
+    await waitFor(() => expect(api.shell.validate).toHaveBeenCalledWith('/opt/homebrew/bin/zsh'))
+    await waitFor(() =>
+      expect(api.settings.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customShells: [expect.objectContaining({ path: '/opt/homebrew/bin/zsh' })]
+        })
+      )
+    )
   })
 })

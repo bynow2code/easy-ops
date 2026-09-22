@@ -18,14 +18,14 @@ function luminance(hex: string): number {
 }
 
 describe('界面令牌', () => {
-  it('明暗两套的主色不同:青色在深底上要提亮一档', () => {
+  it('明暗两套的主色不同:深色用提亮一档的 Apple 系统蓝', () => {
     expect(buildAppTokens('light').primary).not.toBe(buildAppTokens('dark').primary)
-    expect(buildAppTokens('dark').primary).toBe(BRAND.cyanBright)
+    expect(buildAppTokens('dark').primary).toBe(BRAND.blueBright)
   })
 
-  it('两种模式下顶栏都保持深色,作为界面的视觉锚点', () => {
-    expect(luminance(buildAppTokens('light').topbarBg)).toBeLessThan(0.1)
-    expect(luminance(buildAppTokens('dark').topbarBg)).toBeLessThan(0.1)
+  it('方案 B 的顶栏与画布同材质:浅色下是亮色,深色下是深色', () => {
+    expect(luminance(buildAppTokens('light').topbarBg)).toBeGreaterThan(0.8)
+    expect(luminance(buildAppTokens('dark').topbarBg)).toBeLessThan(0.2)
   })
 
   it('深色模式的页面底色确实比浅色模式深', () => {
@@ -41,9 +41,9 @@ describe('令牌转 CSS 变量', () => {
 
   it('键统一带 --app- 前缀,且驼峰转成短横线、数字补 px', () => {
     const vars = varsOf('light')
-    expect(vars['--app-radius']).toBe('8px')
-    expect(vars['--app-radius-lg']).toBe('10px')
-    expect(vars['--app-topbar-bg']).toBe(BRAND.navy)
+    expect(vars['--app-radius']).toBe('10px')
+    expect(vars['--app-radius-lg']).toBe('14px')
+    expect(vars['--app-topbar-bg']).toBe('#F5F5F7')
   })
 
   it('每个令牌都真的产出变量,没有漏项', () => {
@@ -67,8 +67,8 @@ describe('令牌转 CSS 变量', () => {
 describe('antd 主题配置', () => {
   it('主色与圆角取自同一套令牌', () => {
     const theme = buildAntdTheme('light')
-    expect(theme.token?.colorPrimary).toBe(BRAND.cyan)
-    expect(theme.token?.borderRadius).toBe(8)
+    expect(theme.token?.colorPrimary).toBe(BRAND.blue)
+    expect(theme.token?.borderRadius).toBe(10)
   })
 
   it('关掉按钮默认投影 —— antd 自带的 box-shadow 是「塑料感」的主因', () => {
@@ -84,8 +84,8 @@ describe('antd 主题配置', () => {
 
 describe('终端配色', () => {
   it('光标用主色,且与终端底色有对比', () => {
-    expect(terminalPalette('light').cursor).toBe(BRAND.cyan)
-    expect(terminalPalette('dark').cursor).toBe(BRAND.cyanBright)
+    expect(terminalPalette('light').cursor).toBe(BRAND.blue)
+    expect(terminalPalette('dark').cursor).toBe(BRAND.blueBright)
     expect(terminalPalette('dark').background).not.toBe(terminalPalette('light').background)
   })
 })

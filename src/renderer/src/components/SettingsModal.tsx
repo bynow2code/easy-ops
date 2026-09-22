@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { App, Button, Input, List, Modal, Space, Switch, Tag, Typography } from 'antd'
-import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, HistoryOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, HistoryOutlined, ImportOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { ShellInfo } from '../../../shared/types'
 import { UpdatePanel } from './UpdatePanel'
 import { useTheme } from '../theme/provider'
@@ -131,17 +131,11 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
-  const handlePickPath = async (): Promise<void> => {
-    try {
-      const picked = await window.api.shell.browse()
-      if (picked) setCustomPath(picked)
-    } catch (err) {
-      message.error(toUserMessage(err))
-    }
-  }
-
-  const handleAddCustom = async (): Promise<void> => {
-    const target = customPath.trim()
+  // 添加并校验:优先用显式传入的路径(浏览选完直接进这里),否则用输入框里手填的
+  const handleAddCustom = async (picked?: string): Promise<void> => {
+    // busy 防抖:没有「添加」按钮的 loading 阻断了,回车/连点浏览期间不允许并发校验
+    if (busy) return
+    const target = (picked ?? customPath).trim()
     if (!target) {
       message.warning('请先选择或填写 shell 路径')
       return
@@ -168,6 +162,19 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       message.error(toUserMessage(err))
     } finally {
       setBusy(false)
+    }
+  }
+
+  // 浏览:文件对话框确认后即添加并校验,不再有单独的「添加」按钮
+  const handlePickPath = async (): Promise<void> => {
+    try {
+      const picked = await window.api.shell.browse()
+      if (!picked) return
+      // 先回显,校验失败时用户能看到刚才选的是什么
+      setCustomPath(picked)
+      await handleAddCustom(picked)
+    } catch (err) {
+      message.error(toUserMessage(err))
     }
   }
 
@@ -389,14 +396,14 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
           <Space.Compact style={{ width: '100%', marginTop: 10 }}>
             <Input
               value={customPath}
-              placeholder="自定义 shell 路径,例如 /opt/homebrew/bin/zsh"
+              placeholder="自定义 shell 路径,回车添加,或点「浏览」选择"
               onChange={(e) => setCustomPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleAddCustom()
+              }}
             />
-            <Button icon={<FolderOpenOutlined />} onClick={() => void handlePickPath()}>
+            <Button icon={<FolderOpenOutlined />} loading={busy} onClick={() => void handlePickPath()}>
               浏览
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} loading={busy} onClick={() => void handleAddCustom()}>
-              添加
             </Button>
           </Space.Compact>
         </Section>

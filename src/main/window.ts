@@ -10,6 +10,9 @@ export function createMainWindow(ptyManager?: PtyManager): BrowserWindow {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
+    // 方案 B(macOS 统一工具栏):去掉原生标题栏,顶栏由渲染层自绘,
+    // 窗口控件走 win:* IPC(macOS 上系统红绿灯仍自动叠在左上角,渲染层据此跳过自绘)
+    titleBarStyle: 'hidden',
     title: 'EasyOps',
     webPreferences: {
       preload: resolve(__dirname, '../preload/index.js'),

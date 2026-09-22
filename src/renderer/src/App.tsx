@@ -51,39 +51,102 @@ function TopBar({
     window.api.app.info().then((info) => setVersion(info.version))
   }, [])
 
+  // 方案 B:macOS 的 titleBarStyle: 'hidden' 会自动叠系统红绿灯在左上角,
+  // 自绘红绿灯只在 Windows/Linux 出现;macOS 顶栏给系统灯让出空间。
+  // 用 navigator.platform 同步判定,避免异步 info 造成首帧布局跳动
+  const isMac = /Mac/i.test(navigator.platform)
+
+  // 双击顶栏最大化:Windows 由原生 drag 区处理,macOS 走系统行为,Linux WM 多数不响应需自己补
+  const handleTopbarDoubleClick = (): void => {
+    if (navigator.platform.startsWith('Linux')) void window.api.win.toggleMaximize()
+  }
+
   return (
     <div
       className="app-topbar"
+      onDoubleClick={handleTopbarDoubleClick}
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 12,
         padding: '0 14px',
+        paddingLeft: isMac ? 76 : 14,
         height: 46,
         flex: '0 0 auto'
       }}
     >
-      <Space size={8} align="center">
-        <BrandMark />
-        <Typography.Text style={{ fontSize: 13, fontWeight: 500, color: 'var(--app-topbar-text)', letterSpacing: 0.2 }}>
-          EasyOps
-        </Typography.Text>
-        {version ? (
-          <span
-            style={{
-              fontSize: 11,
-              lineHeight: '16px',
-              padding: '1px 6px',
-              borderRadius: 6,
-              color: 'var(--app-topbar-muted)',
-              border: '1px solid var(--app-topbar-control-border)'
-            }}
-          >
-            v{version}
-          </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {!isMac ? (
+          <div className="app-traffic">
+            <span
+              className="t-close"
+              role="button"
+              aria-label="关闭窗口"
+              tabIndex={0}
+              onClick={() => void window.api.win.close()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  void window.api.win.close()
+                }
+              }}
+            >
+              <i>✕</i>
+            </span>
+            <span
+              className="t-min"
+              role="button"
+              aria-label="最小化窗口"
+              tabIndex={0}
+              onClick={() => void window.api.win.minimize()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  void window.api.win.minimize()
+                }
+              }}
+            >
+              <i>−</i>
+            </span>
+            <span
+              className="t-max"
+              role="button"
+              aria-label="最大化窗口"
+              tabIndex={0}
+              onClick={() => void window.api.win.toggleMaximize()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  void window.api.win.toggleMaximize()
+                }
+              }}
+            >
+              <i>⤢</i>
+            </span>
+          </div>
         ) : null}
-      </Space>
+        <Space size={8} align="center">
+          <BrandMark />
+          <Typography.Text style={{ fontSize: 13, fontWeight: 500, color: 'var(--app-topbar-text)', letterSpacing: 0.2 }}>
+            EasyOps
+          </Typography.Text>
+          {version ? (
+            <span
+              style={{
+                fontSize: 11,
+                lineHeight: '16px',
+                padding: '1px 8px',
+                borderRadius: 999,
+                color: 'var(--app-topbar-muted)',
+                border: '1px solid var(--app-topbar-control-border)'
+              }}
+            >
+              v{version}
+            </span>
+          ) : null}
+        </Space>
+      </div>
 
       <Space size={8}>
         <Segmented
@@ -97,8 +160,8 @@ function TopBar({
             { label: '跟随系统', value: 'system' }
           ]}
         />
-        {/* 有待知晓的更新时在按钮右上角点亮小圆点;颜色取 BrandMark 同款品牌青,
-            不引入第三种彩色。wrapper 撑起定位锚点,圆点 pointer-events 关掉避免挡点击 */}
+        {/* 有待知晓的更新时在按钮右上角点亮小圆点;颜色取主题强调色(--app-primary),
+            深浅主题自动适配。wrapper 撑起定位锚点,圆点 pointer-events 关掉避免挡点击 */}
         <span style={{ position: 'relative', display: 'inline-flex' }}>
           <Button
             size="small"
@@ -120,7 +183,7 @@ function TopBar({
                 width: 7,
                 height: 7,
                 borderRadius: '50%',
-                background: '#4FD1E0',
+                background: 'var(--app-primary)',
                 boxShadow: '0 0 0 2px var(--app-topbar-bg)',
                 pointerEvents: 'none'
               }}

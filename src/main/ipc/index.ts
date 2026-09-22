@@ -7,6 +7,7 @@ import { registerConfigIpc } from './config'
 import { registerScriptIpc } from './scripts'
 import { registerShellIpc } from './shell'
 import { registerUpdaterIpc } from './updater'
+import { registerWindowIpc } from './window'
 
 export interface IpcContext {
   scripts: ScriptsStore
@@ -20,6 +21,7 @@ export function registerIpc(ctx: IpcContext): { updaterHandle: ReturnType<typeof
   registerGroupIpc(ctx.scripts)
   registerShellIpc(ctx.getWindow, ctx.settings)
   registerConfigIpc({ getWindow: ctx.getWindow, scripts: ctx.scripts, settings: ctx.settings })
+  registerWindowIpc(ctx.getWindow)
 
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),

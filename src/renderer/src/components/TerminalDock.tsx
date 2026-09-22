@@ -118,15 +118,6 @@ export function TerminalDock(): JSX.Element {
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              background: 'var(--app-primary)',
-              display: 'inline-block'
-            }}
-          />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {sessions.length} 个终端
           </Typography.Text>
@@ -166,12 +157,13 @@ export function TerminalDock(): JSX.Element {
                 flexDirection: 'column',
                 minWidth: 0,
                 height: isMaximized ? '100%' : undefined,
-                border: '1px solid var(--app-hairline)',
+                // 苹果风格的激活表达:不用彩色描边,用「抬升」—— 边框加重一档 + 面板级柔影,
+                // 未激活的卡片保持贴平;输入落点一眼可辨且不引入主题色以外的颜色
+                border: `1px solid ${isActive && !cardMaximized ? 'var(--app-hairline-strong)' : 'var(--app-hairline)'}`,
                 borderRadius: isMaximized ? 0 : 'var(--app-radius-lg)',
                 overflow: 'hidden',
                 background: 'var(--color-bg-container)',
-                // 用 inset 阴影标出「输入会落到这个终端」,不影响布局
-                boxShadow: isActive && !cardMaximized ? 'inset 2px 0 0 0 var(--app-primary)' : undefined
+                boxShadow: isActive && !cardMaximized ? 'var(--app-shadow-panel)' : undefined
               }}
             >
               <div
@@ -196,7 +188,8 @@ export function TerminalDock(): JSX.Element {
                 {s.exited ? (
                   <Tag style={{ marginInlineEnd: 0 }}>退出 {s.exitCode ?? 0}</Tag>
                 ) : (
-                  <Badge status="processing" />
+                  // 运行中 = 苹果绿静点(替代 antd processing 蓝色脉冲灯,和整体风格解绑)
+                  <Badge color="#34C759" />
                 )}
                 <Tooltip title={cardMaximized ? '还原' : '最大化'}>
                   <Button
