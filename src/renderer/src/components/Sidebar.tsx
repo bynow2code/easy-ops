@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { App, Button, Dropdown, Input, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -142,9 +142,57 @@ export function Sidebar(): JSX.Element {
   /** 折叠的分组 id 集合;搜索时强制全部展开,保证结果可见 */
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() => new Set())
 
+  // 折叠状态跨重启持久化:挂载时从设置读入,变化后防抖写回(与分栏比例同款「loaded 门 + 防抖」)。
+  // 读入与 reload 用 Promise.all 绑定:保证写盘 prune 时 groups 已进 store,
+  // 否则目录列表慢于防抖计时器时,空 groups 会把已存折叠状态误清空。
+  const [collapsedLoaded, setCollapsedLoaded] = useState(false)
+  // 上次成功写入(或读入)的折叠集合序列化值:相同则跳过写盘。
+  // 三重作用——消除每次启动的幂等写;读失败时守卫住空集合,绝不能把降级态
+  // 落盘覆盖用户已存状态(那是一次瞬时 IPC 故障换来的数据丢失);连续点击只落最终值
+  const lastWrittenRef = useRef<string | null>(null)
   useEffect(() => {
-    void reload()
+    let cancelled = false
+    void (async () => {
+      try {
+        const [settings] = await Promise.all([window.api.settings.get(), reload()])
+        if (cancelled) return
+        const stored = Array.isArray(settings.collapsedGroupIds) ? settings.collapsedGroupIds : []
+        const valid = new Set(useAppStore.getState().groups.map((g) => g.id))
+        const pruned = stored.filter((id) => valid.has(id))
+        setCollapsedIds(new Set(pruned))
+        // 读入值(去掉盘上残留死 id 后)即为已落盘基线:死 id 留在盘上无害,
+        // 下次真实变更触发写盘时自然被清掉
+        lastWrittenRef.current = JSON.stringify(pruned)
+        setCollapsedLoaded(true)
+      } catch (err) {
+        // 读失败时放弃持久化(不翻 loaded):本会话折叠只存在内存,
+        // 绝不能把降级用的空集合写盘覆盖用户已存状态
+        console.error('[Sidebar] 折叠状态读取失败,本次会话不再持久化折叠状态:', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [reload])
+  useEffect(() => {
+    if (!collapsedLoaded) return
+    const timer = setTimeout(() => {
+      const valid = new Set(useAppStore.getState().groups.map((g) => g.id))
+      const ids = [...collapsedIds].filter((id) => valid.has(id))
+      const next = JSON.stringify(ids)
+      if (next === lastWrittenRef.current) return
+      void window.api.settings
+        .update({ collapsedGroupIds: ids })
+        .then(() => {
+          // 写成功才推进基线:失败的写入下个变更会自动重试
+          lastWrittenRef.current = next
+        })
+        .catch((err) => {
+          console.error('[Sidebar] 折叠状态写盘失败:', err)
+        })
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [collapsedIds, collapsedLoaded])
 
   const searching = search.trim().length > 0
 
@@ -737,11 +785,11 @@ export function Sidebar(): JSX.Element {
                 </Typography.Text>
                 <Typography.Text
                   type="secondary"
-                  style={{ display: 'block', fontSize: 13, lineHeight: '20px', maxWidth: 240, marginTop: 2 }}
+                  style={{ display: 'block', fontSize: 13, lineHeight: '20px', marginTop: 2 }}
                 >
-                  新建脚本或子目录,也可以把条目拖到这里归组。
+                  新建脚本或子目录,也可拖入条目归组。
                 </Typography.Text>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 7, marginTop: 12 }}>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <Button
                     size="small"
                     icon={<PlusOutlined />}

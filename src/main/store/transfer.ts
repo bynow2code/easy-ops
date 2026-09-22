@@ -254,7 +254,10 @@ export function filterPortableSettings(
       checkUpdateOnLaunch: source.checkUpdateOnLaunch === undefined ? true : Boolean(source.checkUpdateOnLaunch),
       // 分栏比例跟着配置走:备份恢复时能保住布局。越界的值一律夹紧到合法区间
       mainSplitRatio: clampSplitRatio(source.mainSplitRatio, DEFAULT_MAIN_SPLIT_RATIO),
-      detailSplitRatio: clampSplitRatio(source.detailSplitRatio, DEFAULT_DETAIL_SPLIT_RATIO)
+      detailSplitRatio: clampSplitRatio(source.detailSplitRatio, DEFAULT_DETAIL_SPLIT_RATIO),
+      // 折叠状态是设备本地 UI 状态:不随配置迁移。导入后目录集合已整体替换,
+      // 来源机器的折叠 id 在本机也基本失效,统一重置为全展开
+      collapsedGroupIds: []
     },
     warnings
   }

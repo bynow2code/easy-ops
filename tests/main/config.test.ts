@@ -52,7 +52,8 @@ const SETTINGS: Settings = {
   ],
   checkUpdateOnLaunch: false,
   mainSplitRatio: 50,
-  detailSplitRatio: 60
+  detailSplitRatio: 60,
+  collapsedGroupIds: []
 }
 
 function makeScript(over: Partial<Script> = {}): Script {

@@ -217,19 +217,31 @@ function Workspace(): JSX.Element {
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    void window.api.settings.get().then((s) => {
-      setMainRatio(s.mainSplitRatio)
-      setDetailRatio(s.detailSplitRatio)
-      setLoaded(true)
-    })
+    // 读失败按默认布局处理,不阻塞工作区渲染(与 Sidebar 折叠态读失败的降级策略一致)
+    window.api.settings
+      .get()
+      .then((s) => {
+        setMainRatio(s.mainSplitRatio)
+        setDetailRatio(s.detailSplitRatio)
+        setLoaded(true)
+      })
+      .catch((err) => {
+        console.error('[App] 设置读取失败,使用默认布局:', err)
+        setLoaded(true)
+      })
   }, [])
 
   // 比例落盘防抖 300ms:拖动过程中不必每帧写一次设置,
   // 松手(或键盘微调暂停)后自然会写一次。加载完成前不回写,免得把默认值盖上去。
+  // 写失败静默降级:布局留在内存,下次拖动或重启自然重试(与折叠态写回同一策略,仅 console 留痕)
   useEffect(() => {
     if (!loaded) return
     const timer = setTimeout(() => {
-      void window.api.settings.update({ mainSplitRatio: mainRatio, detailSplitRatio: detailRatio })
+      void window.api.settings
+        .update({ mainSplitRatio: mainRatio, detailSplitRatio: detailRatio })
+        .catch((err) => {
+          console.error('[App] 布局比例写盘失败:', err)
+        })
     }, 300)
     return () => clearTimeout(timer)
   }, [loaded, mainRatio, detailRatio])

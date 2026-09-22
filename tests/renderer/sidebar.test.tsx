@@ -24,6 +24,7 @@ interface ApiMock {
   scripts: Record<string, ReturnType<typeof vi.fn>>
   groups: Record<string, ReturnType<typeof vi.fn>>
   pty: Record<string, ReturnType<typeof vi.fn>>
+  settings: Record<string, ReturnType<typeof vi.fn>>
 }
 
 function setupApi(): ApiMock {
@@ -44,7 +45,12 @@ function setupApi(): ApiMock {
       move: vi.fn(async () => undefined),
       reorder: vi.fn()
     },
-    pty: { start: vi.fn(async () => ({ runId: 'r1', title: '构建' })) }
+    pty: { start: vi.fn(async () => ({ runId: 'r1', title: '构建' })) },
+    settings: {
+      // Sidebar 挂载会读入折叠状态并防抖写回,默认空集合 + 空实现
+      get: vi.fn(async () => ({ collapsedGroupIds: [] })),
+      update: vi.fn(async () => undefined)
+    }
   }
   ;(window as unknown as { api: ApiMock }).api = api
   return api
@@ -77,7 +83,6 @@ describe('树形分组的折叠', () => {
     api.scripts.list.mockResolvedValue([grouped])
     return api
   }
-
   it('点击分组头收起脚本行,再点展开', async () => {
     setupGrouped()
     render(
@@ -187,6 +192,76 @@ describe('树形分组的折叠', () => {
   })
 })
 
+describe('折叠状态持久化', () => {
+  /** 顶层分组 g1 + 其下脚本,settings.get 返回指定折叠集合 */
+  function setupPersisted(collapsed: string[]): ApiMock {
+    const api = setupApi()
+    api.settings.get.mockResolvedValue({ collapsedGroupIds: collapsed })
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    ])
+    api.scripts.list.mockResolvedValue([{ ...script, id: 's1', groupId: 'g1' }])
+    return api
+  }
+
+  it('挂载时读入设置里的折叠状态,对应目录初始收起', async () => {
+    setupPersisted(['g1'])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+    // 读入生效:g1 初始即为折叠(读入与列表加载是并发的,用 waitFor 消除时序抖动)
+    await waitFor(() => expect(screen.queryByText('构建')).toBeNull())
+    // 内存态与读入态一致地工作:点开即展开
+    fireEvent.click(screen.getByText('wms'))
+    await screen.findByText('构建')
+  })
+
+  it('折叠变化后防抖写回设置,只包含现存目录 id', async () => {
+    const api = setupPersisted([])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    fireEvent.click(screen.getByText('wms'))
+    // 防抖 300ms 后写回;读入基线守卫保证启动路径不会插入幂等写,last call 即用户折叠的结果
+    await waitFor(() => expect(api.settings.update).toHaveBeenCalled())
+    const calls = api.settings.update.mock.calls as Array<[{ collapsedGroupIds: string[] }]>
+    const lastPatch = calls[calls.length - 1][0]
+    expect(lastPatch.collapsedGroupIds).toEqual(['g1'])
+  })
+
+  it('写回前滤除已删除目录的 id,存量死 id 不会回流盘上', async () => {
+    // 'dead' 目录已不存在:读入时被 prune 掉,展开 g1 后写回只剩现存 id
+    const api = setupPersisted(['g1', 'dead'])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    // g1 初始折叠(死 id 不影响折叠语义)
+    await screen.findByText('wms')
+    await waitFor(() => expect(screen.queryByText('构建')).toBeNull())
+
+    // 展开最后一个折叠目录 → 折叠集合变空 → 防抖写回
+    fireEvent.click(screen.getByText('wms'))
+    await screen.findByText('构建')
+    await waitFor(() => expect(api.settings.update).toHaveBeenCalled())
+    const calls = api.settings.update.mock.calls as Array<[{ collapsedGroupIds: string[] }]>
+    const lastPatch = calls[calls.length - 1][0]
+    expect(lastPatch.collapsedGroupIds).toEqual([])
+    // 死 id 从未出现在任何一次写回里
+    for (const [patch] of calls) {
+      expect(patch.collapsedGroupIds).not.toContain('dead')
+    }
+  })
+})
+
 describe('脚本行更多操作菜单', () => {
   // 复制/删除已收编进「更多操作」菜单,平铺按钮不复存在,走菜单路径验证同一行为
   it('菜单里点复制会请求生成副本,并选中新副本', async () => {
@@ -230,7 +305,8 @@ describe('嵌套树渲染', () => {
     const s1: Script = { ...script, id: 's1', name: '拣货', groupId: 'g2' }
     ;(window as unknown as { api: unknown }).api = {
       scripts: { list: vi.fn(async () => [s1]) },
-      groups: { list: vi.fn(async () => [parent, child]) }
+      groups: { list: vi.fn(async () => [parent, child]) },
+      settings: { get: vi.fn(async () => ({ collapsedGroupIds: [] })), update: vi.fn(async () => undefined) }
     }
   }
 

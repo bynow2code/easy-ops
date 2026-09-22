@@ -22,7 +22,8 @@ const SETTINGS: Settings = {
   customShells: [{ id: 'custom:/opt/zsh', name: 'zsh', path: '/opt/zsh' }],
   checkUpdateOnLaunch: false,
   mainSplitRatio: 50,
-  detailSplitRatio: 60
+  detailSplitRatio: 60,
+  collapsedGroupIds: []
 }
 
 function makeScript(over: Partial<Script> = {}): Script {

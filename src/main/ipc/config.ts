@@ -44,7 +44,8 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
     const payload = buildExportPayload(
       deps.scripts.listScripts(),
       deps.scripts.listGroups(),
-      deps.settings.get()
+      // 折叠状态是设备本地 UI 状态,不随导出文件迁移(导入侧本就会重置)
+      { ...deps.settings.get(), collapsedGroupIds: [] }
     )
     await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
     return { canceled: false, path: filePath }
@@ -84,6 +85,8 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
         s.shellId && !knownIds.includes(s.shellId) ? { ...s, shellId: null } : s
       )
       await deps.scripts.replaceAll({ scripts: normalized, groups: migrated.groups })
+      // 与 v2 路径对称:导入后目录集合整体替换,来源机器的折叠 id 一并重置为全展开
+      deps.settings.update({ collapsedGroupIds: [] })
       return {
         canceled: false,
         stats: {

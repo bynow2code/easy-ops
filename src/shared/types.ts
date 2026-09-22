@@ -44,6 +44,8 @@ export interface Settings {
   mainSplitRatio: number
   /** 左半内部:脚本列表占左半高度的百分比,可拖动上下那条分割条调整 */
   detailSplitRatio: number
+  /** 侧栏目录折叠状态(分组 id 集合)。设备本地 UI 状态:不随导入/导出迁移 */
+  collapsedGroupIds: string[]
 }
 
 export const SCRIPT_NAME_MAX = 30
