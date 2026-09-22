@@ -155,6 +155,16 @@ function ScriptDetail(): JSX.Element {
               key={tab.id}
               className={active ? 'app-tab app-tab-active' : 'app-tab'}
               onClick={() => selectScript(tab.id)}
+              // 键盘可达:纯 onClick 的 div 键盘用户无法切换页签
+              role="tab"
+              aria-selected={active}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  selectScript(tab.id)
+                }
+              }}
               title={tab.name}
             >
               <Typography.Text

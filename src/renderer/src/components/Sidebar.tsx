@@ -126,8 +126,17 @@ function CenteredHint({ text }: { text: string }): JSX.Element {
 }
 
 export function Sidebar(): JSX.Element {
-  const { scripts, groups, selectedScriptId, search, reload, selectScript, openForm, setSearch } =
-    useAppStore()
+  // 分片订阅:任何 store 字段更新只让真正用到它的组件重渲染。
+  // 之前 useAppStore() 全量订阅,编辑器每敲一个字(setContentDraft)都会让整棵树 reconcile。
+  // 动作(reload/selectScript 等)在 zustand 里是稳定引用,单独取不会造成多余渲染
+  const scripts = useAppStore((s) => s.scripts)
+  const groups = useAppStore((s) => s.groups)
+  const selectedScriptId = useAppStore((s) => s.selectedScriptId)
+  const search = useAppStore((s) => s.search)
+  const reload = useAppStore((s) => s.reload)
+  const selectScript = useAppStore((s) => s.selectScript)
+  const openForm = useAppStore((s) => s.openForm)
+  const setSearch = useAppStore((s) => s.setSearch)
   const { modal, message } = App.useApp()
 
   /** 折叠的分组 id 集合;搜索时强制全部展开,保证结果可见 */
@@ -171,18 +180,22 @@ export function Sidebar(): JSX.Element {
       return { tree: roots, rootScripts, searchEmpty: false }
     }
 
+    // 匹配用修剪过的关键字:searching 判断用了 trim,这里不同步的话,
+    // 输入「构建␣」(尾随空格)会进入搜索态却 0 命中,直接显示「没有匹配的脚本」
+    const keyword = search.trim()
+
     const prune = (node: GroupNode): GroupNode | null => {
-      const selfMatch = nameContains(node.group.name, search)
+      const selfMatch = nameContains(node.group.name, keyword)
       // 目录自身命中 → 整棵子树原样保留(含未命中后代);否则子目录按命中递归剪枝
       const children = selfMatch
         ? node.children
         : node.children.map(prune).filter((c): c is GroupNode => c !== null)
-      const scripts = selfMatch ? node.scripts : node.scripts.filter((s) => nameContains(s.name, search))
+      const scripts = selfMatch ? node.scripts : node.scripts.filter((s) => nameContains(s.name, keyword))
       if (!selfMatch && children.length === 0 && scripts.length === 0) return null
       return { ...node, children, scripts }
     }
     const prunedRoots = roots.map(prune).filter((n): n is GroupNode => n !== null)
-    const prunedRootScripts = rootScripts.filter((s) => nameContains(s.name, search))
+    const prunedRootScripts = rootScripts.filter((s) => nameContains(s.name, keyword))
     return {
       tree: prunedRoots,
       rootScripts: prunedRootScripts,
@@ -203,17 +216,31 @@ export function Sidebar(): JSX.Element {
     })
   }
 
-  // 新建/复制脚本落在某个分组里时,若该分组是折叠的,自动展开让新行可见
+  // 新建/复制脚本落在某个分组里时,若该分组是折叠的,自动展开让新行可见。
+  // 必须沿祖先链逐级展开:只展开直接父目录时,更上层的祖先仍折叠,
+  // 「搜索选中深层脚本 → 清空搜索」后选中行依然看不见
   const selectedScript = scripts.find((s) => s.id === selectedScriptId)
   const selectedGroupId = selectedScript?.groupId ?? null
   useEffect(() => {
-    if (!selectedGroupId || !collapsedIds.has(selectedGroupId)) return
+    if (!selectedGroupId) return
+    // store 层已保证 parentId 无环,seen 只是防御性兜底,避免坏数据拖死渲染进程
+    const parentOf = new Map(groups.map((g) => [g.id, g.parentId ?? null]))
+    const chain: string[] = []
+    const seen = new Set<string>()
+    let cur: string | null = selectedGroupId
+    while (cur && !seen.has(cur)) {
+      seen.add(cur)
+      chain.push(cur)
+      cur = parentOf.get(cur) ?? null
+    }
+    const hidden = chain.filter((id) => collapsedIds.has(id))
+    if (hidden.length === 0) return
     setCollapsedIds((prev) => {
       const next = new Set(prev)
-      next.delete(selectedGroupId)
+      for (const id of hidden) next.delete(id)
       return next
     })
-  }, [selectedGroupId, collapsedIds])
+  }, [selectedGroupId, collapsedIds, groups])
 
   // ── 拖拽排序 / 跨目录移动 ────────────────────────────────
   // 搜索态禁用拖拽:过滤后的树只含匹配子集,基于它算兄弟顺序会打乱未展示条目的排序
@@ -221,19 +248,28 @@ export function Sidebar(): JSX.Element {
   const [dragItem, setDragItem] = useState<DragItem | null>(null)
   const [dropHint, setDropHint] = useState<{ id: string; position: DropPosition } | null>(null)
 
-  /** target 目录是否在 ancestor 目录的后代里(含自身判定在外层) */
-  const isDescendantGroup = (ancestorId: string, targetId: string): boolean => {
-    const walk = (parentId: string): boolean => {
-      for (const g of groups) {
-        if (g.parentId === parentId) {
-          if (g.id === targetId) return true
-          if (walk(g.id)) return true
-        }
-      }
-      return false
+  /**
+   * 拖拽开始时预计算被拖目录的全部后代 id,dragover 里做 O(1) 判定。
+   * 之前每次 dragover 都从 groups 递归下扫(O(n·depth) 且每帧强制 layout),
+   * 目录多了拖拽会卡;store 层已保证无环,seen 仅作防御。
+   */
+  const descendantIds = useMemo((): ReadonlySet<string> => {
+    const set = new Set<string>()
+    if (!dragItem || dragItem.type !== 'group') return set
+    const byParent = new Map<string, string[]>()
+    for (const g of groups) {
+      if (!g.parentId) continue
+      byParent.set(g.parentId, [...(byParent.get(g.parentId) ?? []), g.id])
     }
-    return walk(ancestorId)
-  }
+    const stack = [...(byParent.get(dragItem.id) ?? [])]
+    while (stack.length > 0) {
+      const cur = stack.pop()!
+      if (set.has(cur)) continue
+      set.add(cur)
+      stack.push(...(byParent.get(cur) ?? []))
+    }
+    return set
+  }, [dragItem, groups])
 
   const handleDragStart = (item: DragItem) => (e: DragEvent<HTMLDivElement>): void => {
     if (!dndEnabled) return
@@ -251,7 +287,7 @@ export function Sidebar(): JSX.Element {
   const handleDragOver = (target: DropTarget) => (e: DragEvent<HTMLDivElement>): void => {
     if (!dragItem || dragItem.id === target.id) return
     // 目录不能落到自己或自己的后代里(store 层防环是最后兜底,UI 先拦掉)
-    if (dragItem.type === 'group' && target.type === 'group' && isDescendantGroup(dragItem.id, target.id)) return
+    if (dragItem.type === 'group' && target.type === 'group' && descendantIds.has(target.id)) return
 
     // 落点三分:目录行上/中/下 = 之前/移入/之后;脚本行上下对半 = 之前/之后
     const rect = e.currentTarget.getBoundingClientRect()
@@ -576,6 +612,17 @@ export function Sidebar(): JSX.Element {
         <div
           className="app-group-head"
           onClick={() => toggleGroup(key)}
+          // 键盘可达:纯 onClick 的 div 键盘用户无法折叠分组
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
+          aria-label={`目录 ${node.group.name}`}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              toggleGroup(key)
+            }
+          }}
           draggable={dndEnabled}
           onDragStart={
             dndEnabled
@@ -640,10 +687,12 @@ export function Sidebar(): JSX.Element {
                 onDragOver={
                   dndEnabled
                     ? (e) => {
-                        // 自拖自放:拖本目录经过自己的引导块,高亮了却落不下去,不误导
-                        // 防环无需 isDescendantGroup:块只在 children.length===0 时渲染,
-                        // 空目录没有后代,天然不成环 —— 若将来放宽渲染条件,这里要补后代检查
+                        // 自拖自放:拖本目录经过自己的引导块,高亮了却落不下去,不误导。
+                        // 防环判定不能省:目录为空 ≠ 它不是被拖目录的后代,
+                        // 把顶层目录拖到它自己的空子目录引导块上,服务端会抛防环错误,
+                        // 表现为「先高亮承诺可放,落下才闪红色提示」,与行头部的拒绝行为自相矛盾
                         if (!dragItem || dragItem.id === key) return
+                        if (dragItem.type === 'group' && descendantIds.has(key)) return
                         e.preventDefault()
                         e.stopPropagation()
                         e.dataTransfer.dropEffect = 'move'
@@ -746,32 +795,37 @@ export function Sidebar(): JSX.Element {
         </Tooltip>
       </div>
 
-      {/* 树容器同时是「拖出目录」的落点:把脚本拖到列表空白处 = 移到顶层(groupId 置空)。
+      {/* 树容器同时是「拖出目录」的落点:脚本拖到列表空白处 = 移到顶层(groupId 置空),
+          目录拖到空白处 = 移到顶层顶层目录末尾(group:move 到 null),与脚本对称。
           行自身的 onDrop 会 stopPropagation,只有落在行间空白才会冒到这里。 */}
       <div
         className="app-tree"
         style={{ flex: 1, overflow: 'auto', minHeight: 0, position: 'relative' }}
         onDragOver={
-          dndEnabled && dragItem?.type === 'script' && dragItem.parentId !== null
-            ? (e) => e.preventDefault()
-            : undefined
+          dndEnabled && dragItem && dragItem.parentId !== null ? (e) => e.preventDefault() : undefined
         }
         onDrop={
-          dndEnabled && dragItem?.type === 'script' && dragItem.parentId !== null
+          dndEnabled && dragItem && dragItem.parentId !== null
             ? (e) => {
                 e.preventDefault()
                 const drag = dragItem
                 setDragItem(null)
                 setDropHint(null)
+                // 落到顶层不可能成环(父为 null),无需后代判定
                 void (async () => {
                   try {
                     const latest = useAppStore.getState()
-                    await window.api.scripts.update(drag.id, { groupId: null })
-                    const rootSiblings = latest.scripts
-                      .filter((s) => s.id !== drag.id && (s.groupId ?? null) === null)
-                      .sort((a, b) => a.order - b.order)
-                      .map((s) => s.id)
-                    await window.api.scripts.reorder([...rootSiblings, drag.id])
+                    if (drag.type === 'script') {
+                      await window.api.scripts.update(drag.id, { groupId: null })
+                      const rootSiblings = latest.scripts
+                        .filter((s) => s.id !== drag.id && (s.groupId ?? null) === null)
+                        .sort((a, b) => a.order - b.order)
+                        .map((s) => s.id)
+                      await window.api.scripts.reorder([...rootSiblings, drag.id])
+                    } else {
+                      // store 的 moveGroup 会把 order 追加到顶层兄弟末尾
+                      await window.api.groups.move(drag.id, null)
+                    }
                     await reload()
                   } catch (err) {
                     message.error(toUserMessage(err))
@@ -782,7 +836,7 @@ export function Sidebar(): JSX.Element {
         }
       >
         {nothingAtAll ? (
-          <CenteredHint text="还没有脚本,先新建一个分组,再通过目录上的 ＋ 添加脚本" />
+          <CenteredHint text="还没有脚本,用上方的新建按钮创建第一个脚本或分组" />
         ) : searchEmpty ? (
           // 搜索无任何命中(脚本名与目录名都没匹配):整树替换成提示;
           // 非搜索态即使 0 脚本也要渲染树,否则「有分组但还没有脚本」的新用户会看不到任何 ＋ 入口

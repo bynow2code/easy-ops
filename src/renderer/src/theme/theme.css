@@ -30,7 +30,10 @@
   --app-subtle-bg: #f7f8fa;
   --app-hairline: rgba(16, 24, 40, 0.08);
   --app-hairline-strong: rgba(16, 24, 40, 0.14);
-  --app-row-hover: rgba(16, 24, 40, 0.04);
+  /* 首帧兜底值:toCssVariables 挂载后会被 tokens.ts 的运行时值覆盖,
+     两边要保持一致(rowHover 0.05 / rowSelectedBg 0.08),改动时同步更新 */
+  --app-row-hover: rgba(16, 24, 40, 0.05);
+  /* 选中胶囊只在浅色写死兜底;深色由 tokens.ts 的 DARK 集在运行时注入 */
   --app-row-selected-bg: rgba(16, 24, 40, 0.08);
   --app-radius: 8px;
   --app-radius-lg: 10px;

@@ -41,6 +41,7 @@ function setupApi(): ApiMock {
       create: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
+      move: vi.fn(async () => undefined),
       reorder: vi.fn()
     },
     pty: { start: vi.fn(async () => ({ runId: 'r1', title: '构建' })) }
@@ -418,5 +419,116 @@ describe('悬停菜单', () => {
     fireEvent.drop(block, { dataTransfer: dt })
 
     await waitFor(() => expect(api.scripts.update).toHaveBeenCalledWith('s1', { groupId: 'g1' }))
+  })
+})
+
+describe('拖拽排序与跨目录移动(组件级)', () => {
+  /** 两条顶层脚本:构建(order 0) / 盘点(order 1) */
+  function setupTwoScripts(): ApiMock {
+    const api = setupApi()
+    const s1: Script = { ...script, id: 's1', name: '构建', groupId: null, order: 0 }
+    const s2: Script = { ...script, id: 's2', name: '盘点', groupId: null, order: 1 }
+    api.scripts.list.mockResolvedValue([s1, s2])
+    return api
+  }
+
+  it('拖到同级脚本行的后半段 = 同父重排,order 序列按插入结果计算', async () => {
+    const api = setupTwoScripts()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('盘点')
+    const dragRow = screen.getByText('构建').closest('.app-row') as HTMLElement
+    const overRow = screen.getByText('盘点').closest('.app-row') as HTMLElement
+
+    const dt = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn(() => '') }
+    fireEvent.dragStart(dragRow, { dataTransfer: dt })
+    // jsdom 的 rect 全 0:ratio = clientY / max(height,1),clientY 传 1 → ratio ≥ 0.5 → 落点 after
+    fireEvent.dragOver(overRow, { dataTransfer: dt, clientY: 1 })
+    fireEvent.drop(overRow, { dataTransfer: dt })
+
+    await waitFor(() => expect(api.scripts.reorder).toHaveBeenCalledWith(['s2', 's1']))
+  })
+
+  it('拖到目录行的中间区域 = 移入该目录,order 追加到新兄弟末尾', async () => {
+    const api = setupApi()
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    ])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+    const row = screen.getByText('构建').closest('.app-row') as HTMLElement
+    const head = screen.getByText('wms').closest('.app-group-head') as HTMLElement
+
+    const dt = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn(() => '') }
+    fireEvent.dragStart(row, { dataTransfer: dt })
+    // clientY 0.5 落在目录行中间 1/3 → into
+    fireEvent.dragOver(head, { dataTransfer: dt, clientY: 0.5 })
+    fireEvent.drop(head, { dataTransfer: dt })
+
+    await waitFor(() => expect(api.scripts.update).toHaveBeenCalledWith('s1', { groupId: 'g1' }))
+    await waitFor(() => expect(api.scripts.reorder).toHaveBeenCalledWith(['s1']))
+  })
+
+  it('把目录拖到自己的后代上,UI 拒绝落点且不发起移动(分组头与空目录引导块两条路径)', async () => {
+    const api = setupApi()
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' },
+      { id: 'g2', name: 'pda', order: 0, parentId: 'g1', createdAt: '' }
+    ])
+    api.scripts.list.mockResolvedValue([])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('pda')
+    const g1Head = screen.getByText('wms').closest('.app-group-head') as HTMLElement
+    const g2Head = screen.getByText('pda').closest('.app-group-head') as HTMLElement
+    const block = screen.getByText('暂无脚本').parentElement as HTMLElement
+
+    const dt = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn(() => '') }
+    fireEvent.dragStart(g1Head, { dataTransfer: dt })
+
+    // 后代分组头:dragOver 不 preventDefault = 拒绝落点,dropHint 不会出现,drop 无动作
+    fireEvent.dragOver(g2Head, { dataTransfer: dt })
+    fireEvent.drop(g2Head, { dataTransfer: dt })
+    // 空目录引导块同样要拒绝(回归:曾因「空目录没有后代」的错误注释漏判,
+    // 把顶层目录拖到它自己的空子目录引导块上,先高亮承诺可放、落下才报防环错误)
+    fireEvent.dragOver(block, { dataTransfer: dt })
+    fireEvent.drop(block, { dataTransfer: dt })
+
+    expect(api.groups.move).not.toHaveBeenCalled()
+    expect(api.groups.reorder).not.toHaveBeenCalled()
+  })
+
+  it('把子目录拖到列表空白处 = 移到顶层,与脚本行为对称', async () => {
+    const api = setupApi()
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' },
+      { id: 'g2', name: 'pda', order: 0, parentId: 'g1', createdAt: '' }
+    ])
+    api.scripts.list.mockResolvedValue([])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('pda')
+    const g2Head = screen.getByText('pda').closest('.app-group-head') as HTMLElement
+    const tree = document.querySelector('.app-tree') as HTMLElement
+
+    const dt = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn(() => '') }
+    fireEvent.dragStart(g2Head, { dataTransfer: dt })
+    fireEvent.dragOver(tree, { dataTransfer: dt })
+    fireEvent.drop(tree, { dataTransfer: dt })
+
+    await waitFor(() => expect(api.groups.move).toHaveBeenCalledWith('g2', null))
   })
 })

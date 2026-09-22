@@ -81,13 +81,37 @@ describe('分组', () => {
       const s2 = store.createGroup('s2', root.id)
       const mover = store.createGroup('mover')
       store.moveGroup(mover.id, root.id)
-      const moved = store.listGroups().find((g) => g.id === mover.id)!
+      const groups = store.listGroups()
+      // order 语义 = 兄弟内序号:listGroups 返回的 order 就是同层内的位置
+      const moved = groups.find((g) => g.id === mover.id)!
+      expect(moved.parentId).toBe(root.id)
       expect(moved.order).toBe(2)
-      // 原有兄弟的相对顺序不受影响
-      const orders = store.listGroups().filter((g) => g.parentId === root.id).map((g) => g.order)
-      expect(orders).toEqual([...orders].sort((x, y) => x - y))
-      expect(s1.order).toBe(0)
-      expect(s2.order).toBe(1)
+      // 用 listGroups 的返回值断言兄弟位置,而不是 createGroup 时的过期快照
+      expect(groups.find((g) => g.id === s1.id)!.order).toBe(0)
+      expect(groups.find((g) => g.id === s2.id)!.order).toBe(1)
+    })
+
+    it('moveGroup 移到 null 表示移到顶层', () => {
+      const root = store.createGroup('root')
+      const child = store.createGroup('child', root.id)
+      store.moveGroup(child.id, null)
+      expect(store.listGroups().find((g) => g.id === child.id)!.parentId).toBeNull()
+    })
+
+    it('moveGroup 后新旧两层 order 连续无重复,旧层的洞被闭合', () => {
+      const p1 = store.createGroup('p1')
+      const p2 = store.createGroup('p2')
+      const a = store.createGroup('a', p1.id)
+      const b = store.createGroup('b', p1.id)
+      const c = store.createGroup('c', p2.id)
+      store.moveGroup(a.id, p2.id)
+      const groups = store.listGroups()
+      const layer1 = groups.filter((g) => g.parentId === p1.id).sort((x, y) => x.order - y.order)
+      const layer2 = groups.filter((g) => g.parentId === p2.id).sort((x, y) => x.order - y.order)
+      expect(layer1.map((g) => g.id)).toEqual([b.id])
+      expect(layer1.map((g) => g.order)).toEqual([0])
+      expect(layer2.map((g) => g.id)).toEqual([c.id, a.id])
+      expect(layer2.map((g) => g.order)).toEqual([0, 1])
     })
 
     it('moveGroup 不能把目录移到自己或自己的后代(防环)', () => {
@@ -110,6 +134,38 @@ describe('分组', () => {
       expect(groups.some((g) => g.id === mid.id)).toBe(false)
     })
 
+    it('删除顶层目录:子目录与脚本落到顶层', () => {
+      const top = store.createGroup('top')
+      const child = store.createGroup('child', top.id)
+      const s = store.createScript({ name: 'x', content: 'echo', groupId: top.id })
+      store.deleteGroup(top.id)
+      const groups = store.listGroups()
+      expect(groups.find((g) => g.id === child.id)!.parentId).toBeNull()
+      expect(store.listScripts().find((x) => x.id === s.id)!.groupId).toBeNull()
+    })
+
+    it('删除中间目录:子目录拼接到被删目录原位,同层 order 连续无重复', () => {
+      const p = store.createGroup('p')
+      const a = store.createGroup('a', p.id)
+      const b = store.createGroup('b', p.id)
+      const c = store.createGroup('c', a.id)
+      const d = store.createGroup('d', a.id)
+      store.deleteGroup(a.id)
+      const layer = store.listGroups().filter((g) => g.parentId === p.id).sort((x, y) => x.order - y.order)
+      // 子树整体占据被删目录的原位(排在 b 前面),不被 b 夹开
+      expect(layer.map((g) => g.id)).toEqual([c.id, d.id, b.id])
+      expect(layer.map((g) => g.order)).toEqual([0, 1, 2])
+    })
+
+    it('listGroups 返回树的前序(显示顺序),order 为兄弟内序号', () => {
+      const r1 = store.createGroup('r1')
+      const c1 = store.createGroup('c1', r1.id)
+      const r2 = store.createGroup('r2')
+      const ids = store.listGroups().map((g) => g.id)
+      expect(ids).toEqual([r1.id, c1.id, r2.id])
+      expect(store.listGroups().map((g) => g.order)).toEqual([0, 0, 1])
+    })
+
     it('读取旧数据(无 parentId)时 normalize 为 null', () => {
       data = {
         scripts: [],
@@ -117,6 +173,78 @@ describe('分组', () => {
         groups: [{ id: 'g1', name: '旧', order: 0, createdAt: '2026-01-01T00:00:00.000Z' }] as Group[]
       }
       expect(store.listGroups()[0].parentId).toBeNull()
+    })
+  })
+
+  describe('损坏数据防御:parentId 清洗(normalizeGroups sanitize)', () => {
+    const base = { name: 'x', order: 0, createdAt: '2026-01-01T00:00:00.000Z' }
+
+    it('循环 parentId 读取后断环为树,所有节点可达且上溯有限步', () => {
+      data = {
+        scripts: [],
+        groups: [
+          { id: 'A', ...base, parentId: 'C' },
+          { id: 'B', ...base, parentId: 'A' },
+          { id: 'C', ...base, parentId: 'B' }
+        ] as Group[]
+      }
+      const groups = store.listGroups()
+      expect(groups).toHaveLength(3)
+      for (const g of groups) {
+        let cur: Group = g
+        let steps = 0
+        while (cur.parentId !== null) {
+          const next: Group | undefined = groups.find((x) => x.id === cur.parentId)
+          expect(next).toBeDefined()
+          if (!next) break
+          cur = next
+          steps += 1
+          expect(steps).toBeLessThan(10)
+        }
+      }
+      // 断环后的数据上做 move,不再有死循环风险
+      expect(() => store.moveGroup('A', null)).not.toThrow()
+    })
+
+    it('悬空/自引用/非字符串/空串 parentId 一律视为顶层', () => {
+      data = {
+        scripts: [],
+        groups: [
+          { id: 'g1', ...base, parentId: 'ghost' },
+          { id: 'g2', ...base, parentId: 'g2' },
+          { id: 'g3', ...base, parentId: 123 },
+          { id: 'g4', ...base, parentId: '' }
+        ] as unknown as Group[]
+      }
+      const groups = store.listGroups()
+      expect(groups.map((g) => g.parentId)).toEqual([null, null, null, null])
+    })
+
+    it('replaceAll 导入同样过清洗:环数据落盘前被断开', () => {
+      store.replaceAll({
+        scripts: [],
+        groups: [
+          { id: 'A', name: 'A', order: 0, parentId: 'B', createdAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'B', name: 'B', order: 1, parentId: 'A', createdAt: '2026-01-01T00:00:00.000Z' }
+        ] as Group[]
+      })
+      const groups = store.listGroups()
+      expect(groups).toHaveLength(2)
+      expect(groups.filter((g) => g.parentId === null)).toHaveLength(1)
+    })
+
+    it('子目录挂在被清洗为顶层的目录下时仍保持父子关系', () => {
+      // dangling 父目录被清成顶层后,指向它的子目录不该再被误判悬空
+      data = {
+        scripts: [],
+        groups: [
+          { id: 'p', name: 'p', order: 0, parentId: 'ghost', createdAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'c', name: 'c', order: 0, parentId: 'p', createdAt: '2026-01-01T00:00:00.000Z' }
+        ] as Group[]
+      }
+      const groups = store.listGroups()
+      expect(groups.find((g) => g.id === 'p')!.parentId).toBeNull()
+      expect(groups.find((g) => g.id === 'c')!.parentId).toBe('p')
     })
   })
 })

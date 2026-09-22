@@ -52,24 +52,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async reload() {
     set({ loading: true })
-    const [scripts, groups] = await Promise.all([window.api.scripts.list(), window.api.groups.list()])
-    const { selectedScriptId: selected, openTabs, contentDrafts } = get()
-    // 页签先过滤掉已删除的脚本,选中失效时落到第一个剩余页签(与 closeTab 的落点语义一致)
-    const remainingTabs = openTabs.filter((id) => scripts.some((s) => s.id === id))
-    const selectedValid = selected && scripts.some((s) => s.id === selected)
-    // 被删脚本的草稿与页签一起作废,不留孤儿条目
-    const nextDrafts: Record<string, string> = {}
-    for (const [id, value] of Object.entries(contentDrafts)) {
-      if (scripts.some((s) => s.id === id)) nextDrafts[id] = value
+    try {
+      const [scripts, groups] = await Promise.all([window.api.scripts.list(), window.api.groups.list()])
+      const { selectedScriptId: selected, openTabs, contentDrafts } = get()
+      // 页签先过滤掉已删除的脚本,选中失效时落到第一个剩余页签(与 closeTab 的落点语义一致)
+      const remainingTabs = openTabs.filter((id) => scripts.some((s) => s.id === id))
+      const selectedValid = selected && scripts.some((s) => s.id === selected)
+      // 被删脚本的草稿与页签一起作废,不留孤儿条目
+      const nextDrafts: Record<string, string> = {}
+      for (const [id, value] of Object.entries(contentDrafts)) {
+        if (scripts.some((s) => s.id === id)) nextDrafts[id] = value
+      }
+      set({
+        scripts,
+        groups,
+        loading: false,
+        selectedScriptId: selectedValid ? selected : (remainingTabs[0] ?? null),
+        openTabs: remainingTabs,
+        contentDrafts: nextDrafts
+      })
+    } catch (err) {
+      // IPC 失败也要解除 loading,否则列表永远空转;错误就地打印,
+      // 调用方(Sidebar 的 void reload())没有 await,这里不抛才能避免 unhandled rejection
+      set({ loading: false })
+      console.error('[useAppStore] reload 失败:', err)
     }
-    set({
-      scripts,
-      groups,
-      loading: false,
-      selectedScriptId: selectedValid ? selected : (remainingTabs[0] ?? null),
-      openTabs: remainingTabs,
-      contentDrafts: nextDrafts
-    })
   },
 
   selectScript(id) {
