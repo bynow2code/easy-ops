@@ -5,9 +5,10 @@ import { createReadStream, createWriteStream, readFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { compareVersions, decideMacUpdateAction, deriveAppPath, buildReplaceScript, parseLatestMacChecksums } from './version'
+import { createPercentReporter, parseContentLength } from './progress'
 import type { UpdateEvent } from './win-linux'
 
 const REPO = 'bynow2code/easy-ops'
@@ -174,14 +175,39 @@ export function createMacUpdater(emit: (event: UpdateEvent) => void): MacUpdater
 
         const response = await fetch(asset.browser_download_url, { redirect: 'follow' })
         if (!response.ok || !response.body) throw new Error(`下载失败:HTTP ${response.status}`)
-        await pipeline(Readable.fromWeb(response.body as never), createWriteStream(zipPath))
+
+        // 更新包有 100MB 以上,慢速网络下要下几分钟 —— 进度必须边下边报。
+        // 这里以 content-length 为分母逐块换算百分比,交给上报器按百分比变化节流后才推给渲染层。
+        // 拿不到总长度(如 chunked)时不上报:渲染层会一直停在 0%,这是刻意的取舍 —— 不虚报一个
+        // 不会收敛的数字。GitHub Release 的资产必带 content-length(实测 115151193),
+        // 若哪天换成开了 chunked 的 CDN,这个分支就会真的生效,届时需要改成不确定态进度条。
+        const totalBytes = parseContentLength(response.headers.get('content-length'))
+        const reportProgress = createPercentReporter((percent) =>
+          emit({ status: 'downloading', percent })
+        )
+        let receivedBytes = 0
+
+        await pipeline(
+          Readable.fromWeb(response.body as never),
+          new Transform({
+            transform(chunk: Buffer, _encoding, callback) {
+              receivedBytes += chunk.length
+              reportProgress(receivedBytes, totalBytes)
+              callback(null, chunk)
+            }
+          }),
+          createWriteStream(zipPath)
+        )
 
         const actualSha512 = await sha512File(zipPath)
         if (actualSha512 !== expectedSha512) {
           throw new Error('更新包完整性校验失败(sha512 不匹配),已丢弃本次下载')
         }
 
-        emit({ status: 'downloading', percent: 100 })
+        // 传输已完成。校验与解压阶段没有字节进度可报,这里补一个 100% 让 UI 停在满格而不是悬在中途。
+        // content-length 可得时上报器已在最后一个 chunk 报过 100,再发一次只是重复 IPC;只有拿不到
+        // 总长度(reporter 全程沉默)时,它才是唯一能告知「已下完」的信号。
+        if (totalBytes === null) emit({ status: 'downloading', percent: 100 })
 
         const extractDir = path.join(workDir, 'extract')
         await fs.mkdir(extractDir, { recursive: true })
