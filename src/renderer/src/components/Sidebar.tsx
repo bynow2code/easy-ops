@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { App, Button, Dropdown, Input, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -18,6 +18,7 @@ import { useAppStore } from '../store/useAppStore'
 import { terminalActions } from '../store/useTerminalStore'
 import { toUserMessage } from '../utils/toUserMessage'
 import { computeDropAction, insertIntoSiblings, type DragItem, type DropPosition, type DropTarget } from '../utils/treeDnd'
+import { rangeBetween } from '../utils/multiSelect'
 
 /**
  * 搜索按「名称」匹配(Postman 式):内容不参与,避免出现名称对不上却命中结果的困惑。
@@ -196,6 +197,11 @@ export function Sidebar(): JSX.Element {
 
   const searching = search.trim().length > 0
 
+  // ── 脚本多选(纯 UI 态,不持久化;目录不参与,规格 2026-09-23) ──
+  // selectedIds = 多选脚本集合;anchorId = Shift 范围选择的锚点(最近一次普通/Ctrl 单击行)
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+
   // 整树构建:目录按 order 排好后按 parentId 挂到父节点,父缺失的(含旧孤儿数据)落顶层;
   // 无分组脚本(groupId 缺失或指向已删目录)直接作为顶层行渲染,排在所有顶层目录之后。
   // 搜索按 Postman 逻辑剪枝(在 prune 里做,这里喂全量 scripts):
@@ -250,6 +256,36 @@ export function Sidebar(): JSX.Element {
       searchEmpty: prunedRoots.length === 0 && prunedRootScripts.length === 0
     }
   }, [groups, scripts, searching, search])
+
+  // 渲染前序的脚本 id 扁平列表:Shift 范围选择按这个视觉顺序圈行(目录行不进来)
+  const flatScriptIds = useMemo((): string[] => {
+    const ids: string[] = []
+    const collect = (node: GroupNode): void => {
+      for (const c of node.children) collect(c)
+      for (const s of node.scripts) ids.push(s.id)
+    }
+    for (const n of tree) collect(n)
+    for (const s of rootScripts) ids.push(s.id)
+    return ids
+  }, [tree, rootScripts])
+
+  // 搜索态的树是剪枝视图,Shift 范围会错乱:搜索词变化即清空多选(规格)
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setAnchorId(null)
+  }, [search])
+
+  // Esc 清空多选(不回退详情选中 —— selectedScriptId 不动,最后点过的行仍高亮)。
+  // window 级监听:确认框开着时按 Esc 取消确认也会顺带清选区,无害且可接受
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
+      setAnchorId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const isExpanded = (key: string): boolean => searching || !collapsedIds.has(key)
 
@@ -510,8 +546,44 @@ export function Sidebar(): JSX.Element {
     })
   }
 
+  /**
+   * 脚本行单击(带修饰键语义,规格 2026-09-23):
+   * - Shift:锚点..当前行的树前序范围整体选中(替换选区,锚点不动便于继续扩展)
+   * - Ctrl/⌘:切换该行;首次 Ctrl 会把当前详情选中行一并纳入(文件管理器同款)
+   * - 普通单击:清空多选,单选该行
+   * 注意 macOS 上 Ctrl+单击是系统右键,mac 用户用 ⌘(metaKey),两个修饰键都接。
+   */
+  const handleScriptClick = (script: Script, e: ReactMouseEvent<HTMLDivElement>): void => {
+    if (e.shiftKey) {
+      e.preventDefault()
+      setSelectedIds(new Set(rangeBetween(flatScriptIds, anchorId, script.id)))
+      if (anchorId === null) setAnchorId(script.id) // 无锚点 = 等价普通单击,顺手立锚
+      selectScript(script.id)
+      return
+    }
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      setSelectedIds((prev) => {
+        // 首次 Ctrl 单击:把当前详情选中的行一并纳入,否则它会丢高亮
+        const base =
+          prev.size === 0
+            ? new Set<string>(selectedScriptId ? [selectedScriptId] : [])
+            : new Set(prev)
+        if (base.has(script.id)) base.delete(script.id)
+        else base.add(script.id)
+        return base
+      })
+      setAnchorId(script.id)
+      selectScript(script.id)
+      return
+    }
+    setSelectedIds(new Set())
+    setAnchorId(script.id)
+    selectScript(script.id)
+  }
+
   const renderScript = (script: Script, depth: number): JSX.Element => {
-    const selected = selectedScriptId === script.id
+    const selected = selectedIds.has(script.id) || selectedScriptId === script.id
     // 拖拽落点提示:目标行的上/下边缘画 2px 主色线,标记插入位置
     const hint = dropHint?.id === script.id ? dropHint.position : null
     return (
@@ -520,7 +592,7 @@ export function Sidebar(): JSX.Element {
         // 操作按钮靠 CSS 显隐(class 驱动)而非条件渲染:按钮始终留在 DOM 里,
         // 键盘 Tab 仍可达,组件测试也不必为「悬停」造状态
         className={selected ? 'app-row app-row-selected' : 'app-row'}
-        onClick={() => selectScript(script.id)}
+        onClick={(e) => handleScriptClick(script, e)}
         draggable={dndEnabled}
         onDragStart={dndEnabled ? handleDragStart({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
         onDragEnd={handleDragEnd}
