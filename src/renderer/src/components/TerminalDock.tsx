@@ -161,7 +161,9 @@ export function TerminalDock(): JSX.Element {
                 // xterm 持有 DOM 焦点时才表现为闪烁。焦点落到卡片头部(标题/最大化/关闭)或工具栏时,
                 // 界面上就没有任何激活线索了 —— 这是有意接受的取舍,不是遗漏。
                 // isActive 必须继续往下传:它触发 TerminalView 的 term.focus(),是光标闪烁的唯一来源
-                border: '1px solid var(--app-hairline)',
+                // 外框用 hairlineStrong:卡片浮在 layoutBg 灰底上,hairline(6% 黑)几乎不可见,
+                // 终端区又是大片纯色内容,边界必须能看得出(内部表头分隔线保持 hairline 轻一档)
+                border: '1px solid var(--app-hairlineStrong)',
                 borderRadius: isMaximized ? 0 : 'var(--app-radius-lg)',
                 overflow: 'hidden',
                 background: 'var(--color-bg-container)'
