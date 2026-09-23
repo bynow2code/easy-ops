@@ -208,3 +208,63 @@ describe('行右键菜单', () => {
     expect(screen.queryByText('删除目录')).toBeNull()
   })
 })
+
+describe('批量删除', () => {
+  it('确认框文案含名字与总数;确认后逐条 remove 并 reload,选区清空', async () => {
+    renderSidebar()
+    fireEvent.click(scriptRow('脚本A1'))
+    fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
+    fireEvent.contextMenu(scriptRow('脚本A2'))
+    fireEvent.click(await screen.findByText('删除 2 个脚本'))
+
+    // 确认框:正文含名字(antd two-char okText「删 除」带空格,按钮用正则定位)
+    expect((await screen.findByText(/确定删除/)).textContent).toContain('脚本A1')
+    expect((await screen.findByText(/确定删除/)).textContent).toContain('脚本A2')
+    fireEvent.click(screen.getByRole('button', { name: /删\s*除/ }))
+
+    await waitFor(() => expect(api.scripts.remove).toHaveBeenCalledTimes(2))
+    expect(api.scripts.remove).toHaveBeenCalledWith('s1')
+    expect(api.scripts.remove).toHaveBeenCalledWith('s2')
+    // reload 走 scripts.list 重新拉取:挂载 1 次 + reload 1 次
+    await waitFor(() => expect(api.scripts.list).toHaveBeenCalledTimes(2))
+    // 选区清空:右键再开菜单回到单条语义
+    fireEvent.contextMenu(scriptRow('脚本A1'))
+    expect(await screen.findByText('复制')).toBeTruthy()
+  })
+
+  it('部分失败:报错提示,成功的照常 reload', async () => {
+    api.scripts.remove.mockImplementation(async (id: string) => {
+      if (id === 's1') throw new Error('boom')
+      return undefined
+    })
+    renderSidebar()
+    fireEvent.click(scriptRow('脚本A1'))
+    fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
+    fireEvent.contextMenu(scriptRow('脚本A2'))
+    fireEvent.click(await screen.findByText('删除 2 个脚本'))
+    fireEvent.click(screen.getByRole('button', { name: /删\s*除/ }))
+
+    await waitFor(() => expect(api.scripts.remove).toHaveBeenCalledTimes(2))
+    // reload 照常执行(allSettled:单条失败不拖累):挂载 1 次 + reload 1 次
+    await waitFor(() => expect(api.scripts.list).toHaveBeenCalledTimes(2))
+    // message.error 的文案在 body 里(antd message 容器)
+    await screen.findByText('1 个脚本删除失败,已保留')
+  })
+
+  it('选区行全部从列表消失:无批量入口,右键回到单条语义', async () => {
+    renderSidebar()
+    fireEvent.click(scriptRow('脚本A1'))
+    fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
+    // 选区里的脚本全部从列表消失(其他入口删除):渲染期求交后选区实际为空
+    act(() => {
+      useAppStore.setState({ scripts: [s3] })
+    })
+    expect(screen.queryByText('脚本A1')).toBeNull()
+    // 右键仍在列表里的行:走单条菜单而非批量(空选区不会出现「删除 N 个脚本」)。
+    // (计划原稿的「全部失效」用例无法从 UI 构造到 handleBatchDelete 空目标分支——
+    //  菜单入口传入的 validSelected 已与渲染期列表求交;空分支为纯防御,评审把关)
+    fireEvent.contextMenu(scriptRow('脚本B1'))
+    expect(await screen.findByText('复制')).toBeTruthy()
+    expect(screen.queryByText(/删除 \d+ 个脚本/)).toBeNull()
+  })
+})

@@ -510,9 +510,43 @@ export function Sidebar(): JSX.Element {
     })
   }
 
-  // 任务 4 将替换为确认框 + allSettled 批量流程;先接线保证菜单可用(显式消费参数过 noUnusedParameters)
-  const handleBatchDelete = (ids: string[]): void => {
-    void ids
+  /**
+   * 批量删除:单个确认框列名字与总数 → 逐条走既有删除 IPC → 一次 reload 收尾。
+   * 页签/草稿/详情选中由 reload 的既有清理逻辑收尾,这里不重复处理。
+   */
+  const handleBatchDelete = (rawIds: string[]): void => {
+    // 以 store 最新快照校验:菜单渲染的 validSelected 是渲染期快照,确认框打开期间
+    // 列表可能已变(其他入口删除),失效 id 跳过。纯防御分支:菜单入口传入的
+    // rawIds 来自已求交的 validSelected,UI 上正常操作构造不出空目标
+    const targets = useAppStore.getState().scripts.filter((s) => rawIds.includes(s.id))
+    if (targets.length === 0) {
+      message.warning('所选脚本已不存在,无需删除')
+      return
+    }
+    // 确认框正文最多列 5 个名字,更多用「等 N 个脚本」收尾,避免长选区撑爆弹窗
+    const shown = targets
+      .slice(0, 5)
+      .map((t) => `「${t.name}」`)
+      .join('、')
+    const suffix = targets.length > 5 ? ` 等 ${targets.length} 个脚本` : ''
+    modal.confirm({
+      centered: true,
+      title: '删除脚本',
+      content: `确定删除 ${shown}${suffix}?此操作不可撤销。`,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        // allSettled:单条失败不拖累其他;失败的留在列表,成功的 reload 后消失
+        const results = await Promise.allSettled(targets.map((t) => window.api.scripts.remove(t.id)))
+        const failed = results.filter((r) => r.status === 'rejected').length
+        await reload()
+        // 删除落地后选区已无意义,清掉避免留下脏高亮/脏锚点
+        setSelectedIds(new Set())
+        setAnchorId(null)
+        if (failed > 0) message.error(`${failed} 个脚本删除失败,已保留`)
+      }
+    })
   }
 
   const handleDeleteGroup = (group: Group): void => {
