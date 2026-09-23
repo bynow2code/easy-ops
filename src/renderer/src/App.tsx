@@ -22,22 +22,6 @@ import { useAppStore } from './store/useAppStore'
 import { useUpdateDot } from './hooks/useUpdateDot'
 import { useTabStripScroll } from './hooks/useTabStripScroll'
 
-/** 牌子标记,与 build/icon.png 同源:青色提示符 + 白色光标块 */
-function BrandMark(): JSX.Element {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <path
-        d="M5 6.5 L11.5 12 L5 17.5"
-        stroke="#4FD1E0"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <rect x="13.6" y="13.4" width="6.2" height="4" rx="1.3" fill="#FFFFFF" fillOpacity="0.92" />
-    </svg>
-  )
-}
-
 function TopBar({
   onOpenSettings,
   hasUpdate
@@ -132,7 +116,6 @@ function TopBar({
           </div>
         ) : null}
         <Space size={8} align="center">
-          <BrandMark />
           <Typography.Text style={{ fontSize: 13, fontWeight: 500, color: 'var(--app-topbar-text)', letterSpacing: 0.2 }}>
             EasyOps
           </Typography.Text>
