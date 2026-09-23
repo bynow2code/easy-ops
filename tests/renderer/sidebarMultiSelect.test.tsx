@@ -300,16 +300,19 @@ describe('行右键菜单', () => {
 })
 
 describe('批量删除', () => {
-  it('确认框文案含名字与总数;确认后逐条 remove 并 reload,选区清空', async () => {
+  it('确认框只报总数不含名字;确认后逐条 remove 并 reload,选区清空', async () => {
     renderSidebar()
     fireEvent.click(scriptRow('脚本A1'))
     fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
     await openContextMenuAndReadItems(scriptRow('脚本A2'))
     fireEvent.click(screen.getByText('删除 2 个脚本'))
 
-    // 确认框:正文含名字(antd two-char okText「删 除」带空格,按钮用正则定位)
-    expect((await screen.findByText(/确定删除/)).textContent).toContain('脚本A1')
-    expect((await screen.findByText(/确定删除/)).textContent).toContain('脚本A2')
+    // 确认框正文(2026-09-23 用户定稿):只报数量 + 不可撤销警示,不列脚本名
+    const body = await screen.findByText(/确定删除/)
+    expect(body.textContent).toBe('确定删除 2 个脚本?此操作不可撤销。')
+    expect(body.textContent).not.toContain('脚本A1')
+    expect(body.textContent).not.toContain('脚本A2')
+    expect(body.textContent).not.toContain('「')
     fireEvent.click(screen.getByRole('button', { name: /删\s*除/ }))
 
     await waitFor(() => expect(api.scripts.remove).toHaveBeenCalledTimes(2))
@@ -425,11 +428,11 @@ describe('多选回归(代码审查修复)', () => {
     renderSidebar()
     fireEvent.click(scriptRow('脚本A1'))
     fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
-    // 再 Ctrl 一次把 脚本A2 移出选区(它仍是详情选中行 → 只有主色条,非多选高亮)
+    // 再 Ctrl 一次把 脚本A2 移出选区(它仍是详情选中行,视觉同为灰胶囊 —— 见下方视觉用例)
     fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
-    // 选中态区分:脚本A1 在选区(灰胶囊),脚本A2 仅详情选中(左侧主色条)。
-    // 断言走 aria-selected(真实无障碍语义)而非自定义 data 属性,见审查 I-C:
-    // 前者 screen reader 可读,且不会因 DOM 结构调整而静默失效
+    // 选中态区分靠 aria-selected(真实无障碍语义)而非自定义 data 属性,见审查 I-C:
+    // 前者 screen reader 可读,且不会因 DOM 结构调整而静默失效。
+    // 注意:视觉上两者现在无法区分(2026-09-23 用户要求去掉左侧主色条)
     expect(scriptRow('脚本A1').getAttribute('aria-selected')).toBe('true')
     expect(scriptRow('脚本A2').getAttribute('aria-selected')).toBe('false')
 
@@ -442,6 +445,21 @@ describe('多选回归(代码审查修复)', () => {
     const onInSelection = await openContextMenuAndReadItems(scriptRow('脚本A1'))
     expect(onInSelection).toEqual(['复制', '删除'])
     expect(scriptRow('脚本A1').getAttribute('aria-selected')).toBe('false')
+  })
+
+  it('选中行不画蓝色左侧竖条:主次选中只用灰胶囊(2026-09-23 用户要求去掉)', () => {
+    renderSidebar()
+    // 仅详情选中(不在多选选区):曾经会画 inset 2px 主色条,现已去掉
+    fireEvent.click(scriptRow('脚本A2'))
+    expect(scriptRow('脚本A2').style.boxShadow).not.toContain('inset 2px')
+    expect(scriptRow('脚本A2').style.boxShadow).not.toContain('--app-primary')
+    // 灰胶囊仍在(选中态的**唯一**视觉)
+    expect(isSelected('脚本A2')).toBe(true)
+
+    // 在多选选区里的行同样不画
+    fireEvent.click(scriptRow('脚本A1'), { ctrlKey: true })
+    expect(scriptRow('脚本A1').style.boxShadow).not.toContain('inset 2px')
+    expect(scriptRow('脚本A1').getAttribute('aria-selected')).toBe('true')
   })
 
   it('确认框打开期间目标被删除:按执行时刻重新求交,不误报失败(I2)', async () => {

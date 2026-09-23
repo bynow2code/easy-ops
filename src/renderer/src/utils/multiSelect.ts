@@ -46,13 +46,10 @@ export function resolveShiftAnchor(
   return flatOrder.includes(anchorId) ? anchorId : null
 }
 
-/** 批量删除确认框里逐个列名字的上限,超出部分用「等 N 个脚本」收尾 */
-const MAX_LISTED_NAMES = 5
-
 export interface BatchDeletePlan {
   /** 仍然存在于当前列表里的目标(执行期快照,非渲染期快照) */
   targets: Array<{ id: string; name: string }>
-  /** 确认框正文(含前 N 个名字与总数,以及不可撤销警示) */
+  /** 确认框正文:只报总数 + 不可撤销警示,不列脚本名 */
   content: string
 }
 
@@ -61,6 +58,12 @@ export interface BatchDeletePlan {
  * 抽成纯函数是为了能直接单测空目标/部分失效/超长选区等分支
  * (组件里这些分支靠 UI 构造不出来,见计划任务 4 的说明)。
  * 返回 null 表示没有任何有效目标,调用方应提示而非弹确认框。
+ *
+ * 文案(2026-09-23 用户定稿):只报数量,不列名字。
+ * 早期版本会逐个列出脚本名(前 5 个 + 「等 N 个脚本」),但用户反馈
+ * 「名字对决策没帮助」—— 多选后用户已经知道自己选了什么,再列一遍是冗余,
+ * 且长脚本名堆在一起会让确认框显得臃肿。现在与单条删除的句式对齐:
+ * 「确定删除 x 个脚本?此操作不可撤销。」
  */
 export function buildBatchDeletePlan(
   scripts: ReadonlyArray<{ id: string; name: string }>,
@@ -69,10 +72,5 @@ export function buildBatchDeletePlan(
   const requested = new Set(requestedIds)
   const targets = scripts.filter((s) => requested.has(s.id)).map((s) => ({ id: s.id, name: s.name }))
   if (targets.length === 0) return null
-  const shown = targets
-    .slice(0, MAX_LISTED_NAMES)
-    .map((t) => `「${t.name}」`)
-    .join('、')
-  const suffix = targets.length > MAX_LISTED_NAMES ? ` 等 ${targets.length} 个脚本` : ''
-  return { targets, content: `确定删除 ${shown}${suffix}?此操作不可撤销。` }
+  return { targets, content: `确定删除 ${targets.length} 个脚本?此操作不可撤销。` }
 }

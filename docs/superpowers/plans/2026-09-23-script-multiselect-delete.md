@@ -557,15 +557,15 @@ git commit -m "feat(sidebar): 脚本行右键菜单,多选态批量删除入口"
 
 ```tsx
 describe('批量删除', () => {
-  it('确认框文案含前 5 个名字与总数;确认后逐条 remove 并 reload,选区清空', async () => {
+  it('确认框只报总数不含名字;确认后逐条 remove 并 reload,选区清空', async () => {
     renderSidebar()
     fireEvent.click(scriptRow('脚本A1'))
     fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
     fireEvent.contextMenu(scriptRow('脚本A2'))
     fireEvent.click(await screen.findByText('删除 2 个脚本'))
 
-    // 确认框:标题 + 正文含名字(antd two-char okText「删 除」带空格,用正则)
-    expect(await screen.findByText(/确定删除/).textContent).toContain('脚本A1')
+    // 确认框:正文只报总数(antd two-char okText「删 除」带空格,用正则)
+    expect((await screen.findByText(/确定删除/)).textContent).toBe('确定删除 2 个脚本?此操作不可撤销。')
     fireEvent.click(screen.getByRole('button', { name: /删\s*除/ }))
 
     await waitFor(() => expect(api.scripts.remove).toHaveBeenCalledTimes(2))
@@ -620,7 +620,7 @@ describe('批量删除', () => {
 - [ ] **步骤 3：实现批量删除（替换任务 3 的占位实现）**
 
 ```tsx
-/** 批量删除:单个确认框列名字与总数 → 逐条走既有删除 IPC → 一次 reload 收尾 */
+/** 批量删除:单个确认框只报总数 → 逐条走既有删除 IPC → 一次 reload 收尾 */
 const handleBatchDelete = (rawIds: string[]): void => {
   // 确认框打开期间列表可能已变(其他入口删除):以 store 最新快照校验,失效 id 跳过
   const targets = useAppStore.getState().scripts.filter((s) => rawIds.includes(s.id))
@@ -628,15 +628,10 @@ const handleBatchDelete = (rawIds: string[]): void => {
     message.warning('所选脚本已不存在,无需删除')
     return
   }
-  const shown = targets
-    .slice(0, 5)
-    .map((t) => `「${t.name}」`)
-    .join('、')
-  const suffix = targets.length > 5 ? ` 等 ${targets.length} 个脚本` : ''
   modal.confirm({
     centered: true,
     title: '删除脚本',
-    content: `确定删除 ${shown}${suffix}?此操作不可撤销。`,
+    content: `确定删除 ${targets.length} 个脚本?此操作不可撤销。`,
     okText: '删除',
     okButtonProps: { danger: true },
     cancelText: '取消',

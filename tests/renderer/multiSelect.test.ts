@@ -45,28 +45,39 @@ describe('buildBatchDeletePlan(批量删除方案)', () => {
   it('脏 id 被求交剔除:只保留现存项', () => {
     const plan = buildBatchDeletePlan([item('s1', 'A')], ['s1', 'ghost'])
     expect(plan?.targets).toEqual([{ id: 's1', name: 'A' }])
-    expect(plan?.content).toContain('「A」')
-    expect(plan?.content).not.toContain('ghost')
+    // 正文只按「剔除后的实际目标数」报数:请求了 2 个但只剩 1 个有效目标,
+    // 必须报 1 —— 报 2 会让用户以为幽灵 id 也会被删。
+    expect(plan?.content).toContain('确定删除 1 个脚本')
   })
 
   it('正文含不可撤销警示', () => {
     expect(buildBatchDeletePlan([item('s1', 'A')], ['s1'])?.content).toContain('不可撤销')
   })
 
-  it('不超过 5 个目标:逐个列名字,不出现「等 N 个」', () => {
+  it('单目标文案与批量同句式:确定删除 1 个脚本(不做单复数变体)', () => {
+    const plan = buildBatchDeletePlan([item('s1', 'A')], ['s1'])
+    expect(plan?.content).toBe('确定删除 1 个脚本?此操作不可撤销。')
+  })
+
+  it('多目标:正文只含总数,不列任何脚本名(2026-09-23 用户定稿)', () => {
     const scripts = [1, 2, 3, 4, 5].map((i) => item(`s${i}`, `脚本${i}`))
     const plan = buildBatchDeletePlan(scripts, scripts.map((s) => s.id))
-    expect(plan?.content).toContain('「脚本1」')
-    expect(plan?.content).toContain('「脚本5」')
+    expect(plan?.content).toBe('确定删除 5 个脚本?此操作不可撤销。')
+    // 名字对决策没帮助,且长名字会让确认框臃肿 —— 锁住「不出现名字」这条约定
+    expect(plan?.content).not.toContain('「')
+    expect(plan?.content).not.toContain('脚本1')
+    // 早期版本会用「等 N 个脚本」收尾,现已完全废弃
     expect(plan?.content).not.toContain('等')
   })
 
-  it('超过 5 个目标:只列前 5 个,用「等 N 个脚本」收尾', () => {
-    const scripts = [1, 2, 3, 4, 5, 6, 7].map((i) => item(`s${i}`, `脚本${i}`))
+  it('超过 10 个目标同样只报数:不截断、不收尾、名字一律不出现', () => {
+    const scripts = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) =>
+      item(`s${i}`, `一个很长的脚本名字${i}`)
+    )
     const plan = buildBatchDeletePlan(scripts, scripts.map((s) => s.id))
-    expect(plan?.content).toContain('「脚本5」')
-    expect(plan?.content).not.toContain('「脚本6」')
-    expect(plan?.content).toContain('等 7 个脚本')
+    expect(plan?.content).toBe('确定删除 12 个脚本?此操作不可撤销。')
+    expect(plan?.content).not.toContain('「')
+    expect(plan?.content).not.toContain('等')
   })
 
   it('顺序跟随列表顺序,而非请求 id 顺序(文案与列表视觉一致)', () => {
