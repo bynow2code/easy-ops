@@ -10,6 +10,7 @@ export function registerGroupIpc(store: ScriptsStore): void {
     store.updateGroup(payload.id, payload.name)
   )
 
+  // 删除目录一律级联:连带目录树下全部子目录与脚本;后果由渲染层确认框二次确认
   ipcMain.handle('group:delete', (_event, payload: { id: string }) => {
     store.deleteGroup(payload.id)
   })
