@@ -15,6 +15,7 @@ import { GroupFormModal } from './components/GroupFormModal'
 import { SettingsModal } from './components/SettingsModal'
 import { ContentPanel } from './components/ContentPanel'
 import { UnsavedDraftGuard } from './components/UnsavedDraftGuard'
+import { TabCloseGuard } from './components/TabCloseGuard'
 import { Splitter } from './components/Splitter'
 import { TerminalDock } from './components/TerminalDock'
 import { useAppStore } from './store/useAppStore'
@@ -205,10 +206,8 @@ export function ScriptDetail(): JSX.Element {
   const openTabs = useAppStore((s) => s.openTabs)
   const contentDrafts = useAppStore((s) => s.contentDrafts)
   const selectScript = useAppStore((s) => s.selectScript)
-  const closeTab = useAppStore((s) => s.closeTab)
-  const closeAllTabs = useAppStore((s) => s.closeAllTabs)
-  const closeTabsToLeft = useAppStore((s) => s.closeTabsToLeft)
-  const closeTabsToRight = useAppStore((s) => s.closeTabsToRight)
+  // 页签关闭统一走 requestTabClose:干净页签直接关,带未保存草稿的由 TabCloseGuard 弹确认
+  const requestTabClose = useAppStore((s) => s.requestTabClose)
 
   const selected = scripts.find((s) => s.id === selectedScriptId) ?? null
   // 页签按打开顺序展示;脚本可能刚被删,reload 会收掉对应页签,这里再兜一层底
@@ -272,18 +271,22 @@ export function ScriptDetail(): JSX.Element {
               trigger={['contextMenu']}
               menu={{
                 items: [
-                  { key: 'close-all', label: '关闭全部', onClick: () => closeAllTabs() },
+                  {
+                    key: 'close-all',
+                    label: '关闭全部',
+                    onClick: () => requestTabClose([...openTabs])
+                  },
                   {
                     key: 'close-left',
                     label: '关闭左边',
                     disabled: tabIndex === 0,
-                    onClick: () => closeTabsToLeft(tab.id)
+                    onClick: () => requestTabClose(openTabs.slice(0, tabIndex))
                   },
                   {
                     key: 'close-right',
                     label: '关闭右边',
                     disabled: tabIndex === openTabs.length - 1,
-                    onClick: () => closeTabsToRight(tab.id)
+                    onClick: () => requestTabClose(openTabs.slice(tabIndex + 1))
                   }
                 ]
               }}
@@ -330,13 +333,13 @@ export function ScriptDetail(): JSX.Element {
                   aria-label={`关闭页签 ${tab.name}`}
                   onClick={(e) => {
                     e.stopPropagation()
-                    closeTab(tab.id)
+                    requestTabClose([tab.id])
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.stopPropagation()
                       e.preventDefault()
-                      closeTab(tab.id)
+                      requestTabClose([tab.id])
                     }
                   }}
                 >
@@ -518,6 +521,8 @@ export default function App(): JSX.Element {
       <ScriptFormModal />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <UnsavedDraftGuard />
+      {/* 页签关闭确认:有未保存草稿的页签关闭时弹 VS Code 风格确认框 */}
+      <TabCloseGuard />
     </ThemeProvider>
   )
 }

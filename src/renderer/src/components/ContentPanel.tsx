@@ -17,10 +17,9 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
   const { message } = App.useApp()
   const draft = useAppStore((s) => s.contentDrafts[script.id])
   const setContentDraft = useAppStore((s) => s.setContentDraft)
-  const clearContentDraft = useAppStore((s) => s.clearContentDraft)
+  const saveScriptContent = useAppStore((s) => s.saveScriptContent)
   const contentFocusRequest = useAppStore((s) => s.contentFocusRequest)
   const clearContentFocus = useAppStore((s) => s.clearContentFocus)
-  const reload = useAppStore((s) => s.reload)
 
   const viewRef = useRef<EditorView | null>(null)
   const value = draft ?? script.content
@@ -28,19 +27,15 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
 
   const save = useCallback(async (): Promise<void> => {
     if (!dirty) return
-    // 记住本次保存的值:保存走 IPC 往返,期间用户可能继续输入(草稿已变)。
-    // 只有草稿仍等于保存值时才清除,否则保留 —— 让飞行期间的输入作为未保存增量继续存在。
-    const savedValue = draft
     try {
-      await window.api.scripts.update(script.id, { content: savedValue })
-      await reload()
-      const latestDraft = useAppStore.getState().contentDrafts[script.id]
-      if (latestDraft === undefined || latestDraft === savedValue) clearContentDraft(script.id)
+      // 保存语义收口在 store 的 saveScriptContent:IPC 往返期间继续输入的内容
+      // 作为未保存增量保留(页签关闭确认弹窗的「Save changes」走同一个入口)
+      await saveScriptContent(script.id)
       message.success('已保存')
     } catch (err) {
       message.error(toUserMessage(err))
     }
-  }, [dirty, draft, script.id, reload, clearContentDraft, message])
+  }, [dirty, script.id, saveScriptContent, message])
 
   // 新建脚本后让光标直接进编辑器,接着写内容。
   // 不能只 focus 一次:创建走的是弹窗,弹窗关闭时它内部获得焦点的输入框被移除,
@@ -85,7 +80,8 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* 未保存状态由页签上的橙点承担(编辑区不再放「未保存」chip 与「保存」按钮),
-          保存入口只剩 Cmd/Ctrl+S;草稿语义不变:切走再切回不丢,退出应用仍有保存拦截 */}
+          保存入口只剩 Cmd/Ctrl+S;草稿语义不变:切走再切回不丢,
+          关页签(TabCloseGuard 确认框)与退出应用(UnsavedDraftGuard)仍有保存拦截 */}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ScriptEditor
           value={value}

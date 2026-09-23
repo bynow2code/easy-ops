@@ -30,9 +30,25 @@ interface AppState {
   reload: () => Promise<void>
   selectScript: (id: string | null) => void
   closeTab: (id: string) => void
-  closeAllTabs: () => void
-  closeTabsToLeft: (id: string) => void
-  closeTabsToRight: (id: string) => void
+  /**
+   * 页签关闭请求:页签 X / 右键菜单发起,由 App 层常驻的 TabCloseGuard 接管
+   * (带未保存草稿时逐个弹确认)。null = 无进行中的请求;每次请求换新对象,guard 据此触发。
+   */
+  tabCloseRequest: { ids: string[] } | null
+  /**
+   * 「Always discard unsaved changes when closing a tab」的会话级开关:
+   * 只存内存,重启回到默认的逐次弹窗(产品决策,不落盘)。
+   */
+  alwaysDiscardTabClose: boolean
+  requestTabClose: (ids: string[]) => void
+  clearTabCloseRequest: () => void
+  setAlwaysDiscardTabClose: (value: boolean) => void
+  /**
+   * 保存某脚本的内容草稿:IPC 更新 + reload;保存往返期间继续输入的内容按未保存增量保留。
+   * 没有草稿或草稿等于已存内容时空操作。错误原样上抛,由调用方负责提示。
+   * 内容面板 Cmd/Ctrl+S 与页签关闭确认共用这一个保存入口。
+   */
+  saveScriptContent: (scriptId: string) => Promise<void>
   openForm: (form: NameFormState) => void
   closeForm: () => void
   setSearch: (value: string) => void
@@ -54,6 +70,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   search: '',
   contentDrafts: {},
   contentFocusRequest: null,
+  tabCloseRequest: null,
+  alwaysDiscardTabClose: false,
 
   async reload() {
     set({ loading: true })
@@ -108,35 +126,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  // 右键菜单「关闭全部」:连选中一起清,详情区回空态
-  closeAllTabs() {
-    set({ openTabs: [], selectedScriptId: null })
+  // 页签关闭的唯一入口:X 按钮与右键菜单都把「要关的 id 列表」交过来,
+  // 由 App 层的 TabCloseGuard 接管(干净页签直接关,脏页签逐个弹确认)。
+  // 传空列表或不存在的 id 都是空操作。
+  requestTabClose(ids) {
+    const { openTabs } = get()
+    const valid = ids.filter((id) => openTabs.includes(id))
+    if (valid.length === 0) return
+    set({ tabCloseRequest: { ids: valid } })
   },
 
-  // 右键菜单「关闭左边」:保留被点页签及其右侧;选中被波及时落到被点页签
-  closeTabsToLeft(id) {
-    const { openTabs, selectedScriptId } = get()
-    const idx = openTabs.indexOf(id)
-    if (idx <= 0) return
-    const next = openTabs.slice(idx)
-    set({
-      openTabs: next,
-      selectedScriptId:
-        selectedScriptId !== null && next.includes(selectedScriptId) ? selectedScriptId : id
-    })
+  clearTabCloseRequest() {
+    set({ tabCloseRequest: null })
   },
 
-  // 右键菜单「关闭右边」:保留被点页签及其左侧,选中落点同款
-  closeTabsToRight(id) {
-    const { openTabs, selectedScriptId } = get()
-    const idx = openTabs.indexOf(id)
-    if (idx === -1 || idx >= openTabs.length - 1) return
-    const next = openTabs.slice(0, idx + 1)
-    set({
-      openTabs: next,
-      selectedScriptId:
-        selectedScriptId !== null && next.includes(selectedScriptId) ? selectedScriptId : id
-    })
+  setAlwaysDiscardTabClose(value) {
+    set({ alwaysDiscardTabClose: value })
+  },
+
+  async saveScriptContent(scriptId) {
+    const { contentDrafts, scripts } = get()
+    const draft = contentDrafts[scriptId]
+    const script = scripts.find((s) => s.id === scriptId)
+    if (script === undefined || draft === undefined || draft === script.content) return
+    // 记住本次保存的值:保存走 IPC 往返,期间用户可能继续输入(草稿已变)。
+    // 只有草稿仍等于保存值时才清除,否则保留 —— 让飞行期间的输入作为未保存增量继续存在。
+    const savedValue = draft
+    await window.api.scripts.update(scriptId, { content: savedValue })
+    await get().reload()
+    const latestDraft = get().contentDrafts[scriptId]
+    if (latestDraft === undefined || latestDraft === savedValue) get().clearContentDraft(scriptId)
   },
 
   openForm(form) {

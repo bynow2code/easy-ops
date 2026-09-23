@@ -3,8 +3,9 @@ import type { Script } from '../../src/shared/types'
 import { useAppStore } from '../../src/renderer/src/store/useAppStore'
 
 /**
- * openTabs / selectScript / closeTab / reload 的纯状态逻辑测试。
- * 不渲染组件,不需要 jsdom shim,只 mock window.api 走 IPC 往返。
+ * openTabs / selectScript / closeTab / requestTabClose / saveScriptContent / reload
+ * 的纯状态逻辑测试。不渲染组件,不需要 jsdom shim,只 mock window.api 走 IPC 往返。
+ * (页签关闭确认的完整交互在 tabCloseGuard.test.tsx)
  */
 
 function makeScript(id: string, groupId: string | null = null): Script {
@@ -37,7 +38,9 @@ beforeEach(() => {
     loading: false,
     search: '',
     contentDrafts: {},
-    contentFocusRequest: null
+    contentFocusRequest: null,
+    tabCloseRequest: null,
+    alwaysDiscardTabClose: false
   })
 })
 
@@ -102,65 +105,95 @@ describe('closeTab 的落点逻辑', () => {
   })
 })
 
-describe('批量关闭页签(页签右键菜单)', () => {
-  const state = (openTabs: string[], selectedScriptId: string | null): void => {
-    useAppStore.setState({ openTabs, selectedScriptId })
+describe('requestTabClose(页签关闭的唯一入口,TabCloseGuard 消费)', () => {
+  it('过滤掉未打开的页签后发请求,每次请求都是新对象', () => {
+    useAppStore.setState({ openTabs: ['a', 'b'], tabCloseRequest: null })
+
+    useAppStore.getState().requestTabClose(['a', 'ghost', 'b'])
+    expect(useAppStore.getState().tabCloseRequest).toEqual({ ids: ['a', 'b'] })
+  })
+
+  it('没有有效 id 时不发请求(保持上一次请求不变)', () => {
+    useAppStore.setState({ openTabs: ['a'], tabCloseRequest: null })
+
+    useAppStore.getState().requestTabClose(['ghost'])
+    expect(useAppStore.getState().tabCloseRequest).toBeNull()
+  })
+
+  it('clearTabCloseRequest 清掉请求', () => {
+    useAppStore.setState({ openTabs: ['a'] })
+    useAppStore.getState().requestTabClose(['a'])
+
+    useAppStore.getState().clearTabCloseRequest()
+
+    expect(useAppStore.getState().tabCloseRequest).toBeNull()
+  })
+})
+
+describe('saveScriptContent(内容面板 Cmd/Ctrl+S 与页签关闭确认共用)', () => {
+  function mockSaveApi(
+    script: Script,
+    update: ReturnType<typeof vi.fn>
+  ): void {
+    ;(window as unknown as { api: unknown }).api = {
+      scripts: { list: vi.fn(async () => [script]), update },
+      groups: { list: vi.fn(async () => []) }
+    }
   }
 
-  it('closeAllTabs 清空全部页签与选中', () => {
-    state(['a', 'b', 'c'], 'b')
-    useAppStore.getState().closeAllTabs()
-    expect(useAppStore.getState().openTabs).toEqual([])
-    expect(useAppStore.getState().selectedScriptId).toBeNull()
+  it('有草稿且不等于已存内容:按草稿值走 IPC 更新,reload 后清掉草稿', async () => {
+    const script = makeScript('a')
+    const update = vi.fn(async () => script)
+    mockSaveApi(script, update)
+    useAppStore.setState({ scripts: [script], contentDrafts: { a: 'echo changed' } })
+
+    await useAppStore.getState().saveScriptContent('a')
+
+    expect(update).toHaveBeenCalledWith('a', { content: 'echo changed' })
+    expect(useAppStore.getState().contentDrafts).toEqual({})
   })
 
-  it('closeTabsToLeft 保留被点页签及其右侧,被波及的选中落到被点页签', () => {
-    state(['a', 'b', 'c', 'd'], 'a')
-    useAppStore.getState().closeTabsToLeft('c')
-    expect(useAppStore.getState().openTabs).toEqual(['c', 'd'])
-    expect(useAppStore.getState().selectedScriptId).toBe('c')
+  it('保存往返期间草稿又变了(继续输入):新输入作为未保存增量保留', async () => {
+    const script = makeScript('a')
+    const update = vi.fn(async () => {
+      // 模拟 IPC 在途时用户继续输入:草稿从 v1 变到 v2
+      useAppStore.setState({ contentDrafts: { a: 'echo v2' } })
+      return script
+    })
+    mockSaveApi(script, update)
+    useAppStore.setState({ scripts: [script], contentDrafts: { a: 'echo v1' } })
+
+    await useAppStore.getState().saveScriptContent('a')
+
+    // 落盘的是发起保存那一刻的值,飞行期间的新输入留在草稿里
+    expect(update).toHaveBeenCalledWith('a', { content: 'echo v1' })
+    expect(useAppStore.getState().contentDrafts).toEqual({ a: 'echo v2' })
   })
 
-  it('closeTabsToLeft 时选中在保留区则不变', () => {
-    state(['a', 'b', 'c'], 'c')
-    useAppStore.getState().closeTabsToLeft('b')
-    expect(useAppStore.getState().openTabs).toEqual(['b', 'c'])
-    expect(useAppStore.getState().selectedScriptId).toBe('c')
+  it('没有草稿或草稿等于已存内容:空操作,不发 IPC', async () => {
+    const script = makeScript('a')
+    const update = vi.fn(async () => script)
+    mockSaveApi(script, update)
+    useAppStore.setState({ scripts: [script], contentDrafts: { a: 'echo a' } })
+
+    await useAppStore.getState().saveScriptContent('a')
+    expect(update).not.toHaveBeenCalled()
+
+    useAppStore.setState({ contentDrafts: {} })
+    await useAppStore.getState().saveScriptContent('a')
+    expect(update).not.toHaveBeenCalled()
   })
 
-  it('closeTabsToLeft 对第一个页签是空操作(对应菜单置灰的前提)', () => {
-    state(['a', 'b'], 'a')
-    useAppStore.getState().closeTabsToLeft('a')
-    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
-    expect(useAppStore.getState().selectedScriptId).toBe('a')
-  })
+  it('保存失败:错误原样上抛,草稿保留由调用方处置', async () => {
+    const script = makeScript('a')
+    const update = vi.fn(async () => {
+      throw new Error('boom')
+    })
+    mockSaveApi(script, update)
+    useAppStore.setState({ scripts: [script], contentDrafts: { a: 'echo changed' } })
 
-  it('closeTabsToRight 保留被点页签及其左侧,被波及的选中落到被点页签', () => {
-    state(['a', 'b', 'c', 'd'], 'd')
-    useAppStore.getState().closeTabsToRight('b')
-    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
-    expect(useAppStore.getState().selectedScriptId).toBe('b')
-  })
-
-  it('closeTabsToRight 时选中在保留区则不变', () => {
-    state(['a', 'b', 'c'], 'a')
-    useAppStore.getState().closeTabsToRight('b')
-    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
-    expect(useAppStore.getState().selectedScriptId).toBe('a')
-  })
-
-  it('closeTabsToRight 对最后一个页签是空操作(对应菜单置灰的前提)', () => {
-    state(['a', 'b'], 'b')
-    useAppStore.getState().closeTabsToRight('b')
-    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
-    expect(useAppStore.getState().selectedScriptId).toBe('b')
-  })
-
-  it('批量关闭对不存在的页签是幂等空操作', () => {
-    state(['a', 'b'], 'a')
-    useAppStore.getState().closeTabsToLeft('nope')
-    useAppStore.getState().closeTabsToRight('nope')
-    expect(useAppStore.getState().openTabs).toEqual(['a', 'b'])
+    await expect(useAppStore.getState().saveScriptContent('a')).rejects.toThrow('boom')
+    expect(useAppStore.getState().contentDrafts).toEqual({ a: 'echo changed' })
   })
 })
 
