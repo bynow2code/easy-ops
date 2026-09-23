@@ -163,7 +163,7 @@ export function TerminalDock(): JSX.Element {
                 // isActive 必须继续往下传:它触发 TerminalView 的 term.focus(),是光标闪烁的唯一来源
                 // 外框用 hairlineStrong:卡片浮在 layoutBg 灰底上,hairline(6% 黑)几乎不可见,
                 // 终端区又是大片纯色内容,边界必须能看得出(内部表头分隔线保持 hairline 轻一档)
-                border: '1px solid var(--app-hairlineStrong)',
+                border: '1px solid var(--app-hairline-strong)',
                 borderRadius: isMaximized ? 0 : 'var(--app-radius-lg)',
                 overflow: 'hidden',
                 background: 'var(--color-bg-container)'
