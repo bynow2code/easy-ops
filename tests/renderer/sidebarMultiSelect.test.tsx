@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Group, Script } from '../../src/shared/types'
 import { installJsdomShims } from './jsdomShims'
 
@@ -155,5 +155,56 @@ describe('脚本多选语义', () => {
     // (计划原稿搜 'A1' 的断言有误:Ctrl+点击后 store 选中的是 A2 而非 A1)
     expect(isSelected('脚本A1')).toBe(false)
     expect(isSelected('脚本A2')).toBe(true)
+  })
+})
+
+describe('行右键菜单', () => {
+  it('右键未选中行:先单选该行,弹单条菜单(复制/删除)', async () => {
+    renderSidebar()
+    fireEvent.click(scriptRow('脚本A1'))
+    fireEvent.contextMenu(scriptRow('脚本A2'))
+
+    // A2 被预选中(store 选中),A1 的多选/详情高亮被清掉
+    await waitFor(() => expect(isSelected('脚本A2')).toBe(true))
+    expect(isSelected('脚本A1')).toBe(false)
+    // 菜单浮层挂 body,findBy 等待浮层渲染完成
+    expect(await screen.findByText('复制')).toBeTruthy()
+    expect(
+      await screen.findByText('删除', { selector: 'li .ant-dropdown-menu-title-content' })
+    ).toBeTruthy()
+  })
+
+  it('右键多选行:弹批量菜单「删除 N 个脚本」', async () => {
+    renderSidebar()
+    fireEvent.click(scriptRow('脚本A1'))
+    fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
+    fireEvent.contextMenu(scriptRow('脚本A2'))
+
+    expect(await screen.findByText('删除 2 个脚本')).toBeTruthy()
+  })
+
+  it('选区里的脏 id 不计数:有效选区只剩 1 个时降级为单条菜单', async () => {
+    renderSidebar()
+    fireEvent.click(scriptRow('脚本A1'))
+    fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
+    // 确认框打开期间列表可能已变(A1 被其他入口删除):渲染期求交兜底。
+    // 有效选区只剩 A2(1 个),按实现语义降级为单条菜单(计划原稿期望「删除 1 个脚本」
+    // 与其实现片段的 `validSelected.length <= 1` 降级条件自相矛盾,按实现修正断言)
+    act(() => {
+      useAppStore.setState({ scripts: initialScripts.filter((s) => s.id !== 's1') })
+    })
+    fireEvent.contextMenu(scriptRow('脚本A2'))
+
+    expect(await screen.findByText('复制')).toBeTruthy()
+    expect(screen.queryByText(/删除 \d+ 个脚本/)).toBeNull()
+  })
+
+  it('右键目录行:无右键菜单', async () => {
+    renderSidebar()
+    const head = document.querySelector('.app-group-head') as HTMLElement
+    fireEvent.contextMenu(head)
+    // 给浮层留一拍渲染窗口
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByText('删除目录')).toBeNull()
   })
 })

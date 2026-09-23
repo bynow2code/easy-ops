@@ -201,6 +201,8 @@ export function Sidebar(): JSX.Element {
   // selectedIds = 多选脚本集合;anchorId = Shift 范围选择的锚点(最近一次普通/Ctrl 单击行)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [anchorId, setAnchorId] = useState<string | null>(null)
+  // 选区与当前列表求交:确认框打开/删除期间列表变化时,脏 id 不参与计数与批量操作
+  const validSelected = useMemo(() => scripts.filter((s) => selectedIds.has(s.id)), [scripts, selectedIds])
 
   // 整树构建:目录按 order 排好后按 parentId 挂到父节点,父缺失的(含旧孤儿数据)落顶层;
   // 无分组脚本(groupId 缺失或指向已删目录)直接作为顶层行渲染,排在所有顶层目录之后。
@@ -508,6 +510,11 @@ export function Sidebar(): JSX.Element {
     })
   }
 
+  // 任务 4 将替换为确认框 + allSettled 批量流程;先接线保证菜单可用(显式消费参数过 noUnusedParameters)
+  const handleBatchDelete = (ids: string[]): void => {
+    void ids
+  }
+
   const handleDeleteGroup = (group: Group): void => {
     // 确认文案要交代删除后果:脚本/子目录都是上移而非删除,数字必须基于全量数据统计。
     // 为什么不用 tree:搜索态下 tree 是剪枝后的视图,匹配 0 条时会把「全部上移」
@@ -587,92 +594,132 @@ export function Sidebar(): JSX.Element {
     // 拖拽落点提示:目标行的上/下边缘画 2px 主色线,标记插入位置
     const hint = dropHint?.id === script.id ? dropHint.position : null
     return (
-      <div
+      // 行级右键菜单:单条 = 既有 复制/删除;多选态 = 批量删除入口(App.tsx 页签右键同款)
+      <Dropdown
         key={script.id}
-        // 操作按钮靠 CSS 显隐(class 驱动)而非条件渲染:按钮始终留在 DOM 里,
-        // 键盘 Tab 仍可达,组件测试也不必为「悬停」造状态
-        className={selected ? 'app-row app-row-selected' : 'app-row'}
-        onClick={(e) => handleScriptClick(script, e)}
-        draggable={dndEnabled}
-        onDragStart={dndEnabled ? handleDragStart({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
-        onDragEnd={handleDragEnd}
-        onDragOver={dndEnabled ? handleDragOver({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
-        onDragLeave={dndEnabled ? handleDragLeave(script.id) : undefined}
-        onDrop={dndEnabled ? handleDrop({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          height: ROW_HEIGHT,
-          padding: '0 8px',
-          // 名称与同级目录名同列(截图里叶子行的首列与父目录文件夹图标同列,名称与目录名同列)
-          paddingLeft: NAME_LEFT + depth * TREE_INDENT,
-          borderRadius: 'var(--app-radius)',
-          cursor: 'pointer',
-          userSelect: 'none',
-          position: 'relative',
-          opacity: dragItem?.id === script.id ? 0.4 : undefined,
-          boxShadow:
-            hint === 'before'
-              ? 'inset 0 2px 0 0 var(--app-primary)'
-              : hint === 'after'
-                ? 'inset 0 -2px 0 0 var(--app-primary)'
-                : undefined
+        trigger={['contextMenu']}
+        // 预选语义:右键未选中的行 = 先单选它(清掉多选),菜单按单条展示;
+        // 右键已在多选里的行 = 不动选区,菜单按整个选区展示(文件管理器同款)。
+        // 有效选区只剩 1 个(其余是脏 id)时同样降级单条,避免「删除 1 个脚本」的伪批量
+        onOpenChange={(open) => {
+          if (!open) return
+          if (!selectedIds.has(script.id) || validSelected.length <= 1) {
+            setSelectedIds(new Set())
+            setAnchorId(script.id)
+            selectScript(script.id)
+          }
+        }}
+        menu={{
+          items:
+            selectedIds.has(script.id) && validSelected.length > 1
+              ? [
+                  {
+                    key: 'batch-delete',
+                    icon: <DeleteOutlined />,
+                    label: `删除 ${validSelected.length} 个脚本`,
+                    danger: true
+                  }
+                ]
+              : scriptMenuItems,
+          // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触脚本行的选中
+          onClick: ({ key, domEvent }) => {
+            domEvent.stopPropagation()
+            if (key === 'batch-delete') {
+              handleBatchDelete(validSelected.map((s) => s.id))
+            } else if (key === 'copy') {
+              void handleDuplicateScript(script)
+            } else if (key === 'delete') {
+              handleDeleteScript(script)
+            }
+          }
         }}
       >
-        <Typography.Text
-          ellipsis={{ tooltip: script.name }}
-          style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: selected ? 500 : 400 }}
+        <div
+          // 操作按钮靠 CSS 显隐(class 驱动)而非条件渲染:按钮始终留在 DOM 里,
+          // 键盘 Tab 仍可达,组件测试也不必为「悬停」造状态
+          className={selected ? 'app-row app-row-selected' : 'app-row'}
+          onClick={(e) => handleScriptClick(script, e)}
+          draggable={dndEnabled}
+          onDragStart={dndEnabled ? handleDragStart({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
+          onDragEnd={handleDragEnd}
+          onDragOver={dndEnabled ? handleDragOver({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
+          onDragLeave={dndEnabled ? handleDragLeave(script.id) : undefined}
+          onDrop={dndEnabled ? handleDrop({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            height: ROW_HEIGHT,
+            padding: '0 8px',
+            // 名称与同级目录名同列(截图里叶子行的首列与父目录文件夹图标同列,名称与目录名同列)
+            paddingLeft: NAME_LEFT + depth * TREE_INDENT,
+            borderRadius: 'var(--app-radius)',
+            cursor: 'pointer',
+            userSelect: 'none',
+            position: 'relative',
+            opacity: dragItem?.id === script.id ? 0.4 : undefined,
+            boxShadow:
+              hint === 'before'
+                ? 'inset 0 2px 0 0 var(--app-primary)'
+                : hint === 'after'
+                  ? 'inset 0 -2px 0 0 var(--app-primary)'
+                  : undefined
+          }}
         >
-          {script.name}
-        </Typography.Text>
-        <span className="app-row-actions" style={{ display: 'flex', flex: '0 0 auto' }}>
-          <Tooltip title="执行">
-            <Button
-              type="text"
-              size="small"
-              icon={<PlayCircleOutlined />}
-              onClick={(e) => {
-                e.stopPropagation()
-                void handleRun(script)
-              }}
-            />
-          </Tooltip>
-          <Tooltip title="编辑">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={(e) => {
-                e.stopPropagation()
-                handleEditScript(script)
-              }}
-            />
-          </Tooltip>
-          <Dropdown
-            trigger={['click']}
-            menu={{
-              items: scriptMenuItems,
-              // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触脚本行的选中
-              onClick: ({ key, domEvent }) => {
-                domEvent.stopPropagation()
-                if (key === 'copy') void handleDuplicateScript(script)
-                else if (key === 'delete') handleDeleteScript(script)
-              }
-            }}
+          <Typography.Text
+            ellipsis={{ tooltip: script.name }}
+            style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: selected ? 500 : 400 }}
           >
-            {/* stopPropagation:⋯ 的点击不能冒泡成行选中 */}
-            <Button
-              type="text"
-              size="small"
-              icon={<MoreOutlined />}
-              aria-label="更多操作"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </Dropdown>
-        </span>
-      </div>
+            {script.name}
+          </Typography.Text>
+          <span className="app-row-actions" style={{ display: 'flex', flex: '0 0 auto' }}>
+            <Tooltip title="执行">
+              <Button
+                type="text"
+                size="small"
+                icon={<PlayCircleOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleRun(script)
+                }}
+              />
+            </Tooltip>
+            <Tooltip title="编辑">
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleEditScript(script)
+                }}
+              />
+            </Tooltip>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: scriptMenuItems,
+                // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触脚本行的选中
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation()
+                  if (key === 'copy') void handleDuplicateScript(script)
+                  else if (key === 'delete') handleDeleteScript(script)
+                }
+              }}
+            >
+              {/* stopPropagation:⋯ 的点击不能冒泡成行选中 */}
+              <Button
+                type="text"
+                size="small"
+                icon={<MoreOutlined />}
+                aria-label="更多操作"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </Dropdown>
+          </span>
+        </div>
+      </Dropdown>
     )
   }
 
