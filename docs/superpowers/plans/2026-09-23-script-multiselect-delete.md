@@ -436,7 +436,7 @@ describe('行右键菜单', () => {
     expect(await screen.findByText('删除 2 个脚本')).toBeTruthy()
   })
 
-  it('选区里的脏 id 不计数:列表变化后批量菜单 N 变小', async () => {
+  it('选区里的脏 id 不计数:有效选区只剩 1 个时降级为单条菜单', async () => {
     renderSidebar()
     fireEvent.click(scriptRow('脚本A1'))
     fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
@@ -446,7 +446,12 @@ describe('行右键菜单', () => {
     })
     fireEvent.contextMenu(scriptRow('脚本A2'))
 
-    expect(await screen.findByText('删除 1 个脚本')).toBeTruthy()
+    // 注意:本处原稿写的是「删除 1 个脚本」,与同篇计划实现片段里的
+    // `validSelected.length <= 1` 降级条件自相矛盾(只剩 1 个有效目标时不弹批量菜单,
+    // 因为「删除 1 个脚本」是个伪批量)。已按实现修正为单条菜单,并在
+    // sidebarMultiSelect.test.tsx 里补了「3 个选 1 个失效 → 显示 2 个」的计数用例。
+    expect(await screen.findByText('复制')).toBeTruthy()
+    expect(await screen.findByText('删除')).toBeTruthy()
   })
 
   it('右键目录行:无右键菜单', async () => {

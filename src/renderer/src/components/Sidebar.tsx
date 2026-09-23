@@ -18,7 +18,7 @@ import { useAppStore } from '../store/useAppStore'
 import { terminalActions } from '../store/useTerminalStore'
 import { toUserMessage } from '../utils/toUserMessage'
 import { computeDropAction, insertIntoSiblings, type DragItem, type DropPosition, type DropTarget } from '../utils/treeDnd'
-import { rangeBetween } from '../utils/multiSelect'
+import { buildBatchDeletePlan, rangeBetween, resolveShiftAnchor } from '../utils/multiSelect'
 
 /**
  * 搜索按「名称」匹配(Postman 式):内容不参与,避免出现名称对不上却命中结果的困惑。
@@ -201,6 +201,22 @@ export function Sidebar(): JSX.Element {
   // selectedIds = 多选脚本集合;anchorId = Shift 范围选择的锚点(最近一次普通/Ctrl 单击行)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [anchorId, setAnchorId] = useState<string | null>(null)
+  /**
+   * 用户是否主动清空过选区(Esc / 搜索)。
+   * 用途只有一个:抑制 Ctrl 单击的「播种」——播种把「当前详情选中行」并入选区,
+   * 这对「普通单击 A → Ctrl 单击 B」(文件管理器同款)是正确的,但在
+   * 「Esc 清空 → Ctrl 单击 B」时会把 A 偷偷拉回来(回归:审查 C2)。
+   * 不能用 selectedIds.size===0 或 multiSelecting 判定:Esc 时选区本就可能是空的、
+   * 普通单击也会把 multiSelecting 置 false,两者都区分不出「主动清空」这一意图。
+   * 任何一次点击(Ctrl/Shift/普通)都重置为 false —— 用户一旦重新点击,播种语义即恢复。
+   */
+  const selectionClearedRef = useRef(false)
+  /** 统一清空选区入口:避免各处 setSelectedIds(new Set()) 漏置标记 */
+  const clearSelection = (): void => {
+    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
+    setAnchorId(null)
+    selectionClearedRef.current = true
+  }
   // 选区与当前列表求交:确认框打开/删除期间列表变化时,脏 id 不参与计数与批量操作
   const validSelected = useMemo(() => scripts.filter((s) => selectedIds.has(s.id)), [scripts, selectedIds])
 
@@ -259,22 +275,39 @@ export function Sidebar(): JSX.Element {
     }
   }, [groups, scripts, searching, search])
 
-  // 渲染前序的脚本 id 扁平列表:Shift 范围选择按这个视觉顺序圈行(目录行不进来)
+  /**
+   * 可见脚本行的渲染前序 id 列表（目录行不进来）:Shift 范围选择按它圈行。
+   * 必须与渲染逻辑严格一致 —— 折叠目录的子项在屏幕上根本不渲染,
+   * 若照收进来,用户 Shift 选「屏幕上相邻的两行」会连带选中夹在中间的
+   * 折叠目录里的不可见脚本,右键提示「删除 N 个」的 N 会大于视觉证据,
+   * 对不可逆的批量删除是不可接受的（回归:审查 C1）。
+   *
+   * 由此产生的语义:「折叠一个目录」在该列表上等价于「它的脚本不存在」,
+   * 于是 Shift 范围会跨过折叠组、把两侧的可见行直接连起来(例如折叠 目录B 后
+   * 从 脚本A1 Shift 到 脚本C1 只选中 A 组与 C1)。这与「屏幕上相邻」的直觉一致,
+   * 是**有意**的、且已在规格里记为约定。
+   * 另:锚点落在被折叠目录里时会从本列表消失,这种锚点必须按「无锚点」处理,
+   * 否则 Shift 会把选区写成空集(见 resolveShiftAnchor,审查 I-A)。
+   */
   const flatScriptIds = useMemo((): string[] => {
     const ids: string[] = []
+    // 用 collapsedIds/searching 直接判定,避免引用下面的 isExpanded(定义顺序在后)
+    const visible = (groupId: string): boolean => searching || !collapsedIds.has(groupId)
     const collect = (node: GroupNode): void => {
+      if (!visible(node.group.id)) return
       for (const c of node.children) collect(c)
       for (const s of node.scripts) ids.push(s.id)
     }
     for (const n of tree) collect(n)
     for (const s of rootScripts) ids.push(s.id)
     return ids
-  }, [tree, rootScripts])
+  }, [tree, rootScripts, collapsedIds, searching])
 
   // 搜索态的树是剪枝视图,Shift 范围会错乱:搜索词变化即清空多选(规格)
   useEffect(() => {
-    setSelectedIds(new Set())
+    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
     setAnchorId(null)
+    selectionClearedRef.current = true
   }, [search])
 
   // Esc 清空多选(不回退详情选中 —— selectedScriptId 不动,最后点过的行仍高亮)。
@@ -284,6 +317,7 @@ export function Sidebar(): JSX.Element {
       if (e.key !== 'Escape') return
       setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
       setAnchorId(null)
+      selectionClearedRef.current = true
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -515,35 +549,35 @@ export function Sidebar(): JSX.Element {
    * 页签/草稿/详情选中由 reload 的既有清理逻辑收尾,这里不重复处理。
    */
   const handleBatchDelete = (rawIds: string[]): void => {
-    // 以 store 最新快照校验:菜单渲染的 validSelected 是渲染期快照,确认框打开期间
-    // 列表可能已变(其他入口删除),失效 id 跳过。纯防御分支:菜单入口传入的
-    // rawIds 来自已求交的 validSelected,UI 上正常操作构造不出空目标
-    const targets = useAppStore.getState().scripts.filter((s) => rawIds.includes(s.id))
-    if (targets.length === 0) {
+    // 以 store 最新快照求交(弹框前):菜单渲染的 validSelected 是渲染期快照,
+    // 期间列表可能已变(其他入口删除)
+    const plan = buildBatchDeletePlan(useAppStore.getState().scripts, rawIds)
+    if (!plan) {
       message.warning('所选脚本已不存在,无需删除')
       return
     }
-    // 确认框正文最多列 5 个名字,更多用「等 N 个脚本」收尾,避免长选区撑爆弹窗
-    const shown = targets
-      .slice(0, 5)
-      .map((t) => `「${t.name}」`)
-      .join('、')
-    const suffix = targets.length > 5 ? ` 等 ${targets.length} 个脚本` : ''
     modal.confirm({
       centered: true,
       title: '删除脚本',
-      content: `确定删除 ${shown}${suffix}?此操作不可撤销。`,
+      content: plan.content,
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
       onOk: async () => {
+        // 确认框打开期间列表仍可能变化:按执行时刻的列表重新求交,
+        // 已消失的 id 静默跳过、不计入失败数,否则会误报「N 个删除失败,已保留」
+        const live = buildBatchDeletePlan(useAppStore.getState().scripts, plan.targets.map((t) => t.id))
+        if (!live) {
+          clearSelection()
+          message.warning('所选脚本已不存在,无需删除')
+          return
+        }
         // allSettled:单条失败不拖累其他;失败的留在列表,成功的 reload 后消失
-        const results = await Promise.allSettled(targets.map((t) => window.api.scripts.remove(t.id)))
+        const results = await Promise.allSettled(live.targets.map((t) => window.api.scripts.remove(t.id)))
         const failed = results.filter((r) => r.status === 'rejected').length
         await reload()
         // 删除落地后选区已无意义,清掉避免留下脏高亮/脏锚点
-        setSelectedIds(new Set())
-        setAnchorId(null)
+        clearSelection()
         if (failed > 0) message.error(`${failed} 个脚本删除失败,已保留`)
       }
     })
@@ -589,25 +623,42 @@ export function Sidebar(): JSX.Element {
 
   /**
    * 脚本行单击(带修饰键语义,规格 2026-09-23):
-   * - Shift:锚点..当前行的树前序范围整体选中(替换选区,锚点不动便于继续扩展)
-   * - Ctrl/⌘:切换该行;首次 Ctrl 会把当前详情选中行一并纳入(文件管理器同款)
-   * - 普通单击:清空多选,单选该行
+   * - Shift:锚点..当前行的可见行前序范围整体选中(替换选区,锚点不动便于继续扩展)
+   * - Ctrl/⌘:切换该行;仅在「尚未进入多选模式」时把当前详情选中行一并纳入(文件管理器同款)
+   * - 普通单击:退出多选模式,单选该行
    * 注意 macOS 上 Ctrl+单击是系统右键,mac 用户用 ⌘(metaKey),两个修饰键都接。
    */
   const handleScriptClick = (script: Script, e: ReactMouseEvent<HTMLDivElement>): void => {
+    // 任何一次行点击都恢复播种语义:用户重新点击即视为「重新开始选择」
+    const wasCleared = selectionClearedRef.current
+    selectionClearedRef.current = false
     if (e.shiftKey) {
       e.preventDefault()
-      setSelectedIds(new Set(rangeBetween(flatScriptIds, anchorId, script.id)))
-      if (anchorId === null) setAnchorId(script.id) // 无锚点 = 等价普通单击,顺手立锚
+      // 搜索态的树是剪枝视图,范围语义会错乱(用户看不到被剪掉的行):只做单选
+      if (searching) {
+        setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
+        setAnchorId(script.id)
+        selectScript(script.id)
+        return
+      }
+      // Shift 也是进入多选的路径(无锚点时等价单选,顺手立锚)。
+      // 锚点失效(主动清空过 / 所在目录被折叠导致不可见)时按无锚点处理:
+      // 否则选区被写成空集、锚点又指向屏幕上不存在的行,后续右键旧选区行会
+      // 弹出「删除 N 个脚本」(审查 I-A)
+      const anchor = resolveShiftAnchor(flatScriptIds, anchorId, wasCleared)
+      setSelectedIds(new Set(rangeBetween(flatScriptIds, anchor, script.id)))
+      if (anchor === null) setAnchorId(script.id)
       selectScript(script.id)
       return
     }
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault()
       setSelectedIds((prev) => {
-        // 首次 Ctrl 单击:把当前详情选中的行一并纳入,否则它会丢高亮
+        // 首次 Ctrl 单击:把当前详情选中的行一并纳入,否则它会丢高亮。
+        // 但用户刚主动清空过选区(Esc/搜索)时不播种 —— 此时他期望「只选我点的这一行」,
+        // 播种会把上次点过的行偷偷拉回来,右键批量删除就多删一个(审查 C2)
         const base =
-          prev.size === 0
+          !wasCleared && prev.size === 0
             ? new Set<string>(selectedScriptId ? [selectedScriptId] : [])
             : new Set(prev)
         if (base.has(script.id)) base.delete(script.id)
@@ -618,13 +669,16 @@ export function Sidebar(): JSX.Element {
       selectScript(script.id)
       return
     }
-    setSelectedIds(new Set())
+    // 普通单击:退出多选,只留这一行
+    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
     setAnchorId(script.id)
     selectScript(script.id)
   }
 
   const renderScript = (script: Script, depth: number): JSX.Element => {
-    const selected = selectedIds.has(script.id) || selectedScriptId === script.id
+    // 高亮来源:多选选区 or 详情区选中(执行/编辑/新建也会 selectScript)
+    const inSelection = selectedIds.has(script.id)
+    const selected = inSelection || selectedScriptId === script.id
     // 拖拽落点提示:目标行的上/下边缘画 2px 主色线,标记插入位置
     const hint = dropHint?.id === script.id ? dropHint.position : null
     return (
@@ -632,20 +686,23 @@ export function Sidebar(): JSX.Element {
       <Dropdown
         key={script.id}
         trigger={['contextMenu']}
-        // 预选语义:右键未选中的行 = 先单选它(清掉多选),菜单按单条展示;
-        // 右键已在多选里的行 = 不动选区,菜单按整个选区展示(文件管理器同款)。
+        // 预选语义:右键「不在多选选区里」的行 = 先单选它(清掉多选),菜单按单条展示;
+        // 右键已在选区里的行 = 不动选区,菜单按整个选区展示(文件管理器同款)。
+        // 判定用 inSelection 而非 selected:后者含详情选中行,Ctrl 把某行移出选区后
+        // 它仍因 selectedScriptId 高亮,此时右键会误清掉整个选区(审查 I1)。
         // 有效选区只剩 1 个(其余是脏 id)时同样降级单条,避免「删除 1 个脚本」的伪批量
         onOpenChange={(open) => {
           if (!open) return
-          if (!selectedIds.has(script.id) || validSelected.length <= 1) {
-            setSelectedIds(new Set())
+          if (!inSelection || validSelected.length <= 1) {
+            setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
+            selectionClearedRef.current = false
             setAnchorId(script.id)
             selectScript(script.id)
           }
         }}
         menu={{
           items:
-            selectedIds.has(script.id) && validSelected.length > 1
+            inSelection && validSelected.length > 1
               ? [
                   {
                     key: 'batch-delete',
@@ -672,6 +729,12 @@ export function Sidebar(): JSX.Element {
           // 操作按钮靠 CSS 显隐(class 驱动)而非条件渲染:按钮始终留在 DOM 里,
           // 键盘 Tab 仍可达,组件测试也不必为「悬停」造状态
           className={selected ? 'app-row app-row-selected' : 'app-row'}
+          // 多选态用真实无障碍语义暴露给屏幕阅读器(审查 I-C)。
+          // 这里刻意不用 data-in-selection:那是只有测试在消费的自定义属性,
+          // 既没有语义角色(screen reader 读不到),也没参与样式计算
+          // (样式是从 selected && !inSelection 算出来的),留着反而让人误以为无障碍已处理。
+          role="option"
+          aria-selected={inSelection}
           onClick={(e) => handleScriptClick(script, e)}
           draggable={dndEnabled}
           onDragStart={dndEnabled ? handleDragStart({ id: script.id, type: 'script', parentId: script.groupId ?? null }) : undefined}
@@ -698,7 +761,11 @@ export function Sidebar(): JSX.Element {
                 ? 'inset 0 2px 0 0 var(--app-primary)'
                 : hint === 'after'
                   ? 'inset 0 -2px 0 0 var(--app-primary)'
-                  : undefined
+                  : // 仅详情选中(不在多选选区):左侧主色条与多选灰胶囊区分开,
+                    // 用户能据此判断「右键会不会清掉多选」(审查 I1)
+                    selected && !inSelection
+                    ? 'inset 2px 0 0 0 var(--app-primary)'
+                    : undefined
           }}
         >
           <Typography.Text
@@ -1044,11 +1111,13 @@ export function Sidebar(): JSX.Element {
           // 非搜索态即使 0 脚本也要渲染树,否则「有分组但还没有脚本」的新用户会看不到任何 ＋ 入口
           <CenteredHint text="没有匹配的脚本" />
         ) : (
-          <>
+          // 整棵树是「可多选的脚本列表」:listbox 容器 + 每行 role="option"/aria-selected,
+          // 屏幕阅读器才能播报多选态(审查 I-C)。目录头不参与多选,故不加 option 角色
+          <div role="listbox" aria-label="脚本列表" aria-multiselectable>
             {/* 整棵目录树递归渲染;无分组脚本直接作为顶层行,排在所有顶层目录之后 */}
             {tree.map((node) => renderGroupNode(node, 0))}
             {rootScripts.map((s) => renderScript(s, 0))}
-          </>
+          </div>
         )}
       </div>
     </div>

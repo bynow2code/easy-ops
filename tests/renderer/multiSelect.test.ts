@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { rangeBetween } from '../../src/renderer/src/utils/multiSelect'
+import {
+  buildBatchDeletePlan,
+  rangeBetween,
+  resolveShiftAnchor
+} from '../../src/renderer/src/utils/multiSelect'
 
 // 模拟树前序扁平列表:g1 下 s1、s2,顶层 s3、s4
 const order = ['s1', 's2', 's3', 's4']
@@ -27,5 +31,72 @@ describe('rangeBetween(Shift 范围选择)', () => {
 
   it('锚点不在列表里(已删/脏数据):回退为只含目标', () => {
     expect(rangeBetween(order, 'ghost', 's3')).toEqual(['s3'])
+  })
+})
+
+describe('buildBatchDeletePlan(批量删除方案)', () => {
+  const item = (id: string, name: string): { id: string; name: string } => ({ id, name })
+
+  it('目标为空:返回 null(调用方提示而非弹确认框)', () => {
+    expect(buildBatchDeletePlan([], ['s1'])).toBeNull()
+    expect(buildBatchDeletePlan([item('s1', 'A')], [])).toBeNull()
+  })
+
+  it('脏 id 被求交剔除:只保留现存项', () => {
+    const plan = buildBatchDeletePlan([item('s1', 'A')], ['s1', 'ghost'])
+    expect(plan?.targets).toEqual([{ id: 's1', name: 'A' }])
+    expect(plan?.content).toContain('「A」')
+    expect(plan?.content).not.toContain('ghost')
+  })
+
+  it('正文含不可撤销警示', () => {
+    expect(buildBatchDeletePlan([item('s1', 'A')], ['s1'])?.content).toContain('不可撤销')
+  })
+
+  it('不超过 5 个目标:逐个列名字,不出现「等 N 个」', () => {
+    const scripts = [1, 2, 3, 4, 5].map((i) => item(`s${i}`, `脚本${i}`))
+    const plan = buildBatchDeletePlan(scripts, scripts.map((s) => s.id))
+    expect(plan?.content).toContain('「脚本1」')
+    expect(plan?.content).toContain('「脚本5」')
+    expect(plan?.content).not.toContain('等')
+  })
+
+  it('超过 5 个目标:只列前 5 个,用「等 N 个脚本」收尾', () => {
+    const scripts = [1, 2, 3, 4, 5, 6, 7].map((i) => item(`s${i}`, `脚本${i}`))
+    const plan = buildBatchDeletePlan(scripts, scripts.map((s) => s.id))
+    expect(plan?.content).toContain('「脚本5」')
+    expect(plan?.content).not.toContain('「脚本6」')
+    expect(plan?.content).toContain('等 7 个脚本')
+  })
+
+  it('顺序跟随列表顺序,而非请求 id 顺序(文案与列表视觉一致)', () => {
+    const scripts = [item('s2', '第二个'), item('s1', '第一个')]
+    const plan = buildBatchDeletePlan(scripts, ['s1', 's2'])
+    expect(plan?.targets.map((t) => t.id)).toEqual(['s2', 's1'])
+  })
+})
+
+describe('resolveShiftAnchor(Shift 锚点有效性判定)', () => {
+  it('锚点可见且未主动清空:原样返回,范围选择正常展开', () => {
+    expect(resolveShiftAnchor(order, 's2', false)).toBe('s2')
+  })
+
+  it('锚点为 null(从未点击过):返回 null,调用方会顺手立锚', () => {
+    expect(resolveShiftAnchor(order, null, false)).toBeNull()
+  })
+
+  it('用户刚主动清空过选区(Esc/搜索):锚点作废,即使它仍在可见前序里', () => {
+    expect(resolveShiftAnchor(order, 's2', true)).toBeNull()
+  })
+
+  it('锚点因所在目录被折叠而不可见:返回 null,避免范围选择塌缩成空选区(I-A)', () => {
+    // 's9' 不在可见前序里(它的目录被折叠了 / 或它已被删)
+    expect(resolveShiftAnchor(order, 's9', false)).toBeNull()
+    // 对照组:若直接把失效锚点喂给 rangeBetween,只会拿到 [target](丢掉「无锚点」语义)
+    expect(rangeBetween(order, 's9', 's3')).toEqual(['s3'])
+  })
+
+  it('空列表(搜索无结果):任何锚点都作废', () => {
+    expect(resolveShiftAnchor([], 's1', false)).toBeNull()
   })
 })
