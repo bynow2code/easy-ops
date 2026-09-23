@@ -22,7 +22,7 @@ export function useTheme(): ThemeContextValue {
  * 把主题色注入为 CSS 变量供自研样式消费(设计 §11)。
  *
  * 分两类:
- * - 与 antd 对齐的四个(容器底/文字/次级边框/选中底)从 useToken() 读,保证与 antd 组件严格同源;
+ * - 与 antd 对齐的五个(容器底/主次两级文字/次级边框/选中底)从 useToken() 读,保证与 antd 组件严格同源;
  * - 应用自有语义色(顶栏、主色软底、发丝线…)来自 tokens.ts,antd token 里没有对应概念。
  *
  * 必须渲染在 ConfigProvider 内部才能用 useToken() 读到当前主题的 token。
@@ -33,6 +33,7 @@ function ThemeVariables({ resolved }: { resolved: ResolvedTheme }): null {
   const bgBase = token.colorBgBase
   const bgContainer = token.colorBgContainer
   const text = token.colorText
+  const textSecondary = token.colorTextSecondary
   const borderSecondary = token.colorBorderSecondary
   const controlItemBgActive = token.controlItemBgActive
 
@@ -41,9 +42,10 @@ function ThemeVariables({ resolved }: { resolved: ResolvedTheme }): null {
     root.style.setProperty('--color-bg-base', bgBase)
     root.style.setProperty('--color-bg-container', bgContainer)
     root.style.setProperty('--color-text', text)
+    root.style.setProperty('--color-text-secondary', textSecondary)
     root.style.setProperty('--color-border-secondary', borderSecondary)
     root.style.setProperty('--color-control-item-bg-active', controlItemBgActive)
-  }, [bgBase, bgContainer, text, borderSecondary, controlItemBgActive])
+  }, [bgBase, bgContainer, text, textSecondary, borderSecondary, controlItemBgActive])
 
   useEffect(() => {
     const root = document.documentElement
