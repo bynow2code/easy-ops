@@ -731,8 +731,9 @@ export function Sidebar(): JSX.Element {
           className={selected ? 'app-row app-row-selected' : 'app-row'}
           // 多选态用真实无障碍语义暴露给屏幕阅读器(审查 I-C)。
           // 这里刻意不用 data-in-selection:那是只有测试在消费的自定义属性,
-          // 既没有语义角色(screen reader 读不到),也没参与样式计算
-          // (样式是从 selected && !inSelection 算出来的),留着反而让人误以为无障碍已处理。
+          // 既没有语义角色(screen reader 读不到),也不参与样式计算,留着反而让人误以为无障碍已处理。
+          // 注意:多选态目前**没有独立的视觉样式** —— 选中行统一是灰胶囊(见下方 boxShadow 注释),
+          // aria-selected 是唯一的区分手段。
           role="option"
           aria-selected={inSelection}
           onClick={(e) => handleScriptClick(script, e)}
@@ -756,16 +757,18 @@ export function Sidebar(): JSX.Element {
             userSelect: 'none',
             position: 'relative',
             opacity: dragItem?.id === script.id ? 0.4 : undefined,
+            // 「仅详情选中」(selected 但不在多选区)原本额外画一条左侧主色竖条,
+            // 用于让用户预判「右键这行会不会清掉多选」(审查 I1)。
+            // 用户明确要求去掉脚本行选中时的蓝色(2026-09-23),故只保留灰胶囊一种选中态:
+            // 这是有意的取舍 —— 代价是 Ctrl 反选后该行视觉上仍像选中,
+            // 重新加回来之前请先确认这个决定已改变。
+            // 多选态本身仍通过 aria-selected 暴露(视觉不可见,屏幕阅读器可读)。
             boxShadow:
               hint === 'before'
                 ? 'inset 0 2px 0 0 var(--app-primary)'
                 : hint === 'after'
                   ? 'inset 0 -2px 0 0 var(--app-primary)'
-                  : // 仅详情选中(不在多选选区):左侧主色条与多选灰胶囊区分开,
-                    // 用户能据此判断「右键会不会清掉多选」(审查 I1)
-                    selected && !inSelection
-                    ? 'inset 2px 0 0 0 var(--app-primary)'
-                    : undefined
+                  : undefined
           }}
         >
           <Typography.Text
