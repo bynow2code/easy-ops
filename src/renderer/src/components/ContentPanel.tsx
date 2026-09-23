@@ -29,7 +29,7 @@ export function ContentPanel({ script }: { script: Script }): JSX.Element {
     if (!dirty) return
     try {
       // 保存语义收口在 store 的 saveScriptContent:IPC 往返期间继续输入的内容
-      // 作为未保存增量保留(页签关闭确认弹窗的「Save changes」走同一个入口)
+      // 作为未保存增量保留(页签关闭确认弹窗的「保存更改」走同一个入口)
       await saveScriptContent(script.id)
       message.success('已保存')
     } catch (err) {

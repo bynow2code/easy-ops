@@ -36,7 +36,7 @@ interface AppState {
    */
   tabCloseRequest: { ids: string[] } | null
   /**
-   * 「Always discard unsaved changes when closing a tab」的会话级开关:
+   * 「关闭页签时始终丢弃未保存的更改」的会话级开关:
    * 只存内存,重启回到默认的逐次弹窗(产品决策,不落盘)。
    */
   alwaysDiscardTabClose: boolean

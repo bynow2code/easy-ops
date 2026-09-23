@@ -122,22 +122,22 @@ describe('关闭单个页签(X 按钮)', () => {
     expect(isModalClosed()).toBe(true)
   })
 
-  it('带未保存草稿的页签:弹 Save changes? 确认框,页签暂不关闭', () => {
+  it('带未保存草稿的页签:弹「保存更改？」确认框,页签暂不关闭', () => {
     renderGuarded({ drafts: { s1: 'echo changed' }, openTabs: ['s1'], selectedScriptId: 's1' })
 
     fireEvent.click(closeTabButton('脚本-s1'))
 
-    expect(screen.getByText('Save changes?')).toBeTruthy()
+    expect(screen.getByText('保存更改？')).toBeTruthy()
     // 正文含脚本名(name 与说明文字分属不同节点,顺带断言文案结构)
-    expect(screen.getByText(/has unsaved changes/).textContent).toContain('脚本-s1')
+    expect(screen.getByText(/有未保存的更改/).textContent).toContain('脚本-s1')
     expect(state().openTabs).toEqual(['s1'])
   })
 
-  it("Don't save:丢弃草稿并关闭页签,不走保存", () => {
+  it('不保存:丢弃草稿并关闭页签,不走保存', () => {
     renderGuarded({ drafts: { s1: 'echo changed' }, openTabs: ['s1'], selectedScriptId: 's1' })
     fireEvent.click(closeTabButton('脚本-s1'))
 
-    fireEvent.click(screen.getByRole('button', { name: "Don't save" }))
+    fireEvent.click(screen.getByRole('button', { name: '不保存' }))
 
     expect(state().openTabs).toEqual([])
     expect(state().contentDrafts).toEqual({})
@@ -149,18 +149,19 @@ describe('关闭单个页签(X 按钮)', () => {
     renderGuarded({ drafts: { s1: 'echo changed' }, openTabs: ['s1'], selectedScriptId: 's1' })
     fireEvent.click(closeTabButton('脚本-s1'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    // antd 对恰好两个汉字的按钮自动插空格(autoInsertSpace),可访问名实际是「取 消」
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
 
     await waitFor(() => expect(isModalClosed()).toBe(true))
     expect(state().openTabs).toEqual(['s1'])
     expect(state().contentDrafts).toEqual({ s1: 'echo changed' })
   })
 
-  it('Save changes:按草稿值走 IPC 保存,成功后清草稿并关页签', async () => {
+  it('保存更改:按草稿值走 IPC 保存,成功后清草稿并关页签', async () => {
     renderGuarded({ drafts: { s1: 'echo changed' }, openTabs: ['s1'], selectedScriptId: 's1' })
     fireEvent.click(closeTabButton('脚本-s1'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存更改' }))
 
     await waitFor(() => expect(state().openTabs).toEqual([]))
     expect(api.update).toHaveBeenCalledWith('s1', { content: 'echo changed' })
@@ -172,7 +173,7 @@ describe('关闭单个页签(X 按钮)', () => {
     renderGuarded({ drafts: { s1: 'echo changed' }, openTabs: ['s1'], selectedScriptId: 's1' })
     fireEvent.click(closeTabButton('脚本-s1'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存更改' }))
 
     await waitFor(() => expect(isModalClosed()).toBe(true))
     expect(state().openTabs).toEqual(['s1'])
@@ -191,7 +192,7 @@ describe('关闭单个页签(X 按钮)', () => {
   it('Esc 关闭弹窗等价 Cancel:页签与草稿保留', async () => {
     renderGuarded({ drafts: { s1: 'echo changed' }, openTabs: ['s1'], selectedScriptId: 's1' })
     fireEvent.click(closeTabButton('脚本-s1'))
-    expect(screen.getByText('Save changes?')).toBeTruthy()
+    expect(screen.getByText('保存更改？')).toBeTruthy()
 
     fireEvent.keyDown(document.querySelector('.ant-modal')!, { key: 'Escape', keyCode: 27 })
 
@@ -201,7 +202,7 @@ describe('关闭单个页签(X 按钮)', () => {
   })
 })
 
-describe('Always discard 勾选(会话级)', () => {
+describe('始终丢弃勾选(会话级)', () => {
   it('勾选后点动作按钮:后续再关脏页签直接静默丢弃,不再弹窗', async () => {
     renderGuarded({
       drafts: { s1: 'echo v1', s2: 'echo v2' },
@@ -210,9 +211,9 @@ describe('Always discard 勾选(会话级)', () => {
     })
     fireEvent.click(closeTabButton('脚本-s1'))
 
-    // 勾选 Always discard 并丢弃 s1:只影响本次请求,s2 保持原样
+    // 勾选始终丢弃并丢弃 s1:只影响本次请求,s2 保持原样
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: "Don't save" }))
+    fireEvent.click(screen.getByRole('button', { name: '不保存' }))
     await waitFor(() => expect(isModalClosed()).toBe(true))
     expect(state().openTabs).toEqual(['s2'])
     expect(state().contentDrafts).toEqual({ s2: 'echo v2' })
@@ -235,14 +236,14 @@ describe('Always discard 勾选(会话级)', () => {
     fireEvent.click(closeTabButton('脚本-s1'))
 
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
     await waitFor(() => expect(isModalClosed()).toBe(true))
     expect(state().alwaysDiscardTabClose).toBe(false)
     expect(state().openTabs).toEqual(['s1', 's2'])
 
     // 再关 s1:仍然弹窗(勾选没被记住)
     fireEvent.click(closeTabButton('脚本-s1'))
-    expect(screen.getByText('Save changes?')).toBeTruthy()
+    expect(screen.getByText('保存更改？')).toBeTruthy()
   })
 })
 
@@ -258,10 +259,10 @@ describe('批量关闭(队列语义,经 requestTabClose)', () => {
 
     // s1 干净立即关;s2 脏,弹确认并停住
     await waitFor(() => expect(state().openTabs).toEqual(['s2']))
-    expect(screen.getByText('Save changes?')).toBeTruthy()
-    expect(screen.getByText(/has unsaved changes/).textContent).toContain('脚本-s2')
+    expect(screen.getByText('保存更改？')).toBeTruthy()
+    expect(screen.getByText(/有未保存的更改/).textContent).toContain('脚本-s2')
 
-    fireEvent.click(screen.getByRole('button', { name: "Don't save" }))
+    fireEvent.click(screen.getByRole('button', { name: '不保存' }))
     await waitFor(() => expect(state().openTabs).toEqual([]))
     expect(state().contentDrafts).toEqual({})
   })
@@ -275,8 +276,8 @@ describe('批量关闭(队列语义,经 requestTabClose)', () => {
 
     act(() => useAppStore.getState().requestTabClose(['s1', 's2']))
 
-    await waitFor(() => expect(screen.getByText('Save changes?')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.getByText('保存更改？')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
 
     await waitFor(() => expect(isModalClosed()).toBe(true))
     expect(state().openTabs).toEqual(['s1', 's2'])
@@ -291,11 +292,11 @@ describe('批量关闭(队列语义,经 requestTabClose)', () => {
     })
 
     act(() => useAppStore.getState().requestTabClose(['s1', 's2']))
-    await waitFor(() => expect(screen.getByText('Save changes?')).toBeTruthy())
-    expect(screen.getByText(/has unsaved changes/).textContent).toContain('脚本-s1')
+    await waitFor(() => expect(screen.getByText('保存更改？')).toBeTruthy())
+    expect(screen.getByText(/有未保存的更改/).textContent).toContain('脚本-s1')
 
     api.update.mockRejectedValueOnce(new Error('boom'))
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存更改' }))
 
     await waitFor(() => expect(isModalClosed()).toBe(true))
     expect(state().openTabs).toEqual(['s1', 's2'])

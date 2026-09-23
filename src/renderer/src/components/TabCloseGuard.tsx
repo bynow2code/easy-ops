@@ -9,10 +9,10 @@ import { toUserMessage } from '../utils/toUserMessage'
  *
  * 挂在 App 层常驻(详情区会随页签清空而卸载,弹窗不能跟着它走),
  * 通过 store 的 tabCloseRequest 接收关闭请求。处理语义:
- * - 干净页签直接关;脏页签逐个弹窗询问(Don't save / Cancel / Save changes)
- * - Cancel 中止剩余队列;Save 失败同样中止(页签保留、草稿不动)
- * - 勾选 Always discard 并点了动作按钮后,本次会话内后续关闭直接丢弃不再询问
- *   (Cancel 不记忆勾选 —— 什么都没发生,偏好不该生效)
+ * - 干净页签直接关;脏页签逐个弹窗询问(不保存 / 取消 / 保存更改)
+ * - 取消中止剩余队列;保存失败同样中止(页签保留、草稿不动)
+ * - 勾选「始终丢弃」并点了动作按钮后,本次会话内后续关闭直接丢弃不再询问
+ *   (取消不记忆勾选 —— 什么都没发生,偏好不该生效)
  */
 export function TabCloseGuard(): JSX.Element {
   const { message } = AntdApp.useApp()
@@ -49,7 +49,7 @@ export function TabCloseGuard(): JSX.Element {
       advance()
       return
     }
-    // 会话级 Always discard:静默丢弃,不弹窗
+    // 会话级「始终丢弃」:静默丢弃,不弹窗
     if (alwaysDiscardTabClose) {
       clearContentDraft(id)
       closeTab(id)
@@ -125,34 +125,34 @@ export function TabCloseGuard(): JSX.Element {
       // 遮罩点击不关:X/Esc 走 Cancel,弹窗误关不能丢用户内容
       maskClosable={false}
       onCancel={() => void handleDecision('cancel')}
-      title={<span style={{ fontSize: 14, fontWeight: 600 }}>Save changes?</span>}
+      title={<span style={{ fontSize: 14, fontWeight: 600 }}>保存更改？</span>}
       footer={
-        // VS Code 同款布局:Don't save 靠左,Cancel / Save changes 靠右,主按钮是保存
+        // VS Code 同款布局:「不保存」靠左,「取消」/「保存更改」靠右,主按钮是保存
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Button disabled={saving} onClick={() => void handleDecision('discard')}>
-            Don't save
+            不保存
           </Button>
           <Space>
             <Button disabled={saving} onClick={() => void handleDecision('cancel')}>
-              Cancel
+              取消
             </Button>
             <Button type="primary" loading={saving} onClick={() => void handleDecision('save')}>
-              Save changes
+              保存更改
             </Button>
           </Space>
         </div>
       }
     >
       <Typography.Paragraph style={{ fontSize: 13, marginBottom: 12 }}>
-        <Typography.Text strong>{confirmScript?.name ?? 'This script'}</Typography.Text> has
-        unsaved changes. Save these changes to avoid losing your work.
+        <Typography.Text strong>{confirmScript?.name ?? '此脚本'}</Typography.Text>{' '}
+        有未保存的更改，保存这些更改以免丢失。
       </Typography.Paragraph>
       <Checkbox checked={checkbox} onChange={(e) => setCheckbox(e.target.checked)}>
         <Typography.Text style={{ fontSize: 13 }}>
-          Always discard unsaved changes when closing a tab
+          关闭页签时始终丢弃未保存的更改
         </Typography.Text>
         {/* 说明图标走 antd 的 secondary 色:不引 --color-* 变量(部分变量从未被注入,别传播这个坑) */}
-        <Tooltip title="Discard unsaved changes without asking whenever you close a tab. Only lasts for this session.">
+        <Tooltip title="关闭页签时不再询问，直接丢弃未保存的更改。仅本次运行内生效。">
           <Typography.Text type="secondary" style={{ marginLeft: 6 }}>
             <InfoCircleOutlined />
           </Typography.Text>
