@@ -758,4 +758,20 @@ describe('菜单互斥', () => {
     const labels = [...panel.querySelectorAll('.ant-dropdown-menu-title-content')].map((e) => e.textContent)
     expect(labels).toEqual(['复制', '删除'])
   })
+
+  it('菜单开着时按 Esc,菜单必须关闭(规格 §3.5 语义总表)', async () => {
+    renderSidebar()
+
+    await openContextMenuAndReadItems(scriptRow('脚本A1'))
+    expect(visibleDropdownCount()).toBe(1)
+
+    // 关闭路径是 rc-dropdown 的内建行为(useAccessibility):菜单 visible 期间在
+    // window 上监听 keydown,按 event.keyCode === 27(ESC)命中后调
+    // onVisibleChange(false) → 受控 open 收敛。Sidebar 自己的 Esc 监听
+    // (Sidebar.tsx 的「Esc 清空多选」)不负责关菜单,两者互不干扰。
+    // ⚠️ 必须显式带 keyCode: 27 —— jsdom 里只传 key: 'Escape' 时 keyCode = 0,
+    // 命不中 ESC 分支(antd 官方测试同样显式传 keyCode,已用 jsdom 探针实证)。
+    fireEvent.keyDown(window, { key: 'Escape', keyCode: 27 })
+    await waitFor(() => expect(visibleDropdownCount()).toBe(0))
+  })
 })
