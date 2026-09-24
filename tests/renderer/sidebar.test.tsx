@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Group, Script } from '../../src/shared/types'
@@ -926,5 +929,152 @@ describe('删除分组确认框', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^删\s?除$/ }))
     await waitFor(() => expect(api.groups.remove).toHaveBeenCalledWith('g2'))
+  })
+})
+
+/**
+ * 对齐线几何回归(bug 2026-09-24「对齐线穿过了条目的箭头」)。
+ *
+ * 根因:.app-guide 的 top 为 -14px,而上探量是相对**展开块**顶边算的;
+ * 展开块紧接在分组头行之后,于是线的上端探进分组头行内部 14px。
+ * 同时线的 x = ROW_PAD + depth*8 + CARET_BOX/2,恰好等于**本行**箭头墨迹的水平中心
+ * (箭头墨迹 x ∈ [2.2, 8.0],中心 5.1)。两轴同时重叠 => 线穿过本行箭头字形。
+ *
+ * 注意:vitest 默认不处理 CSS(本仓库 vitest.config.ts 无 css 配置),
+ * 故 top 必须从 theme.css 源码读,不能指望 getComputedStyle 拿到值。
+ */
+function resolveCssPath(): string {
+  const candidates = [
+    join(dirname(fileURLToPath(import.meta.url)), '../../src/renderer/src/theme/theme.css'),
+    join(process.cwd(), 'src/renderer/src/theme/theme.css')
+  ]
+  for (const p of candidates) {
+    try {
+      readFileSync(p, 'utf8')
+      return p
+    } catch {
+      /* 试下一个 */
+    }
+  }
+  throw new Error('找不到 theme.css,尝试过: ' + candidates.join(' | '))
+}
+
+/** 取出某个选择器块里的某个数值属性(0 层花括号,够用且不必引 CSS 解析器) */
+function cssProp(selector: string, prop: string): number {
+  const css = readFileSync(resolveCssPath(), 'utf8')
+  const start = css.indexOf(`${selector} {`)
+  if (start === -1) throw new Error(`theme.css 里找不到选择器 ${selector}`)
+  const end = css.indexOf('}', start)
+  // 先剥掉块内注释:注释里常引用旧值(如「此前是 top: -14px」),
+  // 不剥会让正则误命中注释而非真实声明(这个坑当场踩过一次)。
+  const block = css.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '')
+  // 单位可选:CSS 里 0 可以不带单位(写成 top: 0 而非 0px),强制要 px 会漏匹配。
+  // 必须锚到声明结尾 ; 或 } ,否则 "top" 会误命中 "topbar" 之类的属性名。
+  const match = block.match(new RegExp(`[\\s;{]${prop}:\\s*(-?[\\d.]+)(?:px)?\\s*[;}]`))
+  if (!match) throw new Error(`选择器 ${selector} 里找不到 ${prop}(需为具体数值)`)
+  return parseFloat(match[1])
+}
+
+describe('对齐线几何', () => {
+  function setupTree(): void {
+    installJsdomShims()
+    const g1: Group = { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    const g2: Group = { id: 'g2', name: 'pda', order: 0, parentId: 'g1', createdAt: '' }
+    ;(window as unknown as { api: unknown }).api = {
+      scripts: { list: vi.fn(async () => []) },
+      groups: { list: vi.fn(async () => [g1, g2]) },
+      settings: {
+        get: vi.fn(async () => ({ collapsedGroupIds: [] })),
+        update: vi.fn(async () => undefined)
+      }
+    }
+  }
+
+  it('主题里 .app-guide 的 top 不得为负,否则线会探进分组头行压住本行箭头', () => {
+    // 行高 24px:top < 0 就进入分组头行(箭头墨迹落在行内 y ≈ [9.2, 14.8])。
+    // 0 是允许的:线从分组头行下沿起笔,视觉上仍接在父箭头正下方,与 Postman 一致。
+    const top = cssProp('.app-guide', 'top')
+    expect(top, '.app-guide 的 top 为负会把线画进分组头行,穿过折叠箭头').toBeGreaterThanOrEqual(0)
+  })
+
+  it('对齐线不得与任何分组头的折叠箭头字形相交(bug 2026-09-24)', async () => {
+    setupTree()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+
+    // 箭头 svg 内 path 的墨迹范围(相对本行左沿 = paddingLeft):
+    //   path d="M3.4 2.2 L6.8 5 L3.4 7.8",strokeWidth 1.2、linecap/linejoin round
+    //   => x ∈ [3.4 - 0.6 - 0.6, 6.8 + 0.6 + 0.6] = [2.2, 8.0]
+    //   => y ∈ [2.2, 7.8](盒内坐标;盒 10x10 在 24px 行内垂直居中,故行内 y ∈ [9.2, 14.8])
+    const ARROW_INK_LEFT = 2.2
+    const ARROW_INK_RIGHT = 8.0
+    const ARROW_INK_TOP = 9.2
+
+    // 线的上端相对展开块顶边的偏移 = .app-guide 的 top(0 = 从分组头行下沿起笔)
+    const guideTop = cssProp('.app-guide', 'top')
+    // 展开块紧接在分组头行之后 => 行内 y 映射到线坐标系要减 24;
+    // 线覆盖 y ∈ [guideTop, ...),与箭头墨迹(线坐标系 y ∈ [-14.8, -9.2])相交
+    // <=> guideTop < -9.2。
+    const lineEntersRow = guideTop < -ARROW_INK_TOP
+
+    const heads = [...document.querySelectorAll('.app-group-head')] as HTMLElement[]
+    expect(heads.length, '应渲染出 2 个分组头(wms + pda)').toBe(2)
+
+    let checked = 0
+    for (const head of heads) {
+      // 结构:外层 <div position:relative> 的子节点是 [分组头行, 展开块 <div>],
+      // 对齐线在**展开块**里。head.parentElement 即那个外层 div。
+      const wrapper = head.parentElement as HTMLElement
+      const guide = wrapper.querySelector('.app-guide') as HTMLElement | null
+      if (!guide) continue
+      checked++
+
+      const rowLeft = parseFloat(head.style.paddingLeft)
+      const inkLeft = rowLeft + ARROW_INK_LEFT
+      const inkRight = rowLeft + ARROW_INK_RIGHT
+      const lineX = parseFloat(guide.style.left)
+      const name = head.textContent?.trim() ?? ''
+
+      // 必须两轴同时重叠才算「线穿过箭头」——只查 x 会误报(见下方说明)
+      const overlapsX = lineX >= inkLeft && lineX <= inkRight
+      const intersects = overlapsX && lineEntersRow
+
+      expect(
+        intersects,
+        `分组头「${name}」的折叠箭头被对齐线穿过: 线 x=${lineX}(箭头墨迹 x=[${inkLeft}, ${inkRight}]),` +
+          ` 线 top=${guideTop}(探进本行需 < -${ARROW_INK_TOP})`
+      ).toBe(false)
+    }
+
+    // 防止「找不到线所以一条都没查」的假绿
+    expect(checked, '应当检查到 2 条对齐线').toBe(2)
+  })
+
+  it('对齐线的横向锚点仍落在父项箭头正下方(x 刻意不变,Postman 特征保留)', async () => {
+    setupTree()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+
+    // 这条用例锁住「修 x 轴重叠」这个诱惑:线的 x 本来就该等于父行箭头中心列。
+    // 它与上方 x 重叠并不矛盾 —— 父行箭头在**上方一行**,线只从父行下沿往下画,
+    // 两者在 y 轴永不相遇。若有人为了「让 x 不压在箭头上」而把 x 挪走,
+    // 就会破坏 Postman 的「线在父箭头正下方」这一特征,这里会红。
+    const heads = [...document.querySelectorAll('.app-group-head')] as HTMLElement[]
+    const wmsHead = heads[0]
+    const guide = wmsHead.parentElement!.querySelector('.app-guide') as HTMLElement
+    const arrowCenterX = parseFloat(wmsHead.style.paddingLeft) + (2.2 + 8.0) / 2
+
+    expect(
+      Math.abs(parseFloat(guide.style.left) - arrowCenterX),
+      '线的 x 应等于父项箭头墨迹的水平中心(ROW_PAD + depth*8 + CARET_BOX/2)'
+    ).toBeLessThanOrEqual(0.15)
   })
 })
