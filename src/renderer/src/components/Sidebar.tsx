@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent a
 import { App, Button, Dropdown, Input, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import {
-  CopyOutlined,
-  DeleteOutlined,
   EditOutlined,
   FolderOutlined,
   MoreOutlined,
@@ -66,10 +64,17 @@ const groupMenuItems: MenuProps['items'] = [
   { key: 'delete', label: '删除目录', danger: true }
 ]
 
-/** 脚本行 ⋯ 菜单的固定项;复制/删除收敛进菜单后,行上只留高频的执行/编辑 */
+/**
+ * 脚本行 ⋯ 菜单的固定项;复制/删除收敛进菜单后,行上只留高频的执行/编辑。
+ *
+ * 刻意不带 icon(2026-09-24 用户定稿,与目录行菜单同一口径):菜单项文字本就自解释,
+ * 而 antd 菜单按项计算左对齐 —— 只去掉一项的图标会让那一项文字左移、与其余各项错开,
+ * 要嘛全留要嘛全去。这里选了全去(纯文字菜单),故两项都无图标。
+ * 注意 danger: true 必须保留:「删除」去掉图标后,红色是它唯一的危险提示。
+ */
 const scriptMenuItems: MenuProps['items'] = [
-  { key: 'copy', icon: <CopyOutlined />, label: '复制' },
-  { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true }
+  { key: 'copy', label: '复制' },
+  { key: 'delete', label: '删除', danger: true }
 ]
 
 /** 递归树的节点:目录 + 子目录 + 直接挂的脚本 */
@@ -693,8 +698,9 @@ export function Sidebar(): JSX.Element {
             inSelection && validSelected.length > 1
               ? [
                   {
+                    // 与 scriptMenuItems 同一菜单槽位,同样不带 icon(见上方注释):
+                    // 这一项若留图标,会让它在两种菜单间左右跳动。
                     key: 'batch-delete',
-                    icon: <DeleteOutlined />,
                     label: `删除 ${validSelected.length} 个脚本`,
                     danger: true
                   }

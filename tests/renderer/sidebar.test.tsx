@@ -581,6 +581,57 @@ describe('悬停菜单', () => {
     expect(scriptBtn.querySelector('.anticon-plus')).toBeTruthy()
   })
 
+  it('脚本行 ⋯ 菜单是纯文字:复制/删除都不渲染图标,但删除项保留红色警示', async () => {
+    setupApi()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    fireEvent.click(screen.getByLabelText('更多操作'))
+    await screen.findByText('复制')
+    // 与目录行菜单同一口径:全去而非只去一项,否则文字左右跳动(antd 按项计算左对齐)
+    for (const label of ['复制', '删除']) {
+      const item = screen.getByText(label).closest('.ant-dropdown-menu-item') as HTMLElement
+      expect(item.querySelector('.anticon')).toBeNull()
+    }
+    // 对照组:去掉图标后,红色是「删除」唯一的危险提示,不能被一并优化掉
+    const del = screen.getByText('删除').closest('.ant-dropdown-menu-item') as HTMLElement
+    expect(del.className).toContain('danger')
+    const copy = screen.getByText('复制').closest('.ant-dropdown-menu-item') as HTMLElement
+    expect(copy.className).not.toContain('danger')
+  })
+
+  it('批量删除菜单项同样不带图标(与单条菜单共用槽位,留图标会左右跳动)', async () => {
+    const api = setupApi()
+    // 批量菜单要两条以上有效选区才会出现
+    api.scripts.list.mockResolvedValue([script, copy])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    // 与 sidebarMultiSelect.test.tsx 同一套行定位约定:按名字找 .app-row
+    const row = (name: string): HTMLElement =>
+      screen.getByText(name).closest('.app-row') as HTMLElement
+    fireEvent.click(row('构建'))
+    fireEvent.click(row('构建 副本'), { ctrlKey: true })
+
+    // 多选后右键任一行,菜单项切换成「删除 N 个脚本」
+    fireEvent.contextMenu(row('构建 副本'))
+    const batchItem = (await screen.findByText(/删除 \d+ 个脚本/)).closest(
+      '.ant-dropdown-menu-item'
+    ) as HTMLElement
+    expect(batchItem).toBeTruthy()
+    expect(batchItem.querySelector('.anticon')).toBeNull()
+    // 危险语义仍要保留:去掉图标后,红色是它唯一的警示
+    expect(batchItem.className).toContain('danger')
+  })
+
   it('「暂无脚本」提示只出现在真正空的那一层,折叠后不显示', async () => {
     const api = setupApi()
     api.scripts.list.mockResolvedValue([])
