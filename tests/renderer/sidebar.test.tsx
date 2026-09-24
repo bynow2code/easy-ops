@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Group, Script } from '../../src/shared/types'
 import { installJsdomShims } from './jsdomShims'
 
@@ -745,5 +745,46 @@ describe('拖拽排序与跨目录移动(组件级)', () => {
     fireEvent.drop(tree, { dataTransfer: dt })
 
     await waitFor(() => expect(api.groups.move).toHaveBeenCalledWith('g2', null))
+  })
+})
+describe('删除目录确认框', () => {
+  /** 顶层「wms」+ 子目录「pda」+ pda 下脚本,供删除确认框用例共用 */
+  function setupTree(): ApiMock {
+    const api = setupApi()
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' },
+      { id: 'g2', name: 'pda', order: 0, parentId: 'g1', createdAt: '' }
+    ])
+    api.scripts.list.mockResolvedValue([
+      { ...script, id: 's2', name: '同步', groupId: 'g2', order: 0 }
+    ])
+    return api
+  }
+
+  /** 打开指定目录行的 ⋯ 菜单并点「删除目录」,弹出确认框 */
+  async function openDeleteConfirm(name: string): Promise<void> {
+    const head = screen.getByText(name).closest('.app-group-head') as HTMLElement
+    fireEvent.click(within(head).getByRole('button', { name: '分组操作' }))
+    fireEvent.click(await screen.findByText('删除目录'))
+  }
+
+  // 超时放宽到 15s(默认 5s):用例要串起 Dropdown → Modal 两层浮层,
+  // jsdom 下 antd 各浮层的 motion 定时器 + 全量并行负载会把单步推到秒级
+  it('确认框交代级联删除后果且不列数量,确认后 remove(id)', { timeout: 15000 }, async () => {
+    const api = setupTree()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('pda')
+    await openDeleteConfirm('pda')
+
+    // 文案定稿:只交代「连子目录与脚本一并删」+ 不可撤销,不列数量
+    const body = await screen.findByText(/删除目录『pda』/)
+    expect(body.textContent).toBe('删除目录『pda』?其下脚本与子目录将一并删除,此操作不可撤销。')
+
+    fireEvent.click(screen.getByRole('button', { name: /^删\s?除$/ }))
+    await waitFor(() => expect(api.groups.remove).toHaveBeenCalledWith('g2'))
   })
 })

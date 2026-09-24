@@ -590,29 +590,11 @@ export function Sidebar(): JSX.Element {
   }
 
   const handleDeleteGroup = (group: Group): void => {
-    // 确认文案要交代删除后果:脚本/子目录都是上移而非删除,数字必须基于全量数据统计。
-    // 为什么不用 tree:搜索态下 tree 是剪枝后的视图,匹配 0 条时会把「全部上移」
-    // 误报成「0 个脚本上移」,误导用户执行不可逆操作。
-    // 因此这里直接对 groups 递归收集该目录及全部后代 id,再从全量 scripts 里数命中数。
-    const ids = new Set<string>([group.id])
-    const collect = (parentId: string): void => {
-      for (const g of groups) {
-        if (g.parentId === parentId && !ids.has(g.id)) {
-          ids.add(g.id)
-          collect(g.id)
-        }
-      }
-    }
-    collect(group.id)
-    const scriptCount = scripts.filter((s) => s.groupId != null && ids.has(s.groupId)).length
-    // 同一批收集到的 id 里去掉目录自身,剩下的就是将被上移的子目录数
-    const subCount = ids.size - 1
-    const parentName = group.parentId ? groups.find((g) => g.id === group.parentId)?.name : null
-    const target = parentName ? `「${parentName}」` : '顶层'
+    // 删除一律级联:确认文案只交代「连子目录与脚本一并删」+ 不可撤销,不列数量
     modal.confirm({
       centered: true,
       title: '删除目录',
-      content: `删除目录『${group.name}』?其下 ${scriptCount} 个脚本与 ${subCount} 个子目录将上移到 ${target}。`,
+      content: `删除目录『${group.name}』?其下脚本与子目录将一并删除,此操作不可撤销。`,
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',

@@ -30,13 +30,13 @@ describe('分组', () => {
     expect(data.groups).toHaveLength(2)
   })
 
-  it('删除分组时其下脚本的 groupId 置空', () => {
+  it('删除分组连带其下脚本一起删除', () => {
     const g = store.createGroup('后端')
     const s = store.createScript({ name: 'a', content: 'echo a', groupId: g.id })
     expect(s.groupId).toBe(g.id)
     store.deleteGroup(g.id)
-    expect(store.listScripts()[0].groupId).toBeNull()
     expect(data.groups).toHaveLength(0)
+    expect(store.listScripts()).toHaveLength(0)
   })
 
   it('更新分组名称超长被拒', () => {
@@ -47,6 +47,10 @@ describe('分组', () => {
 
   it('更新不存在的分组抛错', () => {
     expect(() => store.updateGroup('nope', 'X')).toThrowError(/不存在/)
+  })
+
+  it('删除不存在的分组抛错', () => {
+    expect(() => store.deleteGroup('nope')).toThrowError(/分组不存在/)
   })
 
   describe('嵌套分组', () => {
@@ -122,39 +126,47 @@ describe('分组', () => {
       expect(() => store.moveGroup(root.id, grand.id)).toThrowError(/子目录/)
     })
 
-    it('删除中间目录:子分组与脚本上移到父级,不级联删除', () => {
+    it('级联删除:连带全部后代目录与其下脚本,父层不受波及', () => {
       const root = store.createGroup('root')
       const mid = store.createGroup('mid', root.id)
       const leaf = store.createGroup('leaf', mid.id)
-      const s = store.createScript({ name: 'a', content: 'echo', groupId: mid.id })
+      const sMid = store.createScript({ name: 'm', content: 'echo', groupId: mid.id })
+      const sLeaf = store.createScript({ name: 'l', content: 'echo', groupId: leaf.id })
+      const sRoot = store.createScript({ name: 'r', content: 'echo', groupId: root.id })
       store.deleteGroup(mid.id)
       const groups = store.listGroups()
-      expect(groups.find((g) => g.id === leaf.id)!.parentId).toBe(root.id)
-      expect(store.listScripts().find((x) => x.id === s.id)!.groupId).toBe(root.id)
-      expect(groups.some((g) => g.id === mid.id)).toBe(false)
+      // 被删子树(mid + leaf)整体消失,父层 root 原样保留
+      expect(groups.some((g) => g.id === mid.id || g.id === leaf.id)).toBe(false)
+      expect(groups.some((g) => g.id === root.id)).toBe(true)
+      // 子树内脚本一并删除,父层脚本不受波及
+      const scripts = store.listScripts()
+      expect(scripts.some((s) => s.id === sMid.id || s.id === sLeaf.id)).toBe(false)
+      expect(scripts.some((s) => s.id === sRoot.id)).toBe(true)
     })
 
-    it('删除顶层目录:子目录与脚本落到顶层', () => {
+    it('级联删除顶层目录:整棵子树与其下脚本全部移除,未分组脚本保留', () => {
       const top = store.createGroup('top')
       const child = store.createGroup('child', top.id)
-      const s = store.createScript({ name: 'x', content: 'echo', groupId: top.id })
+      const sIn = store.createScript({ name: 'in', content: 'echo', groupId: child.id })
+      const sLoose = store.createScript({ name: 'loose', content: 'echo', groupId: null })
       store.deleteGroup(top.id)
-      const groups = store.listGroups()
-      expect(groups.find((g) => g.id === child.id)!.parentId).toBeNull()
-      expect(store.listScripts().find((x) => x.id === s.id)!.groupId).toBeNull()
+      expect(store.listGroups()).toHaveLength(0)
+      const scripts = store.listScripts()
+      expect(scripts.some((s) => s.id === sIn.id)).toBe(false)
+      expect(scripts.some((s) => s.id === sLoose.id)).toBe(true)
     })
 
-    it('删除中间目录:子目录拼接到被删目录原位,同层 order 连续无重复', () => {
+    it('级联删除不波及同层兄弟:存留分组留在原父层,order 重排后连续', () => {
       const p = store.createGroup('p')
       const a = store.createGroup('a', p.id)
       const b = store.createGroup('b', p.id)
       const c = store.createGroup('c', a.id)
-      const d = store.createGroup('d', a.id)
       store.deleteGroup(a.id)
       const layer = store.listGroups().filter((g) => g.parentId === p.id).sort((x, y) => x.order - y.order)
-      // 子树整体占据被删目录的原位(排在 b 前面),不被 b 夹开
-      expect(layer.map((g) => g.id)).toEqual([c.id, d.id, b.id])
-      expect(layer.map((g) => g.order)).toEqual([0, 1, 2])
+      // a + c 整棵消失,b 留在 p 下(读取时按兄弟层重排连续序号,补上 a 留下的洞)
+      expect(layer.map((g) => g.id)).toEqual([b.id])
+      expect(layer.map((g) => g.order)).toEqual([0])
+      expect(store.listGroups().some((g) => g.id === c.id)).toBe(false)
     })
 
     it('listGroups 返回树的前序(显示顺序),order 为兄弟内序号', () => {

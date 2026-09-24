@@ -336,32 +336,28 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
       commit({ ...data, groups })
     },
 
+    // 级联删除:先递归收集目标目录 + 全部后代目录 id,再一次性移除目录与命中脚本。
+    // 收集必须先于过滤(删父之后就找不到子了),单次 commit 原子落盘,不留中间态。
+    // 删除后果(连子目录与脚本一起删)由渲染层确认框的文案向用户二次确认。
     deleteGroup(id) {
       const data = state()
       const target = data.groups.find((g) => g.id === id)
       if (!target) throw new Error(`分组不存在: ${id}`)
-      // 不级联删除:子目录与脚本都上移到被删目录的父级,数据零丢失。
-      // 子目录按原相对顺序拼接到被删目录的原位(前面的兄弟不动,后面的整体后移),
-      // 否则子树会被已有兄弟从中间劈开,还可能与兄弟产生重复 order
-      const parent = target.parentId ?? null
-      const siblings = data.groups
-        .filter((g) => g.id !== id && (g.parentId ?? null) === parent)
-        .sort((a, b) => a.order - b.order)
-      const children = data.groups.filter((g) => g.parentId === id).sort((a, b) => a.order - b.order)
-      const insertAt = siblings.filter((g) => g.order < target.order).length
-      const orderById = new Map(
-        [...siblings.slice(0, insertAt), ...children, ...siblings.slice(insertAt)].map((g, i) => [g.id, i])
-      )
+      const doomed = new Set<string>([id])
+      const stack = [id]
+      while (stack.length > 0) {
+        const cur = stack.pop()!
+        for (const g of data.groups) {
+          if (g.parentId === cur && !doomed.has(g.id)) {
+            doomed.add(g.id)
+            stack.push(g.id)
+          }
+        }
+      }
       commit({
-        groups: data.groups
-          .filter((g) => g.id !== id)
-          .map((g) => {
-            const next = orderById.get(g.id)
-            return next === undefined
-              ? g
-              : { ...g, parentId: g.parentId === id ? parent : g.parentId, order: next }
-          }),
-        scripts: data.scripts.map((s) => (s.groupId === id ? { ...s, groupId: parent } : s))
+        groups: data.groups.filter((g) => !doomed.has(g.id)),
+        // groupId 为 null 的未分组脚本不在删除集合里,原样保留
+        scripts: data.scripts.filter((s) => s.groupId === null || !doomed.has(s.groupId))
       })
     },
 
