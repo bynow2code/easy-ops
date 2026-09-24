@@ -217,6 +217,23 @@ export function Sidebar(): JSX.Element {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [anchorId, setAnchorId] = useState<string | null>(null)
   /**
+   * 哪一行的**右键菜单**开着;null = 没有。必须记 id 而不是共享 boolean:
+   * 树是递归渲染的,用 boolean 会让右键任一脚本行时**所有行**的菜单同时开。
+   *
+   * 为什么要受控(bug 2026-09-24:右键菜单开着时点 ⋯ 的菜单项,右键菜单不消失):
+   * 每行嵌套两个 Dropdown —— 外层 `trigger={['contextMenu']}` 是整行右键,
+   * 内层 `trigger={['click']}` 是行尾 ⋯。外层菜单的关闭通道有二:
+   *   ① 外层 target 元素自身的 onClick(rc-trigger 的 clickToHide,`index.js:349-351`)
+   *   ② 点菜单项时的 onMenuClick(`dropdown.js:132`)
+   * 而 ⋯ 按钮**必须** stopPropagation(否则点击冒泡成整行普通单击,会清掉多选),
+   * 它位于外层 target **内部**,于是截断了通道① —— 点内层菜单项时外层无人负责关闭。
+   * 受控后多出第三条通道:内层菜单打开时显式把 ctxMenuId 置 null。
+   *
+   * 不能改用「去掉 ⋯ 的 stopPropagation」:那会让点 ⋯ 顺带清空多选
+   * (由 `点行尾 ⋯ 不会改变多选选区` 用例锁住)。
+   */
+  const [ctxMenuId, setCtxMenuId] = useState<string | null>(null)
+  /**
    * 用户是否主动清空过选区(Esc / 搜索)。
    * 用途只有一个:抑制 Ctrl 单击的「播种」——播种把「当前详情选中行」并入选区,
    * 这对「普通单击 A → Ctrl 单击 B」(文件管理器同款)是正确的,但在
@@ -683,12 +700,19 @@ export function Sidebar(): JSX.Element {
       <Dropdown
         key={script.id}
         trigger={['contextMenu']}
-        // 预选语义:右键「不在多选选区里」的行 = 先单选它(清掉多选),菜单按单条展示;
-        // 右键已在选区里的行 = 不动选区,菜单按整个选区展示(文件管理器同款)。
-        // 判定用 inSelection 而非 selected:后者含详情选中行,Ctrl 把某行移出选区后
-        // 它仍因 selectedScriptId 高亮,此时右键会误清掉整个选区(审查 I1)。
-        // 有效选区只剩 1 个(其余是脏 id)时同样降级单条,避免「删除 1 个脚本」的伪批量
+        // 受控开合:唯一目的是让内层 ⋯ 菜单打开时能显式关掉这个右键菜单(见 ctxMenuId 注释)。
+        // 其余关闭路径(点外部/点菜单项/Esc)仍由 antd 自己处理 —— onOpenChange 把结果同步回来。
+        open={ctxMenuId === script.id}
         onOpenChange={(open) => {
+          setCtxMenuId(open ? script.id : null)
+          // 预选语义:右键「不在多选选区里」的行 = 先单选它(清掉多选),菜单按单条展示;
+          // 右键已在选区里的行 = 不动选区,菜单按整个选区展示(文件管理器同款)。
+          // 判定用 inSelection 而非 selected:后者含详情选中行,Ctrl 把某行移出选区后
+          // 它仍因 selectedScriptId 高亮,此时右键会误清掉整个选区(审查 I1)。
+          // 有效选区只剩 1 个(其余是脏 id)时同样降级单条,避免「删除 1 个脚本」的伪批量。
+          // 受控后,内层 ⋯ 打开时我们也会 setCtxMenuId(null) 触发一次本回调,
+          // 但那条路径 open 为 false,在这里直接 return —— 无需再判 info.source
+          // (已实测:去掉该判断后 16 文件套件仍全绿,故不留多余代码)。
           if (!open) return
           if (!inSelection || validSelected.length <= 1) {
             setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
@@ -800,6 +824,12 @@ export function Sidebar(): JSX.Element {
             </Tooltip>
             <Dropdown
               trigger={['click']}
+              // 打开 ⋯ 菜单时先关掉同一行的右键菜单(bug 2026-09-24):
+              // ⋯ 的 stopPropagation 截断了外层菜单的 clickToHide 通道,不显式关就会残留。
+              // 只关**本行**的:setCtxMenuId(null) 前先确认开着的确实是这一行。
+              onOpenChange={(open) => {
+                if (open && ctxMenuId === script.id) setCtxMenuId(null)
+              }}
               menu={{
                 items: scriptMenuItems,
                 // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触脚本行的选中

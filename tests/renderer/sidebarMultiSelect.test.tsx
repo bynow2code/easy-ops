@@ -102,6 +102,14 @@ async function openContextMenuAndReadItems(row: HTMLElement): Promise<string[]> 
   return []
 }
 
+/**
+ * 当前**可见**的浮层数(排除 antd 关闭后留在 body 里的 ant-dropdown-hidden 残骸)。
+ * 用于断言「菜单确实关了」—— 只数 .ant-dropdown 会把历史残骸一起数进来,永远不为 0。
+ */
+const visibleDropdownCount = (): number =>
+  [...document.querySelectorAll('.ant-dropdown')].filter((el) => !el.classList.contains('ant-dropdown-hidden'))
+    .length
+
 function renderSidebar(scripts = initialScripts, groups = initialGroups): void {
   // 挂载时 Sidebar 会 reload() → api.scripts.list / api.groups.list。
   // 若注入的夹具与 beforeEach 默认实现不一致,不同步改这两个 mock 就会被默认值覆盖
@@ -294,6 +302,68 @@ describe('行右键菜单', () => {
     const head = document.querySelector('.app-group-head') as HTMLElement
     const items = await openContextMenuAndReadItems(head)
     expect(items).toEqual(['新建子分组', '重命名', '删除分组'])
+  })
+
+  /**
+   * 右键菜单与 ⋯ 菜单**嵌套在同一行**:
+   *   <Dropdown trigger={['contextMenu']}>   ← 外层:整行右键
+   *     <div class="app-row">
+   *       <Dropdown trigger={['click']}>     ← 内层:行尾 ⋯
+   *
+   * bug(2026-09-24 用户反馈):右键弹出菜单后,再点行尾 ⋯ 打开内层菜单并点其中一项,
+   * **外层的右键菜单不消失**,两个菜单叠在一起。
+   *
+   * 根因:外层菜单的关闭有两条通道 —— ① 外层 target 自身的 onClick(rc-trigger 的
+   * clickToHide,`index.js:349-351`);② 点菜单项时的 onMenuClick(`dropdown.js:132`)。
+   * 而 ⋯ 按钮必须 `e.stopPropagation()`(否则点击会冒泡成整行选中,见下方对照用例),
+   * 这同时截断了通道① —— 按钮在 target 元素**内部**,事件到不了 target。
+   * 于是点内层菜单项时只有内层关闭,外层无人负责。
+   *
+   * 修复:外层 Dropdown 改受控,内层 onOpenChange(true) 时显式 setCtxOpenId(null)。
+   * 不该去掉 ⋯ 的 stopPropagation —— 那会引入「点 ⋯ 顺带选中整行」的新 bug。
+   */
+  it('右键菜单开着时点行尾 ⋯ 的菜单项,右键菜单必须一起关闭(2026-09-24 bug 回归)', async () => {
+    renderSidebar()
+    const row = scriptRow('脚本A1')
+
+    // 1. 右键该行,等外层菜单出现
+    await openContextMenuAndReadItems(row)
+    expect(visibleDropdownCount()).toBe(1)
+
+    // 2. 点该行行尾 ⋯,内层菜单打开
+    fireEvent.click(row.querySelector('button[aria-label="更多操作"]') as HTMLElement)
+    await waitFor(() => expect(document.querySelectorAll('.ant-dropdown').length).toBeGreaterThan(1))
+
+    // 3. 点内层菜单里的「复制」
+    const panels = [...document.querySelectorAll('.ant-dropdown')] as HTMLElement[]
+    const innerPanel = panels[panels.length - 1]
+    const copyItem = [...innerPanel.querySelectorAll('.ant-dropdown-menu-item')].find(
+      (el) => el.textContent === '复制'
+    ) as HTMLElement
+    fireEvent.click(copyItem)
+
+    // 4. 两个菜单都应关闭 —— 修复前这里会残留 1 个(外层右键菜单)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(0))
+  })
+
+  it('点行尾 ⋯ 不会改变多选选区(stopPropagation 是必要防线,不可为上述 bug 移除)', () => {
+    // 与上一条同源:上一条的修复**不能**靠「删掉 ⋯ 的 stopPropagation」实现,
+    // 因为那会让点击冒泡到行的 onClick(handleScriptClick) → 普通单击语义会
+    // 清空多选、只留被点那行。这条用例锁住这个防线,防止后人为了修上一条而踩坏它。
+    //
+    // 断言对象必须是**多选选区**(而不是「A1 是否高亮」):renderSidebar 的初始
+    // selectedScriptId 就是 s1(A1),所以 A1 本来就有高亮,拿它做断言测不出东西。
+    renderSidebar()
+    fireEvent.click(scriptRow('脚本A1'))
+    fireEvent.click(scriptRow('脚本A2'), { ctrlKey: true })
+    expect(isSelected('脚本A1')).toBe(true)
+    expect(isSelected('脚本A2')).toBe(true)
+
+    // 点 A1 的 ⋯:多选选区必须原样保留(A1/A2 都仍在选区)
+    fireEvent.click(scriptRow('脚本A1').querySelector('button[aria-label="更多操作"]') as HTMLElement)
+
+    expect(isSelected('脚本A1')).toBe(true)
+    expect(isSelected('脚本A2')).toBe(true)
   })
 })
 
