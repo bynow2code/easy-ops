@@ -213,6 +213,12 @@ export function Sidebar(): JSX.Element {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [anchorId, setAnchorId] = useState<string | null>(null)
   /**
+   * 右键打开的目录菜单属于哪个目录;null = 无菜单打开。
+   * 必须记 id 而不是共享的 boolean:树是递归渲染的(renderGroupNode 每层都渲染分组头),
+   * 用 boolean 会让右键任一目录时**整棵树**的菜单同时打开。
+   */
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  /**
    * 用户是否主动清空过选区(Esc / 搜索)。
    * 用途只有一个:抑制 Ctrl 单击的「播种」——播种把「当前详情选中行」并入选区,
    * 这对「普通单击 A → Ctrl 单击 B」(文件管理器同款)是正确的,但在
@@ -843,6 +849,26 @@ export function Sidebar(): JSX.Element {
     </Tooltip>
   )
 
+  /**
+   * 目录菜单的点击分发。⋯ 按钮与行右键两个入口共用同一份 —— 若各写一份,
+   * 日后加菜单项时极易只改一处(上一轮脚本菜单去图标就踩过「同槽位两套定义」的坑)。
+   */
+  const handleGroupMenuClick = (group: Group, key: string): void => {
+    if (key === 'add-subgroup') {
+      // 新子目录要建到这个目录下,顺手展开让建好的目录立即可见
+      setCollapsedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(group.id)
+        return next
+      })
+      openForm({ type: 'group-create', parentId: group.id })
+    } else if (key === 'rename') {
+      openForm({ type: 'group-edit', group })
+    } else if (key === 'delete') {
+      handleDeleteGroup(group)
+    }
+  }
+
   /** 目录行操作区:＋ 直达新建脚本,其余操作收进 ⋯ 菜单(Postman 式) */
   const renderGroupActions = (group: Group): JSX.Element => (
     <Space size={0}>
@@ -854,19 +880,7 @@ export function Sidebar(): JSX.Element {
           // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触分组头的折叠
           onClick: ({ key, domEvent }) => {
             domEvent.stopPropagation()
-            if (key === 'add-subgroup') {
-              // 新子目录要建到这个目录下,顺手展开让建好的目录立即可见
-              setCollapsedIds((prev) => {
-                const next = new Set(prev)
-                next.delete(group.id)
-                return next
-              })
-              openForm({ type: 'group-create', parentId: group.id })
-            } else if (key === 'rename') {
-              openForm({ type: 'group-edit', group })
-            } else if (key === 'delete') {
-              handleDeleteGroup(group)
-            }
+            handleGroupMenuClick(group, key)
           }
         }}
       >
@@ -884,69 +898,96 @@ export function Sidebar(): JSX.Element {
       // position relative:本层子项的层级对齐线段以本块为定位基准,贯穿整块高度
       <div style={{ position: 'relative' }} key={key}>
         {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称 + 总数 chip,整行可点用于展开/收起;缩进随层级加深 */}
-        <div
-          className="app-group-head"
-          onClick={() => toggleGroup(key)}
-          // 键盘可达:纯 onClick 的 div 键盘用户无法折叠分组
-          role="button"
-          tabIndex={0}
-          aria-expanded={expanded}
-          aria-label={`目录 ${node.group.name}`}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              toggleGroup(key)
+        {/*
+          受控 Dropdown(trigger=[]) + 分组头自挂 onContextMenu:右键出菜单的入口。
+          不用 antd 的 trigger={['contextMenu']} 是因为分组头自身带 onClick(折叠)/draggable/
+          onKeyDown,受控 open 让我们**显式**决定右键只开菜单,不依赖触发器内部的事件顺序。
+          已实测确认:trigger=[] 不会额外包裹 DOM 层(role="button" 位置不变),
+          右键也不触发 onClick,故不会误折叠。
+        */}
+        <Dropdown
+          trigger={[]}
+          open={menuOpenId === key}
+          onOpenChange={(next) => setMenuOpenId(next ? key : null)}
+          menu={{
+            items: groupMenuItems,
+            onClick: ({ key: menuKey, domEvent }) => {
+              domEvent.stopPropagation()
+              handleGroupMenuClick(node.group, menuKey)
             }
           }}
-          draggable={dndEnabled}
-          onDragStart={
-            dndEnabled
-              ? handleDragStart({ id: key, type: 'group', parentId: node.group.parentId ?? null })
-              : undefined
-          }
-          onDragEnd={dndEnabled ? handleDragEnd : undefined}
-          onDragOver={
-            dndEnabled
-              ? handleDragOver({ id: key, type: 'group', parentId: node.group.parentId ?? null })
-              : undefined
-          }
-          onDragLeave={dndEnabled ? handleDragLeave(key) : undefined}
-          onDrop={dndEnabled ? handleDrop({ id: key, type: 'group', parentId: node.group.parentId ?? null }) : undefined}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 6,
-            height: ROW_HEIGHT,
-            padding: '0 4px',
-            paddingLeft: ROW_PAD + indent,
-            borderRadius: 'var(--app-radius)',
-            cursor: 'pointer',
-            userSelect: 'none',
-            opacity: dragItem?.id === key ? 0.4 : undefined,
-            // 落点提示:上/下边缘插入线;中间区域 = 移入,整行灰底
-            background: hint === 'into' ? 'var(--app-row-hover)' : undefined,
-            boxShadow:
-              hint === 'before'
-                ? 'inset 0 2px 0 0 var(--app-primary)'
-                : hint === 'after'
-                  ? 'inset 0 -2px 0 0 var(--app-primary)'
-                  : undefined
-          }}
         >
-          <Space size={6} align="center" style={{ minWidth: 0 }}>
-            <TreeCaret expanded={expanded} />
-            <FolderOutlined style={{ fontSize: ICON_SIZE, opacity: 0.7 }} />
-            {/* 名称不降透明度:目录名与脚本名同色同级(Postman 里两者灰度一致) */}
-            <Typography.Text ellipsis style={{ fontSize: 13, fontWeight: 400, minWidth: 0 }}>
-              {node.group.name}
-            </Typography.Text>
-          </Space>
-          {/* 目录操作按钮不触发展开/收起 */}
-          <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
-            {renderGroupActions(node.group)}
-          </span>
-        </div>
+          <div
+            className="app-group-head"
+            onClick={() => toggleGroup(key)}
+            // 右键 = 只开菜单。preventDefault 抑制系统右键菜单;
+            // 不动折叠状态 —— 右键在浏览器里本就不触发 click,这里靠受控 open 表达,
+            // 而不是依赖那个隐式行为(否则将来换实现方式时会静默失效)。
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenuOpenId(key)
+            }}
+            // 键盘可达:纯 onClick 的 div 键盘用户无法折叠分组
+            role="button"
+            tabIndex={0}
+            aria-expanded={expanded}
+            aria-label={`目录 ${node.group.name}`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                toggleGroup(key)
+              }
+            }}
+            draggable={dndEnabled}
+            onDragStart={
+              dndEnabled
+                ? handleDragStart({ id: key, type: 'group', parentId: node.group.parentId ?? null })
+                : undefined
+            }
+            onDragEnd={dndEnabled ? handleDragEnd : undefined}
+            onDragOver={
+              dndEnabled
+                ? handleDragOver({ id: key, type: 'group', parentId: node.group.parentId ?? null })
+                : undefined
+            }
+            onDragLeave={dndEnabled ? handleDragLeave(key) : undefined}
+            onDrop={dndEnabled ? handleDrop({ id: key, type: 'group', parentId: node.group.parentId ?? null }) : undefined}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 6,
+              height: ROW_HEIGHT,
+              padding: '0 4px',
+              paddingLeft: ROW_PAD + indent,
+              borderRadius: 'var(--app-radius)',
+              cursor: 'pointer',
+              userSelect: 'none',
+              opacity: dragItem?.id === key ? 0.4 : undefined,
+              // 落点提示:上/下边缘插入线;中间区域 = 移入,整行灰底
+              background: hint === 'into' ? 'var(--app-row-hover)' : undefined,
+              boxShadow:
+                hint === 'before'
+                  ? 'inset 0 2px 0 0 var(--app-primary)'
+                  : hint === 'after'
+                    ? 'inset 0 -2px 0 0 var(--app-primary)'
+                    : undefined
+            }}
+          >
+            <Space size={6} align="center" style={{ minWidth: 0 }}>
+              <TreeCaret expanded={expanded} />
+              <FolderOutlined style={{ fontSize: ICON_SIZE, opacity: 0.7 }} />
+              {/* 名称不降透明度:目录名与脚本名同色同级(Postman 里两者灰度一致) */}
+              <Typography.Text ellipsis style={{ fontSize: 13, fontWeight: 400, minWidth: 0 }}>
+                {node.group.name}
+              </Typography.Text>
+            </Space>
+            {/* 目录操作按钮不触发展开/收起 */}
+            <span className="app-group-actions" onClick={(e) => e.stopPropagation()}>
+              {renderGroupActions(node.group)}
+            </span>
+          </div>
+        </Dropdown>
         {expanded ? (
           <div style={{ position: 'relative' }}>
             {/* 层级对齐线:常显(不依赖悬停),画在本目录折叠箭头的中心列,贯通整个子项块 */}

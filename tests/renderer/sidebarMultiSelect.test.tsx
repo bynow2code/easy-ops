@@ -286,16 +286,14 @@ describe('行右键菜单', () => {
     expect(items).toEqual(['删除 2 个脚本'])
   })
 
-  it('右键目录行:无右键菜单', async () => {
+  it('右键目录行:弹出与 ⋯ 按钮同源的菜单(2026-09-24 起支持)', async () => {
+    // 本条原为「右键目录行:无右键菜单」,锁定「目录行不支持右键」这一旧行为。
+    // 2026-09-24 用户要求目录行也支持右键菜单(与脚本行一致),该旧行为被有意推翻,
+    // 故断言反向:右键**应**弹出菜单,且内容与 ⋯ 按钮一致。
     renderSidebar()
     const head = document.querySelector('.app-group-head') as HTMLElement
-    fireEvent.contextMenu(head)
-    // 给浮层留一拍渲染窗口
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 80))
-    })
-    expect(document.querySelectorAll('.ant-dropdown-menu-title-content').length).toBe(0)
-    expect(screen.queryByText('删除目录')).toBeNull()
+    const items = await openContextMenuAndReadItems(head)
+    expect(items).toEqual(['新建子目录', '重命名', '删除目录'])
   })
 })
 

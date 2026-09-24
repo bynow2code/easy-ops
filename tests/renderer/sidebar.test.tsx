@@ -476,6 +476,94 @@ describe('悬停菜单', () => {
     )
   })
 
+  it('目录行右键弹出菜单,菜单项与 ⋯ 按钮一致(2026-09-24)', async () => {
+    setupGrouped()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    const head = (await screen.findByText('wms')).closest('.app-group-head') as HTMLElement
+    expect(head).toBeTruthy()
+
+    // 对照组:右键前菜单项不存在,证明后面的断言确实来自右键这一次交互
+    expect(screen.queryByText('新建子目录')).toBeNull()
+
+    fireEvent.contextMenu(head)
+
+    // 三项都与 ⋯ 按钮菜单同源(同一份 groupMenuItems)
+    expect(await screen.findByText('新建子目录')).toBeTruthy()
+    expect(screen.getByText('重命名')).toBeTruthy()
+    expect(screen.getByText('删除目录')).toBeTruthy()
+  })
+
+  it('右键目录行不改变折叠状态(右键 ≠ 折叠,2026-09-24)', async () => {
+    setupGrouped()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    const head = (await screen.findByText('wms')).closest('.app-group-head') as HTMLElement
+
+    const before = head.getAttribute('aria-expanded')
+    expect(before).not.toBeNull()
+
+    fireEvent.contextMenu(head)
+    await screen.findByText('新建子目录')
+
+    // 这是方案 B(受控 open + 自挂 onContextMenu)相对方案 A 存在的全部理由:
+    // 右键只开菜单,不得把目录顺带折叠/展开掉。
+    expect(head.getAttribute('aria-expanded')).toBe(before)
+  })
+
+  it('左键目录行仍正常折叠,onContextMenu 未误伤原交互(2026-09-24)', async () => {
+    setupGrouped()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    const head = (await screen.findByText('wms')).closest('.app-group-head') as HTMLElement
+
+    const before = head.getAttribute('aria-expanded')
+
+    fireEvent.click(head)
+
+    await waitFor(() => expect(head.getAttribute('aria-expanded')).not.toBe(before))
+  })
+
+  it('多个目录时,右键只打开被点中那一个的菜单(2026-09-24)', async () => {
+    // 本块没有双目录的 setup,这里就地造两个**同级**目录(不嵌套,两行都直接可见)
+    const api = setupApi()
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' },
+      { id: 'g2', name: 'pda', order: 1, parentId: null, createdAt: '' }
+    ])
+    api.scripts.list.mockResolvedValue([])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    const pdaHead = (await screen.findByText('pda')).closest('.app-group-head') as HTMLElement
+
+    fireEvent.contextMenu(pdaHead)
+    // 只认菜单项本体:同样是「新建子目录」四个字,空目录引导块里的按钮也叫这个名
+    // (Sidebar.tsx 的空目录引导块),按纯文字找会把它一起数进来,测不出两菜单同开的 bug。
+    await waitFor(() =>
+      expect(document.querySelectorAll('.ant-dropdown-menu-item').length).toBeGreaterThan(0)
+    )
+
+    // 用 id 而非共享 boolean 维持开合状态:后者会让整棵树的目录菜单同时打开。
+    // 菜单项每项只渲染一次 —— 出现 2 份即说明两个目录的菜单都开了。
+    expect(
+      Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).filter(
+        (el) => el.textContent === '新建子目录'
+      )
+    ).toHaveLength(1)
+  })
+
   it('无分组脚本直接渲染为顶层行,不再有「未分组」伪目录', async () => {
     setupApi() // 一条 groupId 为 null 的脚本
     render(

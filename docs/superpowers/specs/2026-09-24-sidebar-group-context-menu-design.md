@@ -129,6 +129,40 @@ onContextMenu={(e) => {
 
 ## 7. 落地与验证记录
 
-**状态：设计已批准，实现待开始。**
+### 7.1 实际改动
 
-（实现完成后在此补充：实际改动的文件与行号、typecheck 结果、测试结果、回退验证记录）
+| 文件 | 位置 | 改动 |
+| --- | --- | --- |
+| `src/renderer/src/components/Sidebar.tsx` | `anchorId` state 之后（约 215 行） | 新增 `menuOpenId` state |
+| 同上 | `renderGroupActions` 之前（约 846 行） | 新增 `handleGroupMenuClick(group, key)`，从原内联 `onClick` 提取 |
+| 同上 | `renderGroupActions` | `onClick` 改为调用 `handleGroupMenuClick`；`⋯` 按钮保持 `trigger={['click']}` |
+| 同上 | `renderGroupNode` 分组头（约 900-990 行） | 分组头外包受控 `Dropdown`（`trigger={[]}` + `open`/`onOpenChange`）；分组头新增 `onContextMenu` |
+| `tests/renderer/sidebar.test.tsx` | `悬停菜单` 块内 | 新增 4 条右键用例（31 → 35） |
+| `tests/renderer/sidebarMultiSelect.test.tsx` | 原「右键目录行:无右键菜单」 | 断言反向为新行为（该用例锁定的旧行为被本需求有意推翻） |
+
+### 7.2 验证结果
+
+- typecheck：`tsconfig.web.json` **0 错误**、`tsconfig.node.json` **0 错误**
+- 16 文件套件全绿（`sidebar.test.tsx` 35/35、`sidebarMultiSelect.test.tsx` 26/26、其余 14 文件均无回归）
+
+### 7.3 两次回退验证
+
+**回退 A：移除 `onContextMenu` 那一段。**
+结果：**4 条变红** —— `sidebar.test.tsx` 的用例 1/2/4 + `sidebarMultiSelect.test.tsx` 的反向用例；用例 3（左键仍正常折叠）保持绿。证明三条右键用例确实依赖右键入口，而左键用例不受影响。
+
+**回退 B：在 `onContextMenu` 里额外调用 `toggleGroup(key)`**（即注入「右键顺带折叠」这个 bug）。
+结果：**仅用例 2 变红**（`aria-expanded` 被改变），其余全绿。
+这条证明用例 2 不是装饰 —— 它是对「右键 ≠ 折叠」这唯一的守卫，也正是方案 B 相对方案 A 存在的全部理由。
+
+恢复后 md5 与备份一致，套件回到全绿。
+
+### 7.4 实施期间发现的两处计划缺陷（均已修正）
+
+1. **计划误判了测试夹具**：用例 4 原写 `setupGrouped()`，但 `悬停菜单` 块内的该函数只造**一个**目录（`wms`）。双目录的 setup 在另一个 `describe` 里。已改为在用例内就地构造两个**同级**目录。
+2. **「新建子目录」文字有两个来源**：空目录引导块里也有一个同名按钮（`Sidebar.tsx` 约 1062 行）。原断言 `getAllByText('新建子目录')` 会把它一起数进来，**测不出「两菜单同开」**这一目标 bug。已改为只统计 `.ant-dropdown-menu-item` 中的同名项。
+
+第 2 条是典型的「断言测错了东西」—— 若不核查就会留下一条永远为绿的假测试。
+
+### 7.5 既定行为变更（需知悉）
+
+`tests/renderer/sidebarMultiSelect.test.tsx` 原有一条 `右键目录行:无右键菜单`，它**锁定的是「目录行不支持右键」这一旧行为**。本需求有意推翻它，故该用例改为断言新行为（右键弹出 `['新建子目录', '重命名', '删除目录']`）。这是一次**规格反转**，不是回归。
