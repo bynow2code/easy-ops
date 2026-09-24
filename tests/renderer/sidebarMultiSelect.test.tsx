@@ -610,3 +610,104 @@ describe('多选回归(代码审查修复)', () => {
     expect(items).toContain('删除 3 个脚本')
   })
 })
+
+/**
+ * 菜单互斥(2026-09-24 用户定稿:「右键出现的菜单,点击菜单以外的地方都要将菜单关闭」)。
+ *
+ * antd 自身的「点外部关闭」(useWinClick)只认**自己的**浮层为内部,
+ * 因此两个浮层会互不感知 —— 一个开着时打开另一个,前者不关(缺口 B);
+ * 且同一行二次右键时 target 落在 childDOM 内被判「内部」,菜单会黏住(缺口 A)。
+ *
+ * 方案:四个 Dropdown 共用一个 openMenuKey,同一时刻最多一个菜单。
+ */
+describe('菜单互斥', () => {
+  it('右键菜单开着时打开另一行的 ⋯ 菜单,右键菜单必须关闭(缺口 B)', async () => {
+    renderSidebar()
+
+    // 1. 右键脚本A1,等右键菜单出现
+    await openContextMenuAndReadItems(scriptRow('脚本A1'))
+    expect(visibleDropdownCount()).toBe(1)
+
+    // 2. 点**另一行**的 ⋯
+    fireEvent.click(scriptRow('脚本A2').querySelector('button[aria-label="更多操作"]') as HTMLElement)
+
+    // 3. 互斥:右键菜单被关,恰好只剩 1 个
+    //    为什么不断言「剩下的是哪一个菜单」:脚本行**单条**右键菜单的 items
+    //    就是同一个 scriptMenuItems 数组(['复制','删除']),与 ⋯ 菜单逐字相同
+    //    (Sidebar.tsx:736 `: scriptMenuItems`)。文案无法区分,而 className/位置
+    //    按项目教训也不可作为行为证据。故本用例只断言**数量收敛为 1**
+    //    —— 这就足以证明「右键菜单被关掉了一个」,因为改动前这里是 2。
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+  })
+
+  it('⋯ 菜单开着时右键某行,⋯ 菜单必须关闭(缺口 B 反向)', async () => {
+    renderSidebar()
+
+    fireEvent.click(scriptRow('脚本A1').querySelector('button[aria-label="更多操作"]') as HTMLElement)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+
+    await openContextMenuAndReadItems(scriptRow('脚本A2'))
+
+    // 同上:两个菜单文案相同,只断言数量收敛(改动前为 2)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+  })
+
+  it('同一行二次右键,菜单不黏住(缺口 A 回归)', async () => {
+    renderSidebar()
+    const row = scriptRow('脚本A1')
+
+    await openContextMenuAndReadItems(row)
+    expect(visibleDropdownCount()).toBe(1)
+
+    // 再对同一行右键:现状会残留/黏住。修好后收敛为「≤1」(关掉或重开同一菜单都对,
+    // 故不写死 0 或 1 —— 写死会把测试绑到 antd 内部实现的偶然细节上)。
+    fireEvent.contextMenu(row)
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 80))
+    })
+    expect(visibleDropdownCount()).toBeLessThanOrEqual(1)
+  })
+
+  it('点菜单外部(body)必须关闭菜单', async () => {
+    renderSidebar()
+
+    await openContextMenuAndReadItems(scriptRow('脚本A1'))
+    expect(visibleDropdownCount()).toBe(1)
+
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(0))
+  })
+
+  it('菜单开着时再点同一个 ⋯ 按钮,应 toggle 关闭', async () => {
+    renderSidebar()
+    const more = scriptRow('脚本A1').querySelector('button[aria-label="更多操作"]') as HTMLElement
+
+    fireEvent.click(more)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+
+    fireEvent.click(more)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(0))
+  })
+
+  it('点菜单内部的菜单项,不得因「点内部」而误关(反向防线,防修过头)', async () => {
+    renderSidebar()
+
+    await openContextMenuAndReadItems(scriptRow('脚本A1'))
+
+    // 对菜单项自身派发 pointerdown/mousedown —— 这属于「菜单内部」,
+    // 不得触发关闭(点菜单项后的关闭由 onMenuClick 负责,不是本次要改的路径)。
+    const item = [...document.querySelectorAll('.ant-dropdown')]
+      .filter((el) => !el.classList.contains('ant-dropdown-hidden'))[0]
+      .querySelector('.ant-dropdown-menu-item') as HTMLElement
+    expect(item).toBeTruthy()
+
+    fireEvent.pointerDown(item)
+    fireEvent.mouseDown(item)
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60))
+    })
+
+    // 仍然开着(未被「点内部」误关)
+    expect(visibleDropdownCount()).toBe(1)
+  })
+})

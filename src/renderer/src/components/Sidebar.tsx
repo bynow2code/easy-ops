@@ -217,22 +217,26 @@ export function Sidebar(): JSX.Element {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [anchorId, setAnchorId] = useState<string | null>(null)
   /**
-   * 哪一行的**右键菜单**开着;null = 没有。必须记 id 而不是共享 boolean:
-   * 树是递归渲染的,用 boolean 会让右键任一脚本行时**所有行**的菜单同时开。
+   * 当前开着的菜单 key;null = 全关。**同一时刻最多一个** —— 「互斥」就是对它的唯一约束。
    *
-   * 为什么要受控(bug 2026-09-24:右键菜单开着时点 ⋯ 的菜单项,右键菜单不消失):
-   * 每行嵌套两个 Dropdown —— 外层 `trigger={['contextMenu']}` 是整行右键,
-   * 内层 `trigger={['click']}` 是行尾 ⋯。外层菜单的关闭通道有二:
-   *   ① 外层 target 元素自身的 onClick(rc-trigger 的 clickToHide,`index.js:349-351`)
-   *   ② 点菜单项时的 onMenuClick(`dropdown.js:132`)
-   * 而 ⋯ 按钮**必须** stopPropagation(否则点击冒泡成整行普通单击,会清掉多选),
-   * 它位于外层 target **内部**,于是截断了通道① —— 点内层菜单项时外层无人负责关闭。
-   * 受控后多出第三条通道:内层菜单打开时显式把 ctxMenuId 置 null。
+   * 为什么是单个字符串 key 而不是「id + 类型」两个 state:单 key 让互斥退化成一次
+   * setState,而两个 state 会引入「两者不同步」的新状态空间。这是把状态空间压小的选择。
    *
-   * 不能改用「去掉 ⋯ 的 stopPropagation」:那会让点 ⋯ 顺带清空多选
-   * (由 `点行尾 ⋯ 不会改变多选选区` 用例锁住)。
+   * 为什么 key 必须含具体 id:树是递归渲染的,不含 id 会让**所有行**的菜单同时开。
+   *
+   * 为什么受控(背景 bug 2026-09-24 用户反馈「点菜单以外的地方都要关闭」):
+   * antd 的「点外部关闭」只有 useWinClick 一条路径,且它只把**自己的**浮层当「内部」,
+   * 于是有两个缺口 ——
+   *   ① 同一行二次右键不关:target 落在 trigger 的 children 子树内,被判「内部」;
+   *   ② 浮层互不感知:菜单 A 开着时打开菜单 B,A 不关。
+   * 四个 Dropdown 共用一个 key 后,任一菜单打开就把 key 设成自己,
+   * 其余 Dropdown 求值 open 为 false 而关闭 —— 互斥自动成立,无需手写关闭逻辑。
+   *
+   * ⚠️ 每个 onOpenChange 的**关闭分支必须带 `prev === myKey` 守卫**:
+   * antd 在「另一个菜单打开导致我被动关闭」时也会回调本 Dropdown(open=false),
+   * 少了守卫就会把刚设的新 key 一起清掉,导致两个菜单全关。
    */
-  const [ctxMenuId, setCtxMenuId] = useState<string | null>(null)
+  const [openMenuKey, setOpenMenuKey] = useState<string | null>(null)
   /**
    * 用户是否主动清空过选区(Esc / 搜索)。
    * 用途只有一个:抑制 Ctrl 单击的「播种」——播种把「当前详情选中行」并入选区,
@@ -700,20 +704,20 @@ export function Sidebar(): JSX.Element {
       <Dropdown
         key={script.id}
         trigger={['contextMenu']}
-        // 受控开合:唯一目的是让内层 ⋯ 菜单打开时能显式关掉这个右键菜单(见 ctxMenuId 注释)。
-        // 其余关闭路径(点外部/点菜单项/Esc)仍由 antd 自己处理 —— onOpenChange 把结果同步回来。
-        open={ctxMenuId === script.id}
+        open={openMenuKey === `ctx:script:${script.id}`}
         onOpenChange={(open) => {
-          setCtxMenuId(open ? script.id : null)
+          const myKey = `ctx:script:${script.id}`
+          if (!open) {
+            // 守卫:只有「开着的确实是我」才清空,否则会把别的菜单的新 key 清掉
+            setOpenMenuKey((prev) => (prev === myKey ? null : prev))
+            return
+          }
+          setOpenMenuKey(myKey)
           // 预选语义:右键「不在多选选区里」的行 = 先单选它(清掉多选),菜单按单条展示;
           // 右键已在选区里的行 = 不动选区,菜单按整个选区展示(文件管理器同款)。
           // 判定用 inSelection 而非 selected:后者含详情选中行,Ctrl 把某行移出选区后
           // 它仍因 selectedScriptId 高亮,此时右键会误清掉整个选区(审查 I1)。
           // 有效选区只剩 1 个(其余是脏 id)时同样降级单条,避免「删除 1 个脚本」的伪批量。
-          // 受控后,内层 ⋯ 打开时我们也会 setCtxMenuId(null) 触发一次本回调,
-          // 但那条路径 open 为 false,在这里直接 return —— 无需再判 info.source
-          // (已实测:去掉该判断后 16 文件套件仍全绿,故不留多余代码)。
-          if (!open) return
           if (!inSelection || validSelected.length <= 1) {
             setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
             selectionClearedRef.current = false
@@ -824,11 +828,13 @@ export function Sidebar(): JSX.Element {
             </Tooltip>
             <Dropdown
               trigger={['click']}
-              // 打开 ⋯ 菜单时先关掉同一行的右键菜单(bug 2026-09-24):
-              // ⋯ 的 stopPropagation 截断了外层菜单的 clickToHide 通道,不显式关就会残留。
-              // 只关**本行**的:setCtxMenuId(null) 前先确认开着的确实是这一行。
+              open={openMenuKey === `more:script:${script.id}`}
               onOpenChange={(open) => {
-                if (open && ctxMenuId === script.id) setCtxMenuId(null)
+                const myKey = `more:script:${script.id}`
+                // 关闭分支同样带守卫。旧实现在这里手动 setCtxMenuId(null) 去关同行的右键菜单
+                // (bug 2026-09-24),互斥接管后该逻辑已不需要 —— 打开 ⋯ 时 key 变成自己,
+                // 同行的右键菜单自然关闭。
+                setOpenMenuKey((prev) => (open ? myKey : prev === myKey ? null : prev))
               }}
               menu={{
                 items: scriptMenuItems,
