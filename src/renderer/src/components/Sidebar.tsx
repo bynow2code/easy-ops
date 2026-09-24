@@ -909,6 +909,11 @@ export function Sidebar(): JSX.Element {
       {renderAddScriptAction(group.id)}
       <Dropdown
         trigger={['click']}
+        open={openMenuKey === `more:group:${group.id}`}
+        onOpenChange={(open) => {
+          const myKey = `more:group:${group.id}`
+          setOpenMenuKey((prev) => (open ? myKey : prev === myKey ? null : prev))
+        }}
         menu={{
           items: groupMenuItems,
           // 菜单浮层挂在 body 上,stopPropagation 防止点击冒泡误触分组头的折叠
@@ -949,6 +954,12 @@ export function Sidebar(): JSX.Element {
         */}
         <Dropdown
           trigger={['contextMenu']}
+          open={openMenuKey === `ctx:group:${key}`}
+          onOpenChange={(open) => {
+            const myKey = `ctx:group:${key}`
+            // 关闭分支带守卫(同脚本行)。分组行右键无预选语义 —— 分组不参与多选。
+            setOpenMenuKey((prev) => (open ? myKey : prev === myKey ? null : prev))
+          }}
           menu={{
             items: groupMenuItems,
             onClick: ({ key: menuKey, domEvent }) => {

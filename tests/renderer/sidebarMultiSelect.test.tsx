@@ -710,4 +710,43 @@ describe('菜单互斥', () => {
     // 仍然开着(未被「点内部」误关)
     expect(visibleDropdownCount()).toBe(1)
   })
+
+  it('脚本行 ⋯ 菜单开着时右键分组行,⋯ 菜单必须关闭(跨行类型互斥)', async () => {
+    renderSidebar()
+
+    fireEvent.click(scriptRow('脚本A1').querySelector('button[aria-label="更多操作"]') as HTMLElement)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+
+    // 右键分组头:⋯ 菜单(分组行)应被关掉
+    // 这里**可以**断文案:分组行 ⋯ 菜单是 groupMenuItems(['新建子分组','重命名','删除分组']),
+    // 脚本行右键菜单是 scriptMenuItems(['复制','删除']) —— 两者不重叠,可区分。
+    // (对比:脚本行 ⋯ 与脚本行右键文案相同,那两条用例只能断言数量。)
+    await openContextMenuAndReadItems(groupHead('目录A'))
+
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+    const panel = [...document.querySelectorAll('.ant-dropdown')].filter(
+      (el) => !el.classList.contains('ant-dropdown-hidden')
+    )[0] as HTMLElement
+    const labels = [...panel.querySelectorAll('.ant-dropdown-menu-title-content')].map((e) => e.textContent)
+    // 剩下的是**分组**右键菜单(内容 = groupMenuItems),足以说明 ⋯ 菜单确实被关掉了
+    expect(labels).toEqual(['新建子分组', '重命名', '删除分组'])
+  })
+
+  it('分组行 ⋯ 菜单开着时右键脚本行,分组菜单必须关闭', async () => {
+    renderSidebar()
+
+    const groupMore = groupHead('目录A').querySelector('button[aria-label="分组操作"]') as HTMLElement
+    fireEvent.click(groupMore)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+
+    await openContextMenuAndReadItems(scriptRow('脚本A1'))
+
+    // 只剩脚本行右键菜单(文案与分组菜单不重叠,可精确断言)
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
+    const panel = [...document.querySelectorAll('.ant-dropdown')].filter(
+      (el) => !el.classList.contains('ant-dropdown-hidden')
+    )[0] as HTMLElement
+    const labels = [...panel.querySelectorAll('.ant-dropdown-menu-title-content')].map((e) => e.textContent)
+    expect(labels).toEqual(['复制', '删除'])
+  })
 })
