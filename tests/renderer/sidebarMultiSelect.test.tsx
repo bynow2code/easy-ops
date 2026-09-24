@@ -321,6 +321,11 @@ describe('行右键菜单', () => {
    *
    * 修复:外层 Dropdown 改受控,内层 onOpenChange(true) 时显式 setCtxOpenId(null)。
    * 不该去掉 ⋯ 的 stopPropagation —— 那会引入「点 ⋯ 顺带选中整行」的新 bug。
+   *
+   * 【2026-09-24 后续】引入全局互斥后,本用例的中间态由「两菜单共存」变为
+   * 「只剩 ⋯ 菜单」—— 右键菜单在 ⋯ 打开的瞬间就被互斥关掉了。
+   * 修复手段也不再是「内层显式关外层」,而是两者共用 openMenuKey。
+   * 本用例保留,继续守「点内层菜单项后外层不残留」这一原始目标。
    */
   it('右键菜单开着时点行尾 ⋯ 的菜单项,右键菜单必须一起关闭(2026-09-24 bug 回归)', async () => {
     renderSidebar()
@@ -331,8 +336,12 @@ describe('行右键菜单', () => {
     expect(visibleDropdownCount()).toBe(1)
 
     // 2. 点该行行尾 ⋯,内层菜单打开
+    // 【规格反转 2026-09-24】原断言是 `length > 1`(两个菜单共存)。
+    // 引入全局互斥后,打开 ⋯ 会立刻关掉同行的右键菜单 —— 共存不再成立,
+    // 改为断言「可见菜单恰好 1 个,且是 ⋯ 菜单」。本用例真正要守的
+    // (第 4 步「点内层菜单项后归 0」)未变,故保留。
     fireEvent.click(row.querySelector('button[aria-label="更多操作"]') as HTMLElement)
-    await waitFor(() => expect(document.querySelectorAll('.ant-dropdown').length).toBeGreaterThan(1))
+    await waitFor(() => expect(visibleDropdownCount()).toBe(1))
 
     // 3. 点内层菜单里的「复制」
     const panels = [...document.querySelectorAll('.ant-dropdown')] as HTMLElement[]

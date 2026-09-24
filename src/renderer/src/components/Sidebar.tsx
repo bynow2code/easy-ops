@@ -44,8 +44,15 @@ const NAME_LEFT = ROW_PAD + CARET_BOX + ROW_GAP + ICON_SIZE + ROW_GAP
 
 /**
  * 某层折叠箭头的水平中心。
- * 层级对齐线画在**父项**箭头中心列(= 子项箭头中心 - 一个缩进):截图里线正落在父箭头
- * 正下方,子项箭头整体在它右侧;若画在子项箭头中心(旧实现),线会直接穿过子项箭头字形。
+ * 层级对齐线画在本行箭头**墨迹的水平中心**列(ROW_PAD + depth*TREE_INDENT + CARET_BOX/2
+ * = 行左沿 + 5)。箭头墨迹横跨 [行左沿+2.2, 行左沿+8.0](path 3.4→6.8 加 round cap 半径 0.6),
+ * 故 5 正是墨迹中心。
+ *
+ * 2026-09-24 修正:旧注释称「画在父项箭头中心列,若画在子项中心会穿过子项字形」——
+ * **不准确**。线落在父项正下方只是上下层之间的观察结果;对 depth 行自身,它就是
+ * 自己箭头的中心线,而 y 轴从分组头行**下沿**起笔(top: 0,见 theme.css),故不重叠。
+ * 详见 docs/superpowers/specs/2026-09-24-sidebar-menu-mutex-design.md 与
+ * tests/renderer/sidebar.test.tsx 的「对齐线几何」。
  */
 const caretCenter = (depth: number): number => ROW_PAD + depth * TREE_INDENT + CARET_BOX / 2
 
