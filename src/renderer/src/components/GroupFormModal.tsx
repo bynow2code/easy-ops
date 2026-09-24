@@ -36,7 +36,7 @@ export function GroupFormModal(): JSX.Element | null {
     submittingRef.current = true
     setSubmitting(true)
     try {
-      // 创建时透传 parentId(null = 顶层分组),子目录建到指定父级下
+      // 创建时透传 parentId(null = 顶层分组),子分组建到指定父级下
       if (isCreate && form.type === 'group-create') {
         await window.api.groups.create(name, form.parentId ?? null)
       } else await window.api.groups.update(form.group.id, name)
@@ -54,8 +54,8 @@ export function GroupFormModal(): JSX.Element | null {
     <Modal
       open={open}
       centered
-      // 从子目录菜单进来(parentId 非空)时标题体现层级
-      title={isCreate ? (form.type === 'group-create' && form.parentId ? '新建子目录' : '新建分组') : '编辑分组'}
+      // 从「新建子分组」菜单进来(parentId 非空)时标题体现层级
+      title={isCreate ? (form.type === 'group-create' && form.parentId ? '新建子分组' : '新建分组') : '编辑分组'}
       onOk={handleOk}
       onCancel={closeForm}
       confirmLoading={submitting}

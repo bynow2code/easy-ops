@@ -183,8 +183,8 @@ describe('树形分组的折叠', () => {
     fireEvent.click(screen.getByText('wms'))
     expect(screen.queryByText('构建')).toBeNull()
 
-    // ＋ 的事件驱动展开:与「新建子目录」菜单行为一致,不依赖自动展开 effect
-    fireEvent.click(screen.getByLabelText('在此目录新建脚本'))
+    // ＋ 的事件驱动展开:与「新建子分组」菜单行为一致,不依赖自动展开 effect
+    fireEvent.click(screen.getByLabelText('在此分组新建脚本'))
     await waitFor(() =>
       expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: 'g1' })
     )
@@ -453,7 +453,7 @@ describe('悬停菜单', () => {
     await screen.findByText('wms')
 
     fireEvent.click(screen.getByLabelText('分组操作'))
-    fireEvent.click(await screen.findByText('新建子目录'))
+    fireEvent.click(await screen.findByText('新建子分组'))
 
     await waitFor(() =>
       expect(useAppStore.getState().form).toEqual({ type: 'group-create', parentId: 'g1' })
@@ -469,7 +469,7 @@ describe('悬停菜单', () => {
     )
     await screen.findByText('wms')
 
-    fireEvent.click(screen.getByLabelText('在此目录新建脚本'))
+    fireEvent.click(screen.getByLabelText('在此分组新建脚本'))
 
     await waitFor(() =>
       expect(useAppStore.getState().form).toEqual({ type: 'script-create', groupId: 'g1' })
@@ -487,14 +487,14 @@ describe('悬停菜单', () => {
     expect(head).toBeTruthy()
 
     // 对照组:右键前菜单项不存在,证明后面的断言确实来自右键这一次交互
-    expect(screen.queryByText('新建子目录')).toBeNull()
+    expect(screen.queryByText('新建子分组')).toBeNull()
 
     fireEvent.contextMenu(head)
 
     // 三项都与 ⋯ 按钮菜单同源(同一份 groupMenuItems)
-    expect(await screen.findByText('新建子目录')).toBeTruthy()
+    expect(await screen.findByText('新建子分组')).toBeTruthy()
     expect(screen.getByText('重命名')).toBeTruthy()
-    expect(screen.getByText('删除目录')).toBeTruthy()
+    expect(screen.getByText('删除分组')).toBeTruthy()
   })
 
   it('右键目录行不改变折叠状态(右键 ≠ 折叠,2026-09-24)', async () => {
@@ -510,10 +510,11 @@ describe('悬停菜单', () => {
     expect(before).not.toBeNull()
 
     fireEvent.contextMenu(head)
-    await screen.findByText('新建子目录')
+    await screen.findByText('新建子分组')
 
-    // 这是方案 B(受控 open + 自挂 onContextMenu)相对方案 A 存在的全部理由:
-    // 右键只开菜单,不得把目录顺带折叠/展开掉。
+    // 右键只开菜单,不得把分组顺带折叠/展开掉。
+    // 这是本用例唯一的守卫:antd 的 contextMenu 触发器在右键时不触发 onClick,
+    // 一旦将来换回自挂 onContextMenu 的实现,这条会立刻变红。
     expect(head.getAttribute('aria-expanded')).toBe(before)
   })
 
@@ -549,17 +550,17 @@ describe('悬停菜单', () => {
     const pdaHead = (await screen.findByText('pda')).closest('.app-group-head') as HTMLElement
 
     fireEvent.contextMenu(pdaHead)
-    // 只认菜单项本体:同样是「新建子目录」四个字,空目录引导块里的按钮也叫这个名
-    // (Sidebar.tsx 的空目录引导块),按纯文字找会把它一起数进来,测不出两菜单同开的 bug。
+    // 只认菜单项本体:同样是「新建子分组」四个字,空分组引导块里的按钮也叫这个名
+    // (Sidebar.tsx 的空分组引导块),按纯文字找会把它一起数进来,测不出两菜单同开的 bug。
     await waitFor(() =>
       expect(document.querySelectorAll('.ant-dropdown-menu-item').length).toBeGreaterThan(0)
     )
 
-    // 用 id 而非共享 boolean 维持开合状态:后者会让整棵树的目录菜单同时打开。
-    // 菜单项每项只渲染一次 —— 出现 2 份即说明两个目录的菜单都开了。
+    // 每个分组头各挂一个 Dropdown,开合天然按实例隔离,不会互相带开。
+    // 菜单项每项只渲染一次 —— 出现 2 份即说明两个分组的菜单都开了。
     expect(
       Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).filter(
-        (el) => el.textContent === '新建子目录'
+        (el) => el.textContent === '新建子分组'
       )
     ).toHaveLength(1)
   })
@@ -610,20 +611,20 @@ describe('悬停菜单', () => {
     await screen.findByText('wms')
 
     fireEvent.click(screen.getByLabelText('分组操作'))
-    await screen.findByText('新建子目录')
+    await screen.findByText('新建子分组')
 
     const menuItem = (label: string): HTMLElement =>
       screen.getByText(label).closest('.ant-dropdown-menu-item') as HTMLElement
 
-    // 菜单项内不得出现任何图标节点(.anticon)。刻意「全去」而非「只去新建子目录」:
+    // 菜单项内不得出现任何图标节点(.anticon)。刻意「全去」而非「只去新建子分组」:
     // 只去一项会让该项文字左移、与其余各项错开(antd 按项计算左对齐),见规格 2026-09-24。
-    for (const label of ['新建子目录', '重命名', '删除目录']) {
+    for (const label of ['新建子分组', '重命名', '删除分组']) {
       expect(menuItem(label).querySelector('.anticon')).toBeNull()
     }
 
-    // 对照组:去掉图标后,红色是「删除目录」唯一的危险提示,不能被一并优化掉
-    expect(menuItem('删除目录').className).toContain('danger')
-    expect(menuItem('新建子目录').className).not.toContain('danger')
+    // 对照组:去掉图标后,红色是「删除分组」唯一的危险提示,不能被一并优化掉
+    expect(menuItem('删除分组').className).toContain('danger')
+    expect(menuItem('新建子分组').className).not.toContain('danger')
     expect(menuItem('重命名').className).not.toContain('danger')
   })
 
@@ -642,12 +643,12 @@ describe('悬停菜单', () => {
 
     // 回归:这里若显示「没有匹配的脚本」占位,树不渲染,用户将没有任何建脚本入口
     expect(screen.queryByText('没有匹配的脚本')).toBeNull()
-    expect(screen.getByLabelText('在此目录新建脚本')).toBeTruthy()
+    expect(screen.getByLabelText('在此分组新建脚本')).toBeTruthy()
     // 空目录展开后给一行提示,不再是一片空白
     expect(screen.getByText('暂无脚本')).toBeTruthy()
   })
 
-  it('空目录引导块的「新建子目录」按钮只有文字,不带图标(2026-09-24)', async () => {
+  it('空分组引导块的「新建子分组」按钮只有文字,不带图标(2026-09-24)', async () => {
     const api = setupApi()
     api.scripts.list.mockResolvedValue([])
     api.groups.list.mockResolvedValue([
@@ -661,7 +662,7 @@ describe('悬停菜单', () => {
     await screen.findByText('wms')
 
     // 同屏还有「新建脚本」按钮(它保留 ＋ 图标),所以按文字精确定位到子目录那个
-    const guide = screen.getByText('新建子目录').closest('button') as HTMLElement
+    const guide = screen.getByText('新建子分组').closest('button') as HTMLElement
     expect(guide).toBeTruthy()
     expect(guide.querySelector('.anticon')).toBeNull()
     // 对照组:旁边「新建脚本」按钮的图标是本次范围外的东西,不应被误伤
@@ -886,7 +887,7 @@ describe('拖拽排序与跨目录移动(组件级)', () => {
     await waitFor(() => expect(api.groups.move).toHaveBeenCalledWith('g2', null))
   })
 })
-describe('删除目录确认框', () => {
+describe('删除分组确认框', () => {
   /** 顶层「wms」+ 子目录「pda」+ pda 下脚本,供删除确认框用例共用 */
   function setupTree(): ApiMock {
     const api = setupApi()
@@ -900,11 +901,11 @@ describe('删除目录确认框', () => {
     return api
   }
 
-  /** 打开指定目录行的 ⋯ 菜单并点「删除目录」,弹出确认框 */
+  /** 打开指定分组行的 ⋯ 菜单并点「删除分组」,弹出确认框 */
   async function openDeleteConfirm(name: string): Promise<void> {
     const head = screen.getByText(name).closest('.app-group-head') as HTMLElement
     fireEvent.click(within(head).getByRole('button', { name: '分组操作' }))
-    fireEvent.click(await screen.findByText('删除目录'))
+    fireEvent.click(await screen.findByText('删除分组'))
   }
 
   // 超时放宽到 15s(默认 5s):用例要串起 Dropdown → Modal 两层浮层,
@@ -919,9 +920,9 @@ describe('删除目录确认框', () => {
     await screen.findByText('pda')
     await openDeleteConfirm('pda')
 
-    // 文案定稿:只交代「连子目录与脚本一并删」+ 不可撤销,不列数量
-    const body = await screen.findByText(/删除目录『pda』/)
-    expect(body.textContent).toBe('删除目录『pda』?其下脚本与子目录将一并删除,此操作不可撤销。')
+    // 文案定稿:只交代「连子分组与脚本一并删」+ 不可撤销,不列数量
+    const body = await screen.findByText(/删除分组『pda』/)
+    expect(body.textContent).toBe('删除分组『pda』?其下脚本与子分组将一并删除,此操作不可撤销。')
 
     fireEvent.click(screen.getByRole('button', { name: /^删\s?除$/ }))
     await waitFor(() => expect(api.groups.remove).toHaveBeenCalledWith('g2'))

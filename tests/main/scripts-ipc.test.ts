@@ -82,7 +82,7 @@ describe('group:create 的 parentId 透传与 group:move', () => {
     const listed = invoke('group:list') as Group[]
     expect(listed.find((x: Group) => x.id === g.id)!.parentId).toBe(parent.id)
 
-    expect(() => invoke('group:move', { id: parent.id, parentId: g.id })).toThrowError(/子目录/)
+    expect(() => invoke('group:move', { id: parent.id, parentId: g.id })).toThrowError(/子分组/)
   })
 })
 

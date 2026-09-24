@@ -50,18 +50,22 @@ const NAME_LEFT = ROW_PAD + CARET_BOX + ROW_GAP + ICON_SIZE + ROW_GAP
 const caretCenter = (depth: number): number => ROW_PAD + depth * TREE_INDENT + CARET_BOX / 2
 
 /**
- * 目录行 ⋯ 菜单的固定项;具体行为(新建子目录/重命名/删除)在 onClick 里按 key 分发。
+ * 分组行 ⋯ 菜单的固定项;具体行为(新建子分组/重命名/删除)在 onClick 里按 key 分发。
  *
  * 刻意不带 icon(2026-09-24 用户定稿):菜单项文字本就自解释,而 antd 菜单按项计算
  * 左对齐 —— 只去掉一项的图标会让那一项文字左移、与其余各项错开,要嘛全留要嘛全去。
  * 这里选了全去(纯文字菜单),故三项都无图标。
- * 注意 danger: true 必须保留:「删除目录」去掉图标后,红色是它唯一的危险提示。
+ * 注意 danger: true 必须保留:「删除分组」去掉图标后,红色是它唯一的危险提示。
+ *
+ * 术语(2026-09-24 用户定稿):用户可见文案统一用「分组」。树层级里的父子关系叫
+ * 「子分组」,排版用的「目录 / 子目录」只在内部注释里出现。注意别去改
+ * editor/shellKeywords.ts —— 那里的「目录」指的是真实文件系统目录,不是本概念。
  */
 const groupMenuItems: MenuProps['items'] = [
-  { key: 'add-subgroup', label: '新建子目录' },
+  { key: 'add-subgroup', label: '新建子分组' },
   { key: 'rename', label: '重命名' },
   { type: 'divider' },
-  { key: 'delete', label: '删除目录', danger: true }
+  { key: 'delete', label: '删除分组', danger: true }
 ]
 
 /**
@@ -212,12 +216,6 @@ export function Sidebar(): JSX.Element {
   // selectedIds = 多选脚本集合;anchorId = Shift 范围选择的锚点(最近一次普通/Ctrl 单击行)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [anchorId, setAnchorId] = useState<string | null>(null)
-  /**
-   * 右键打开的目录菜单属于哪个目录;null = 无菜单打开。
-   * 必须记 id 而不是共享的 boolean:树是递归渲染的(renderGroupNode 每层都渲染分组头),
-   * 用 boolean 会让右键任一目录时**整棵树**的菜单同时打开。
-   */
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   /**
    * 用户是否主动清空过选区(Esc / 搜索)。
    * 用途只有一个:抑制 Ctrl 单击的「播种」——播种把「当前详情选中行」并入选区,
@@ -601,11 +599,11 @@ export function Sidebar(): JSX.Element {
   }
 
   const handleDeleteGroup = (group: Group): void => {
-    // 删除一律级联:确认文案只交代「连子目录与脚本一并删」+ 不可撤销,不列数量
+    // 删除一律级联:确认文案只交代「连子分组与脚本一并删」+ 不可撤销,不列数量
     modal.confirm({
       centered: true,
-      title: '删除目录',
-      content: `删除目录『${group.name}』?其下脚本与子目录将一并删除,此操作不可撤销。`,
+      title: '删除分组',
+      content: `删除分组『${group.name}』?其下脚本与子分组将一并删除,此操作不可撤销。`,
       okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
@@ -827,14 +825,14 @@ export function Sidebar(): JSX.Element {
     )
   }
 
-  /** ＋ 直达新建脚本,建到当前目录;目录若被折叠则顺手展开(事件驱动,与「新建子目录」菜单一致) */
+  /** ＋ 直达新建脚本,建到当前分组;分组若被折叠则顺手展开(事件驱动,与「新建子分组」菜单一致) */
   const renderAddScriptAction = (groupId: string): JSX.Element => (
-    <Tooltip title="在此目录新建脚本">
+    <Tooltip title="在此分组新建脚本">
       <Button
         type="text"
         size="small"
         icon={<PlusOutlined />}
-        aria-label="在此目录新建脚本"
+        aria-label="在此分组新建脚本"
         onClick={(e) => {
           e.stopPropagation()
           setCollapsedIds((prev) => {
@@ -899,16 +897,22 @@ export function Sidebar(): JSX.Element {
       <div style={{ position: 'relative' }} key={key}>
         {/* 分组头 = 折叠箭头 + 文件夹图标 + 名称 + 总数 chip,整行可点用于展开/收起;缩进随层级加深 */}
         {/*
-          受控 Dropdown(trigger=[]) + 分组头自挂 onContextMenu:右键出菜单的入口。
-          不用 antd 的 trigger={['contextMenu']} 是因为分组头自身带 onClick(折叠)/draggable/
-          onKeyDown,受控 open 让我们**显式**决定右键只开菜单,不依赖触发器内部的事件顺序。
-          已实测确认:trigger=[] 不会额外包裹 DOM 层(role="button" 位置不变),
-          右键也不触发 onClick,故不会误折叠。
+          用 antd 自带的 trigger={['contextMenu']},与脚本行完全同构 —— 菜单在鼠标位置弹出。
+
+          2026-09-24 修正:此前用受控写法(trigger=[] + 自挂 onContextMenu),理由是
+          「显式控制、不依赖触发器内部事件顺序」。**该理由不成立**:antd 内部有
+          `dropdown.js: const alignPoint = trigger.includes('contextMenu')`,
+          它决定浮层是否对齐到鼠标坐标。绕开 trigger 就同时丢掉了 alignPoint,
+          菜单会跑到行末而非鼠标旁边。单独补 alignPoint 也无效 —— rc-trigger 里
+          mousePos 只在 showActions 含 'contextMenu' 时才写入(index.js:415),
+          而我们传的是空 trigger,mousePos 恒为 null,alignPoint 只剩改 class 的作用。
+
+          已实测(probe-planA):trigger=['contextMenu'] 下右键不会触发 onClick
+          (aria-expanded 保持不变,不会误折叠),placement 为 rightTop,与脚本行一致;
+          多个分组头同时挂 Dropdown 时也只有被右键那一个会打开。
         */}
         <Dropdown
-          trigger={[]}
-          open={menuOpenId === key}
-          onOpenChange={(next) => setMenuOpenId(next ? key : null)}
+          trigger={['contextMenu']}
           menu={{
             items: groupMenuItems,
             onClick: ({ key: menuKey, domEvent }) => {
@@ -920,18 +924,11 @@ export function Sidebar(): JSX.Element {
           <div
             className="app-group-head"
             onClick={() => toggleGroup(key)}
-            // 右键 = 只开菜单。preventDefault 抑制系统右键菜单;
-            // 不动折叠状态 —— 右键在浏览器里本就不触发 click,这里靠受控 open 表达,
-            // 而不是依赖那个隐式行为(否则将来换实现方式时会静默失效)。
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setMenuOpenId(key)
-            }}
             // 键盘可达:纯 onClick 的 div 键盘用户无法折叠分组
             role="button"
             tabIndex={0}
             aria-expanded={expanded}
-            aria-label={`目录 ${node.group.name}`}
+            aria-label={`分组 ${node.group.name}`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
@@ -1045,7 +1042,7 @@ export function Sidebar(): JSX.Element {
                   type="secondary"
                   style={{ display: 'block', fontSize: 13, lineHeight: '20px', marginTop: 2 }}
                 >
-                  新建脚本或子目录,也可拖入条目归组。
+                  新建脚本或子分组,也可拖入条目归组。
                 </Typography.Text>
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <Button
@@ -1059,7 +1056,7 @@ export function Sidebar(): JSX.Element {
                     size="small"
                     onClick={() => openForm({ type: 'group-create', parentId: node.group.id })}
                   >
-                    新建子目录
+                    新建子分组
                   </Button>
                 </div>
               </div>
@@ -1146,7 +1143,7 @@ export function Sidebar(): JSX.Element {
         }
       >
         {nothingAtAll ? (
-          <CenteredHint text="还没有脚本,先用上方的新建分组建目录,再通过目录上的 ＋ 添加脚本" />
+          <CenteredHint text="还没有脚本,先用上方的新建分组建分组,再通过分组上的 ＋ 添加脚本" />
         ) : searchEmpty ? (
           // 搜索无任何命中(脚本名与目录名都没匹配):整树替换成提示;
           // 非搜索态即使 0 脚本也要渲染树,否则「有分组但还没有脚本」的新用户会看不到任何 ＋ 入口

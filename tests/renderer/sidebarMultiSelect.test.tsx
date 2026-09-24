@@ -63,10 +63,10 @@ afterEach(() => {
   cleanup()
 })
 
-/** 按目录名找分组头(.app-group-head;折叠必须点它本体,内部的 Typography 文本节点不一定冒泡) */
+/** 按分组名找分组头(.app-group-head;折叠必须点它本体,内部的 Typography 文本节点不一定冒泡) */
 const groupHead = (name: string): HTMLElement =>
   [...document.querySelectorAll('.app-group-head')].find(
-    (e) => e.getAttribute('aria-label') === `目录 ${name}`
+    (e) => e.getAttribute('aria-label') === `分组 ${name}`
   ) as HTMLElement
 
 /** 按名称找脚本行(行是 .app-row,名字在 Typography.Text 里) */
@@ -293,7 +293,7 @@ describe('行右键菜单', () => {
     renderSidebar()
     const head = document.querySelector('.app-group-head') as HTMLElement
     const items = await openContextMenuAndReadItems(head)
-    expect(items).toEqual(['新建子目录', '重命名', '删除目录'])
+    expect(items).toEqual(['新建子分组', '重命名', '删除分组'])
   })
 })
 

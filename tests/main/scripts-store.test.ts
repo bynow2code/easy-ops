@@ -123,7 +123,7 @@ describe('分组', () => {
       const child = store.createGroup('child', root.id)
       const grand = store.createGroup('grand', child.id)
       expect(() => store.moveGroup(root.id, root.id)).toThrowError(/自己/)
-      expect(() => store.moveGroup(root.id, grand.id)).toThrowError(/子目录/)
+      expect(() => store.moveGroup(root.id, grand.id)).toThrowError(/子分组/)
     })
 
     it('级联删除:连带全部后代目录与其下脚本,父层不受波及', () => {

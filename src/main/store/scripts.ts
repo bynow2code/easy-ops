@@ -301,13 +301,13 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
 
     moveGroup(id, parentId) {
       const target = parentId ?? null
-      if (id === target) throw new Error('不能把目录移动到自己')
+      if (id === target) throw new Error('不能把分组移动到自己')
       const data = state()
       if (!data.groups.some((g) => g.id === id)) throw new Error(`分组不存在: ${id}`)
       if (target && !data.groups.some((g) => g.id === target)) {
         throw new Error(`父分组不存在: ${target}`)
       }
-      // 防环:目标父目录不能是自己旗下任意后代。先建「父 → 子」索引,再从 id 往下走。
+      // 防环:目标父分组不能是自己旗下任意后代。先建「父 → 子」索引,再从 id 往下走。
       // visited 兜底:normalizeGroups 已在入口断环,这里再拦一道,
       // 即使将来有入口绕过清洗,带环数据也不会把主进程拖成死循环
       const childrenOf = new Map<string | null, string[]>()
@@ -321,7 +321,7 @@ export function createScriptsStore(persistence: Persistence<ScriptsData>): Scrip
         const cur = stack.pop()!
         if (seen.has(cur)) continue
         seen.add(cur)
-        if (cur === target) throw new Error('不能把目录移动到自己的子目录')
+        if (cur === target) throw new Error('不能把分组移动到自己的子分组')
         stack.push(...(childrenOf.get(cur) ?? []))
       }
       const from = data.groups.find((g) => g.id === id)!.parentId ?? null
