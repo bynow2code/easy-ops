@@ -138,3 +138,49 @@ expect(screen.getByLabelText('新建分组')).toBeTruthy()
 4. `npm run typecheck` 通过，`FolderAddOutlined` 无残留引用。
 5. 现有测试全绿；新增的去图标断言通过。
 6. 点「+」仍能正常打开「新建分组」弹窗（顶层分组）。
+
+---
+
+## 7. 落地与验证记录（2026-09-24）
+
+### 7.1 实现
+
+改动如前 §3，共 2 文件：
+
+| 文件 | 变更 |
+|---|---|
+| `src/renderer/src/components/Sidebar.tsx` | 4 处：删 import、菜单去 3 个 icon、引导块去 icon、工具栏换 `PlusOutlined` |
+| `tests/renderer/sidebar.test.tsx` | 新增 3 条回归用例（25 → 28） |
+
+### 7.2 新增用例的断言依据
+
+图标类名经**实测**确认，非推测：
+
+```
+PlusOutlined      → class="anticon anticon-plus"
+FolderAddOutlined → class="anticon anticon-folder-add"
+```
+
+（用 `react-dom/server` 的 `renderToStaticMarkup` 渲染后读 class 得出。）
+
+### 7.3 验证结果
+
+| 项目 | 结果 |
+|---|---|
+| `tsc -p tsconfig.web.json` | 通过（`TC=0`） |
+| 16 文件测试套件 | 全部通过 |
+| `sidebar.test.tsx` | 28/28（原 25 + 新 3） |
+| `FolderAddOutlined` 残留 | 仅 1 处注释提及，代码内 0 处 |
+
+### 7.4 回退验证（逐条证明断言有效）
+
+按项目约定做三重回退验证，确认新断言各自锁住对应行为、且互不耦合：
+
+| 回退动作 | 变红的用例 |
+|---|---|
+| 工具栏图标换回 `FolderOutlined` | 「工具栏『新建分组』用纯 + 图标…」 |
+| 菜单三项加回 icon | 「目录行 ⋯ 菜单是纯文字…」 |
+| 引导块加回 icon | 「空目录引导块的『新建子目录』按钮只有文字…」 |
+
+每次只有**对应那一条**变红（证明三条用例彼此隔离、无常量误伤），恢复后全绿。
+

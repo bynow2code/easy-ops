@@ -489,12 +489,54 @@ describe('悬停菜单', () => {
     expect(screen.queryByText('新建脚本')).toBeNull()
     expect(screen.queryByLabelText('新建脚本')).toBeNull()
     expect(screen.getByLabelText('新建分组')).toBeTruthy()
-
     // 伪目录已移除:行直接在顶层,不再套「未分组」折叠头
     expect(screen.queryByText('未分组')).toBeNull()
     const row = screen.getByText('构建').closest('.app-row') as HTMLElement
     // depth 0 的脚本名与同级目录名同列:4(行内边距) + 10(箭头) + 6 + 13(图标) + 6
     expect(row.style.paddingLeft).toBe('39px')
+  })
+
+  it('工具栏「新建分组」用纯 + 图标,不用文件夹+号(2026-09-24 用户要求)', async () => {
+    setupApi()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('构建')
+
+    const btn = screen.getByLabelText('新建分组')
+    // ant-plus 是 PlusOutlined 的图标类名;ant-folder-add 是 FolderAddOutlined 的。
+    // 断言在前者、不在后者 —— 否则将来有人把图标换回文件夹+号不会有任何反馈。
+    expect(btn.querySelector('.anticon-plus')).toBeTruthy()
+    expect(btn.querySelector('.anticon-folder-add')).toBeNull()
+  })
+
+  it('目录行 ⋯ 菜单是纯文字:三项都不渲染图标,但删除项保留红色警示', async () => {
+    setupGrouped()
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+
+    fireEvent.click(screen.getByLabelText('分组操作'))
+    await screen.findByText('新建子目录')
+
+    const menuItem = (label: string): HTMLElement =>
+      screen.getByText(label).closest('.ant-dropdown-menu-item') as HTMLElement
+
+    // 菜单项内不得出现任何图标节点(.anticon)。刻意「全去」而非「只去新建子目录」:
+    // 只去一项会让该项文字左移、与其余各项错开(antd 按项计算左对齐),见规格 2026-09-24。
+    for (const label of ['新建子目录', '重命名', '删除目录']) {
+      expect(menuItem(label).querySelector('.anticon')).toBeNull()
+    }
+
+    // 对照组:去掉图标后,红色是「删除目录」唯一的危险提示,不能被一并优化掉
+    expect(menuItem('删除目录').className).toContain('danger')
+    expect(menuItem('新建子目录').className).not.toContain('danger')
+    expect(menuItem('重命名').className).not.toContain('danger')
   })
 
   it('有分组但 0 个脚本时,树仍然渲染(分组行上的 ＋ 是唯一建脚本入口)', async () => {
@@ -515,6 +557,28 @@ describe('悬停菜单', () => {
     expect(screen.getByLabelText('在此目录新建脚本')).toBeTruthy()
     // 空目录展开后给一行提示,不再是一片空白
     expect(screen.getByText('暂无脚本')).toBeTruthy()
+  })
+
+  it('空目录引导块的「新建子目录」按钮只有文字,不带图标(2026-09-24)', async () => {
+    const api = setupApi()
+    api.scripts.list.mockResolvedValue([])
+    api.groups.list.mockResolvedValue([
+      { id: 'g1', name: 'wms', order: 0, parentId: null, createdAt: '' }
+    ])
+    render(
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <Sidebar />
+      </ThemeProvider>
+    )
+    await screen.findByText('wms')
+
+    // 同屏还有「新建脚本」按钮(它保留 ＋ 图标),所以按文字精确定位到子目录那个
+    const guide = screen.getByText('新建子目录').closest('button') as HTMLElement
+    expect(guide).toBeTruthy()
+    expect(guide.querySelector('.anticon')).toBeNull()
+    // 对照组:旁边「新建脚本」按钮的图标是本次范围外的东西,不应被误伤
+    const scriptBtn = screen.getByText('新建脚本').closest('button') as HTMLElement
+    expect(scriptBtn.querySelector('.anticon-plus')).toBeTruthy()
   })
 
   it('「暂无脚本」提示只出现在真正空的那一层,折叠后不显示', async () => {

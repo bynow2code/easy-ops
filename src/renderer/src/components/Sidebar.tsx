@@ -5,7 +5,6 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
-  FolderAddOutlined,
   FolderOutlined,
   MoreOutlined,
   PlayCircleOutlined,
@@ -52,12 +51,19 @@ const NAME_LEFT = ROW_PAD + CARET_BOX + ROW_GAP + ICON_SIZE + ROW_GAP
  */
 const caretCenter = (depth: number): number => ROW_PAD + depth * TREE_INDENT + CARET_BOX / 2
 
-/** 目录行 ⋯ 菜单的固定项;具体行为(新建子目录/重命名/删除)在 onClick 里按 key 分发 */
+/**
+ * 目录行 ⋯ 菜单的固定项;具体行为(新建子目录/重命名/删除)在 onClick 里按 key 分发。
+ *
+ * 刻意不带 icon(2026-09-24 用户定稿):菜单项文字本就自解释,而 antd 菜单按项计算
+ * 左对齐 —— 只去掉一项的图标会让那一项文字左移、与其余各项错开,要嘛全留要嘛全去。
+ * 这里选了全去(纯文字菜单),故三项都无图标。
+ * 注意 danger: true 必须保留:「删除目录」去掉图标后,红色是它唯一的危险提示。
+ */
 const groupMenuItems: MenuProps['items'] = [
-  { key: 'add-subgroup', icon: <FolderAddOutlined />, label: '新建子目录' },
-  { key: 'rename', icon: <EditOutlined />, label: '重命名' },
+  { key: 'add-subgroup', label: '新建子目录' },
+  { key: 'rename', label: '重命名' },
   { type: 'divider' },
-  { key: 'delete', icon: <DeleteOutlined />, label: '删除目录', danger: true }
+  { key: 'delete', label: '删除目录', danger: true }
 ]
 
 /** 脚本行 ⋯ 菜单的固定项;复制/删除收敛进菜单后,行上只留高频的执行/编辑 */
@@ -1022,7 +1028,6 @@ export function Sidebar(): JSX.Element {
                   </Button>
                   <Button
                     size="small"
-                    icon={<FolderAddOutlined />}
                     onClick={() => openForm({ type: 'group-create', parentId: node.group.id })}
                   >
                     新建子目录
@@ -1060,7 +1065,11 @@ export function Sidebar(): JSX.Element {
           <Button
             size="small"
             type="text"
-            icon={<FolderAddOutlined />}
+            // 纯 + 而非 FolderAddOutlined(2026-09-24 用户要求):那个「文件夹+小加号」
+            // 在 14px 下细节糊在一起、视觉偏重,且与目录行的 ＋ 语义不一致。
+            // 现在统一语义:**+ = 新建**,具体新建什么由所在位置决定
+            // (工具栏 = 顶层分组,目录行 = 该目录下的脚本)。
+            icon={<PlusOutlined />}
             aria-label="新建分组"
             onClick={() => openForm({ type: 'group-create', parentId: null })}
           />
