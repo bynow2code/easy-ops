@@ -559,8 +559,8 @@ describe('悬停菜单', () => {
       expect(document.querySelectorAll('.ant-dropdown-menu-item').length).toBeGreaterThan(0)
     )
 
-    // 每个分组头各挂一个 Dropdown,开合天然按实例隔离,不会互相带开。
-    // 菜单项每项只渲染一次 —— 出现 2 份即说明两个分组的菜单都开了。
+    // 同一时刻最多一个菜单由全局互斥(openMenuKey)保证;分组头各自的 Dropdown
+    // 实例隔离只是兜底。菜单项每项只渲染一次 —— 出现 2 份即说明两个分组的菜单都开了。
     expect(
       Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).filter(
         (el) => el.textContent === '新建子分组'
