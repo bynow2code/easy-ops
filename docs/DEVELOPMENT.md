@@ -56,6 +56,7 @@ src/
 - **脚本投喂用「写临时文件后执行」**：把脚本内容写入系统临时目录的 `easyops-<runId>.sh`，再让交互式 shell `source` 它（WSL 会话里经 `wslpath` 换算路径），而不是逐行写进 shell。
 - **终端只保留「关闭」一个概念**：`\x03` + `pty.kill()`；中断脚本请用 `Ctrl+C`。
 - **IPC 错误文案**：`ipcMain.handle` 抛出的错误会被 Electron 包成 `Error invoking remote method 'x': <原文>`，渲染层展示前必须过 `toUserMessage()` 剥前缀，否则中文错误契约失效。
+- **根元素不出现滚动条**（`theme.css` 的 `html, body { overflow: hidden }`，勿移除）：antd 浮层（Tooltip / Dropdown / Modal）是 portal 到 body 的绝对定位元素，贴近视口边缘时会撑大根元素的滚动区；而全局滚动条是自绘的 8px 占宽条，一出现就让视口客户区变窄，`position: fixed; inset: 0` 的最大化终端随之变窄并触发 xterm refit —— 鼠标停着不动时这条链会来回反复，表现为界面抖动。应用内所有滚动由内部容器的 `overflow: auto` 承担。
 
 ## 测试
 
@@ -174,3 +175,4 @@ mac 链路的几个要点：
 - Windows / Linux 的应用内更新动作（三个更新清单已随每个 Release 正常产出，可随时验证端到端）。
 - Windows 下 Git Bash / WSL 的实际行为，以及自定义 shell 带 `args: ['-i']` 在各平台的差异。
 - 三平台产物的首次安装体验（macOS 未签名时的 Gatekeeper 放行等）。
+- 最大化终端后把鼠标停在「关闭此终端」按钮上：**不应出现界面抖动或滚动条**。浮层伸出视口 → 根元素冒出占宽 8px 的滚动条 → 视口客户区变窄 → `fixed inset:0` 的最大化终端跟着变窄 → xterm refit，这条链在沙箱里测不到（headless 用悬浮滚动条，不占宽），只能在真机抽验；`theme.css` 的 `html, body { overflow: hidden }` 就是为掐断它。

@@ -47,6 +47,18 @@ body,
   height: 100%;
 }
 
+/* 根元素永不出现滚动条 —— 桌面应用窗口没有「整页滚动」的语义,所有滚动都由内部容器
+   自己的 overflow:auto 承担。这条规则同时掐断一条会引发界面抖动的链路:
+   antd 的浮层(Tooltip / Dropdown / Modal)是 portal 到 body 的绝对定位元素,靠近视口
+   边缘时会撑大根元素的滚动区(实测 scrollWidth 1200 → 1430);而滚动条是自绘的 8px
+   占宽条(见下方 ::-webkit-scrollbar)。滚动条一出现,视口客户区就窄 8px,
+   position:fixed inset:0 的最大化终端随之变窄,ResizeObserver 触发 xterm fit 重排;
+   鼠标停着不动时这条链会来回反复,表现为「终端窗口抖动 + 滚动条闪现」。 */
+html,
+body {
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background-color: var(--app-layout-bg);
