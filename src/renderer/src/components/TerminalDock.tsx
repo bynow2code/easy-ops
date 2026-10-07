@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { App, Badge, Button, Tag, Tooltip, Typography } from 'antd'
 import { CloseOutlined, CodeOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons'
 import { terminalActions, useTerminalStore } from '../store/useTerminalStore'
@@ -17,6 +17,10 @@ export function TerminalDock(): JSX.Element {
 
   const writers = useRef(new Map<string, (chunk: string) => void>())
   const buffers = useRef(new Map<string, string[]>())
+
+  // 最大化按钮的提示气泡改为受控 open(见下方 Tooltip 注释)。
+  // 同一时刻鼠标只可能停在一个按钮上,所以一份「当前展开提示的 runId」够用。
+  const [tipRunId, setTipRunId] = useState<string | null>(null)
 
   const registerWriter = useCallback((runId: string, writer: (chunk: string) => void) => {
     writers.current.set(runId, writer)
@@ -194,12 +198,24 @@ export function TerminalDock(): JSX.Element {
                   // 运行中 = 苹果绿静点(替代 antd processing 蓝色脉冲灯,和整体风格解绑)
                   <Badge color="#34C759" />
                 )}
-                <Tooltip title={cardMaximized ? '还原' : '最大化'}>
+                {/* 受控 open:antd 的 Tooltip 默认 hover 触发、点击不关闭 —— 鼠标停在按钮上
+                    不动时,点完按钮提示会一直挂在按钮上方(用户反馈的现象)。这里点击即收起;
+                    mouseleave 仍走 antd 的 onOpenChange 正常关闭,两者不冲突 */}
+                <Tooltip
+                  title={cardMaximized ? '还原' : '最大化'}
+                  open={tipRunId === s.runId}
+                  onOpenChange={(open) =>
+                    setTipRunId((prev) => (open ? s.runId : prev === s.runId ? null : prev))
+                  }
+                >
                   <Button
                     type="text"
                     size="small"
                     icon={cardMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-                    onClick={() => terminalActions.setMaximized(s.runId, !cardMaximized)}
+                    onClick={() => {
+                      setTipRunId(null)
+                      terminalActions.setMaximized(s.runId, !cardMaximized)
+                    }}
                   />
                 </Tooltip>
                 <Tooltip title="关闭此终端">
