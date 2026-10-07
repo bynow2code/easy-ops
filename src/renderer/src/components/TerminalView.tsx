@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { useTheme } from '../theme/provider'
 import { terminalPalette } from '../theme/tokens'
+import { isSignificantResize, terminalSizeChanged, type TerminalBox } from '../utils/terminalFit'
 
 export function TerminalView({
   runId,
@@ -18,6 +19,8 @@ export function TerminalView({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  // 上一次 fit 时的容器尺寸:尺寸没变就跳过重排(见下方 ResizeObserver 注释)
+  const lastBoxRef = useRef<TerminalBox | null>(null)
   const { resolved } = useTheme()
 
   useEffect(() => {
@@ -39,6 +42,8 @@ export function TerminalView({
     // 容器尺寸为 0 时 fit 会抛错,渲染层没有 ErrorBoundary,炸了就是整树白屏
     try {
       fit.fit()
+      const rect = container.getBoundingClientRect()
+      lastBoxRef.current = { width: rect.width, height: rect.height }
     } catch {
       // 尺寸为 0 时跳过;unhide 后 ResizeObserver 会自动重新 fit + resize
     }
@@ -54,12 +59,25 @@ export function TerminalView({
       })
     })
 
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect
+      if (rect) {
+        const box = { width: rect.width, height: rect.height }
+        // 尺寸没变(含亚像素抖动)直接返回:fit 会重算行列并重建渲染层,
+        // 浮层闪现这类「同尺寸的重复回调」不该引起终端重排 —— 否则会表现为界面抖动
+        if (!isSignificantResize(lastBoxRef.current, box)) return
+        lastBoxRef.current = box
+      }
       try {
+        const before = { cols: term.cols, rows: term.rows }
         fit.fit()
-        window.api.pty.resize(runId, term.cols, term.rows).catch(() => {
-          // 关闭后迟到的 resize rejection 静默丢弃:无用户可恢复动作,弹窗是噪音
-        })
+        // 行列没变就不必打扰 pty:主进程会把它转成 SIGWINCH,
+        // 终端里的程序(vim / top / 进度条)会白重绘一轮
+        if (terminalSizeChanged(before, { cols: term.cols, rows: term.rows })) {
+          window.api.pty.resize(runId, term.cols, term.rows).catch(() => {
+            // 关闭后迟到的 resize rejection 静默丢弃:无用户可恢复动作,弹窗是噪音
+          })
+        }
       } catch {
         // 容器尺寸为 0 时 fit 会抛错,忽略即可
       }
@@ -76,6 +94,7 @@ export function TerminalView({
       term.dispose()
       termRef.current = null
       fitRef.current = null
+      lastBoxRef.current = null
     }
   }, [runId, onRegisterWriter])
 
