@@ -1,6 +1,6 @@
 # 开发文档
 
-> 面向使用者（下载、安装、上手）的内容见 [README](../README.md)。本文只讲开发、测试与发布。
+> 面向使用者的内容见 README（[中文](../README.md) / [English](../README.en.md)）。本文只讲开发、测试与发布。
 
 ## 环境要求
 
@@ -14,6 +14,7 @@ npm install          # 装依赖（会触发 electron-builder install-app-deps �
 npm run dev          # 开发模式（electron-vite dev）
 npm run typecheck    # 三进程类型检查（tsc --noEmit，node + web 两套）
 npm test             # 全量单测（vitest run）
+npm run test:watch   # 单测监听模式
 npm run build        # typecheck + electron-vite build
 npm start            # 预览构建产物
 ```
@@ -29,21 +30,22 @@ src/
 ├── main/          # 主进程（CJS 输出）
 │   ├── index.ts       # 入口：单实例锁、store 装配、IPC 注册、退出时回收终端
 │   ├── window.ts      # 窗口创建
-│   ├── ipc/           # IPC 通道注册（scripts / groups / shell / pty / settings / config / updater / app）
+│   ├── ipc/           # IPC 通道注册（scripts / groups / shell / pty / config / updater / window；settings 与 app 内联在 index.ts）
 │   ├── store/         # 数据层：scripts、settings、persistence、transfer（导入导出）
-│   ├── pty/           # 终端：shell 检测、shellResolver、PtyManager（唯一会话表）、runner、title、env
-│   └── updater/       # 更新：version / mac（自研替换）/ win-linux（electron-updater）
+│   ├── pty/           # 终端：PtyManager（唯一会话表，经 nodePtyAdapter 适配）、shell 检测与解析（shell / shellResolver / env）、runner、title、probe（启动探测）
+│   └── updater/       # 更新：version、progress、mac（自研替换）、win-linux（electron-updater）
 ├── preload/       # contextBridge 暴露 window.api（附 index.d.ts 类型声明）
 ├── renderer/      # React + antd
 │   └── src/
 │       ├── App.tsx            # 顶栏（版本 + 主题三态 + 设置入口）与工作区
-│       ├── components/        # Sidebar / ScriptFormModal / GroupFormModal / SettingsModal
-│       │                      # TerminalDock / TerminalView / ScriptEditor / UpdatePanel
+│       ├── components/        # Sidebar / ContentPanel / ScriptEditor / ScriptFormModal
+│       │                      # GroupFormModal / SettingsModal / UpdatePanel / Splitter
+│       │                      # TerminalDock / TerminalView / TabCloseGuard / UnsavedDraftGuard
 │       ├── store/             # zustand：useAppStore（脚本/分组/表单）、useTerminalStore（终端会话）
 │       ├── settings/          # shellOverride：shell 下拉选项与失效值判定（纯函数）
 │       ├── editor/            # shellKeywords：命令补全词表
 │       ├── theme/             # 主题三态与 CSS 变量注入
-│       └── utils/             # toUserMessage：剥掉 Electron 给 IPC 错误加的前缀
+│       └── utils/             # toUserMessage（剥 IPC 错误前缀）、multiSelect（多选范围）、treeDnd（拖拽落点）
 └── shared/        # 三进程共享的类型与校验（types.ts）
 ```
 
@@ -51,13 +53,13 @@ src/
 
 - **主进程保持 CJS 输出**（`electron-store@8` 是 CJS，不能升到纯 ESM 的 11.x）。
 - **校验双侧做**：名称长度等约束在主进程（权威），渲染层做即时反馈。
-- **脚本投喂用「写临时文件后执行」**：把脚本内容写入系统临时目录的 `easyops-<runId>.sh`，再让交互式 shell `source` 它，而不是逐行写进 shell。
+- **脚本投喂用「写临时文件后执行」**：把脚本内容写入系统临时目录的 `easyops-<runId>.sh`，再让交互式 shell `source` 它（WSL 会话里经 `wslpath` 换算路径），而不是逐行写进 shell。
 - **终端只保留「关闭」一个概念**：`\x03` + `pty.kill()`；中断脚本请用 `Ctrl+C`。
 - **IPC 错误文案**：`ipcMain.handle` 抛出的错误会被 Electron 包成 `Error invoking remote method 'x': <原文>`，渲染层展示前必须过 `toUserMessage()` 剥前缀，否则中文错误契约失效。
 
 ## 测试
 
-vitest，共 **269** 个用例，分两套环境：
+vitest，**38 个测试文件、共 481 个用例**（renderer 244 + main 237；2026-10 实测全绿），分两套环境：
 
 ```bash
 npm test                        # 全部
@@ -65,7 +67,7 @@ npx vitest run tests/main       # 主进程：node 环境
 npx vitest run tests/renderer   # 渲染层：jsdom 环境
 ```
 
-- **纯函数 / 数据层**：store、shell 检测与解析、导入导出迁移、更新事件判定等都有单测。
+- **纯函数 / 数据层**：store、shell 检测与解析、导入导出迁移、更新事件判定、多选范围与拖拽落点等都有单测。
 - **IPC 层**：用 `vi.mock('electron')` 把 `ipcMain.handle` 注册的处理函数收进一个 Map 再直接调用（见 `tests/main/updater-ipc.test.ts`、`tests/main/scripts-ipc.test.ts`）。
 - **组件测试**：`tests/renderer/**` 走 jsdom，`tests/renderer/jsdomShims.ts` 补齐了 jsdom 缺的 `matchMedia` 与带伪元素的 `getComputedStyle`（antd 会用到）。
 
@@ -117,9 +119,11 @@ npm run build:linux  # AppImage + deb + rpm
 
 ### GitHub Actions
 
-`.github/workflows/release.yml`：三平台矩阵构建，推送 `v*` 标签触发，也支持 `workflow_dispatch` 手动触发（留空版本号会生成 `0.8.0-rc.<run>` 形式的预发布，不污染正式更新通道）。构建完成后上传为 GitHub Release 产物。
+`.github/workflows/release.yml`：三平台矩阵构建，推送 `v*` 标签触发，也支持 `workflow_dispatch` 手动触发（留空版本号会生成 `<当前版本>-rc.<run>` 形式的预发布，不污染正式更新通道）。每个构建 job 会先把 package.json 版本同步为 tag 版本（`npm version <version> --allow-same-version`），**发版只须打 tag，本地不需要先手动改版本号**；构建完成后上传为 GitHub Release 产物。
 
 发布前有一个独立的 `verify-release` 终检：断言三个平台的更新清单（`latest-mac.yml` / `latest.yml` / `latest-linux.yml`）都已发布，**并逐个核对清单里引用的每个安装包与 blockmap 都真的在 Release 资产中** —— 更新器按清单下载，清单列了文件不代表资产上传成功。
+
+> ⚠️ 历史抖动（2026-10-07 已加固）：GitHub 对 release assets 的读取存在最终一致性缓存，偶发瞬时为空（实测约 10%），曾致 `verify-release` 假红（报 curl `Malformed input to a URL function`，产物其实完好）。现已改为 assets 单次拉全 + 退避重试（6 次 × 10s）+ 空 URL 守卫；若仍见同类报错，先重跑该 job 再按真问题排查。
 
 > ⚠️ 踩过的坑：electron-builder 默认 `releaseType: draft`。如果 Release 已经存在（例如预建了草稿），必须显式设成 `release`，否则**全部产物会被静默跳过上传，而 CI 仍然全绿**。重跑超过 2 小时的失败 job 也需 `EP_GH_IGNORE_TIME: 'true'` 忽略发布器的时间窗（workflow 已配置）。
 
@@ -143,7 +147,7 @@ mac 链路的几个要点：
 
 ### 发版前建议
 
-首次跑 CI 建议先用 `workflow_dispatch` 留空版本号试跑（会生成 `0.8.0-rc.<run>` 形式的版本），确认 `verify-release` 通过后再打正式 tag。
+建议先用 `workflow_dispatch` 留空版本号试跑（会生成 `<当前版本>-rc.<run>` 形式的预发布），确认 `verify-release` 通过后再打正式 tag。
 
 ## 技术栈与版本约束
 
@@ -162,11 +166,11 @@ mac 链路的几个要点：
 | electron-updater | 6.x | 仅 Windows / Linux |
 | zustand | 5.x | 渲染层状态 |
 
-## 已知未验证项
+## 真机回归清单
 
-以下是代码已完成、但**尚未在真实环境跑通**的部分，发版前需要补：
+以下路径依赖真实操作系统行为，CI 与单测覆盖不到；发版前建议按需抽验：
 
-- macOS 自研替换安装的完整链路（下载 → sha512 校验 → ditto 解压 → 替换 → xattr → 重启）—— 需等 CI 产出首个 Release 后实测。
-- Windows / Linux 的 `electron-updater` 端到端；`latest.yml` / `latest-linux.yml` 的真实产出。
-- Windows 下 Git Bash / WSL 的真机行为，以及自定义 shell 带 `args: ['-i']` 在各平台的差异。
-- 三平台产物的实际安装体验（macOS 未签名时的 Gatekeeper 提示等）。
+- macOS 应用内更新全链路：下载 → sha512 校验 → `ditto` 解压 → 替换 `.app` → `xattr` → 重启（`src/main/updater/mac.ts`）。
+- Windows / Linux 的应用内更新动作（三个更新清单已随每个 Release 正常产出，可随时验证端到端）。
+- Windows 下 Git Bash / WSL 的实际行为，以及自定义 shell 带 `args: ['-i']` 在各平台的差异。
+- 三平台产物的首次安装体验（macOS 未签名时的 Gatekeeper 放行等）。

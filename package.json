@@ -5,7 +5,7 @@
   "desktopName": "easyops.desktop",
   "main": "./out/main/index.js",
   "author": "bynow2code",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bynow2code/easy-ops.git"

@@ -157,30 +157,67 @@ jobs:
           TAG: ${{ needs.create-release.outputs.tag }}
         run: |
           set -euo pipefail
-          assets="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.assets[].name')"
-          echo "$assets"
-          missing=0
-          for manifest in latest-mac.yml latest.yml latest-linux.yml; do
-            if ! grep -qx "$manifest" <<< "$assets"; then
-              echo "::error::Release ${TAG} 缺少更新清单 $manifest"
-              missing=1
-              continue
+          # assets 单次拉全(name 与 url 取自同一份快照,消除两次调用互不一致的竞态);
+          # GitHub 对 release assets 的读取有最终一致性缓存,偶发瞬时为空(实测约 10%)——
+          # 带退避重试:6 次 × 10s 后仍不完整才判失败。
+          assets=""
+          names=""
+          for attempt in 1 2 3 4 5 6; do
+            assets="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+              --jq '.assets[] | [.name, .browser_download_url] | @tsv' || true)"
+            names="$(awk -F'\t' 'NF { print $1 }' <<< "$assets")"
+            missing=""
+            for manifest in latest-mac.yml latest.yml latest-linux.yml; do
+              if ! grep -qx "$manifest" <<< "$names"; then
+                missing="$manifest"
+                break
+              fi
+            done
+            [ -z "$missing" ] && break
+            if [ "$attempt" = "6" ]; then
+              if [ -z "$assets" ]; then
+                echo "::error::连续 6 次读到空的 assets 列表(API 抖动或产物缺失),请人工确认 Release ${TAG}"
+              else
+                echo "::error::Release ${TAG} 缺少更新清单 $missing"
+                echo "$names"
+              fi
+              exit 1
             fi
+            if [ -z "$assets" ]; then
+              retry_reason="空列表"
+            else
+              retry_reason="$missing"
+            fi
+            echo "assets 读取不完整(第 ${attempt} 次: ${retry_reason}),10s 后重试..."
+            sleep 10
+          done
+          echo "$names"
+          failed=0
+          for manifest in latest-mac.yml latest.yml latest-linux.yml; do
             echo "ok: $manifest"
             # 只断言 yml 存在是不够的:更新器按 yml 里引用的文件名下载,
-            # yml 列了文件不代表资产真的上传成功 —— 逐个引用核对资产清单
-            url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-              --jq ".assets[] | select(.name==\"$manifest\") | .browser_download_url")"
-            refs="$(curl -fsSL "$url" | grep -oE '(url|path):[[:space:]]*[^[:space:]]+' \
-              | sed -E 's/(url|path):[[:space:]]*//' | tr -d '"' | sort -u)"
+            # yml 列了文件不代表资产真的上传成功 —— 逐个引用核对同一份资产快照
+            url="$(awk -F'\t' -v n="$manifest" '$1 == n { print $2; exit }' <<< "$assets")"
+            if [ -z "$url" ]; then
+              echo "::error::$manifest 在资产快照里没有可用的下载地址"
+              failed=1
+              continue
+            fi
+            if ! body="$(curl -fsSL --retry 3 --retry-delay 5 "$url")"; then
+              echo "::error::$manifest 下载失败,无法核对清单引用"
+              failed=1
+              continue
+            fi
+            refs="$(grep -oE '(url|path):[[:space:]]*[^[:space:]]+' <<< "$body" \
+              | sed -E 's/(url|path):[[:space:]]*//' | tr -d '"' | sort -u || true)"
             while IFS= read -r ref; do
               [ -z "$ref" ] && continue
-              if grep -Fxq "$ref" <<< "$assets"; then
+              if grep -Fxq "$ref" <<< "$names"; then
                 echo "  ok: $ref"
               else
                 echo "::error::$manifest 引用的 $ref 不在 Release 资产中,更新链已断"
-                missing=1
+                failed=1
               fi
             done <<< "$refs"
           done
-          exit "$missing"
+          exit "$failed"
