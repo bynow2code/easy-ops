@@ -29,6 +29,8 @@ export function TerminalDock(): JSX.Element {
   // 声明区必须在空态早返回(sessions.length === 0)之前 —— 否则 hooks 数量随分支变化。
   const listRef = useRef<HTMLDivElement>(null)
   const [showBackTop, setShowBackTop] = useState(false)
+  // 回顶按钮的悬停提示:受控 open(和最大化按钮同款,点击即收不残留)
+  const [tipOpen, setTipOpen] = useState(false)
 
   // 会话数 / 最大化态变化都会让浏览器把滚动位置夹回(内容变短),
   // 这里主动同步一次,不依赖「浏览器是否补发 scroll 事件」
@@ -270,14 +272,19 @@ export function TerminalDock(): JSX.Element {
           })}
         </div>
         {showBackTop && (
-          <button
-            type="button"
-            className="app-backtop"
-            aria-label="回到顶部"
-            onClick={() => listRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-          >
-            <VerticalAlignTopOutlined />
-          </button>
+          <Tooltip title="回到顶部" open={tipOpen} onOpenChange={setTipOpen}>
+            <button
+              type="button"
+              className="app-backtop"
+              aria-label="回到顶部"
+              onClick={() => {
+                setTipOpen(false)
+                listRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            >
+              <VerticalAlignTopOutlined />
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>

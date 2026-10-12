@@ -299,4 +299,41 @@ describe('回到顶部按钮', () => {
 
     expect(backTopButton()).toBeNull()
   })
+
+  it('点击回顶按钮后提示立即收起 —— 鼠标仍停在按钮上也不残留', async () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    const list = screen.getByTestId('terminal-list') as HTMLDivElement
+    // jsdom 没有 Element.scrollTo,必须打桩,否则点击处理器抛 TypeError
+    Object.defineProperty(list, 'scrollTo', { configurable: true, value: vi.fn() })
+    scrollListTo(list, 300)
+
+    const btn = screen.getByRole('button', { name: '回到顶部' })
+
+    // hover:提示展开
+    fireEvent.mouseEnter(btn)
+    await waitFor(() => {
+      const tip = document.querySelector('.ant-tooltip')
+      expect(tip).toBeTruthy()
+      expect(tip?.classList.contains('ant-tooltip-hidden')).toBe(false)
+    })
+
+    // 点击后提示必须收起 —— 与最大化按钮同款受控 open 行为(antd 默认只在 mouseleave 时关闭)
+    fireEvent.click(btn)
+    await waitFor(() => {
+      const tip = document.querySelector('.ant-tooltip')
+      expect(tip === null || tip.classList.contains('ant-tooltip-hidden')).toBe(true)
+    })
+
+    // 防「焊死」:移出再悬停必须能再次展开(受控 open 的典型回归)
+    fireEvent.mouseLeave(btn)
+    fireEvent.mouseEnter(btn)
+    await waitFor(() => {
+      const tip = document.querySelector('.ant-tooltip')
+      expect(tip).toBeTruthy()
+      expect(tip?.classList.contains('ant-tooltip-hidden')).toBe(false)
+    })
+  })
 })
