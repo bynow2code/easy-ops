@@ -32,12 +32,21 @@ export function TerminalDock(): JSX.Element {
   // 回顶按钮的悬停提示:受控 open(和最大化按钮同款,点击即收不残留)
   const [tipOpen, setTipOpen] = useState(false)
 
+  // 「回到顶部」状态同步统一入口:onScroll 与「会话数/最大化态变化」effect 共用。
+  // next=false 时一并复位 tipOpen:按钮即将随 showBackTop 卸载,antd 在卸载路径
+  // 不会回调 onOpenChange;不复位会在按钮重挂时(open=true)无悬停自弹提示
+  const syncBackTop = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return
+    const next = el.scrollTop > BACK_TO_TOP_THRESHOLD
+    setShowBackTop(next)
+    if (!next) setTipOpen(false)
+  }, [])
+
   // 会话数 / 最大化态变化都会让浏览器把滚动位置夹回(内容变短),
   // 这里主动同步一次,不依赖「浏览器是否补发 scroll 事件」
   useEffect(() => {
-    const el = listRef.current
-    if (el) setShowBackTop(el.scrollTop > BACK_TO_TOP_THRESHOLD)
-  }, [sessions.length, maximizedRunId])
+    syncBackTop(listRef.current)
+  }, [sessions.length, maximizedRunId, syncBackTop])
 
   const registerWriter = useCallback((runId: string, writer: (chunk: string) => void) => {
     writers.current.set(runId, writer)
@@ -160,7 +169,7 @@ export function TerminalDock(): JSX.Element {
         <div
           ref={listRef}
           data-testid="terminal-list"
-          onScroll={(e) => setShowBackTop(e.currentTarget.scrollTop > BACK_TO_TOP_THRESHOLD)}
+          onScroll={(e) => syncBackTop(e.currentTarget)}
           style={
             isMaximized
               ? { flex: 1, minHeight: 0, overflow: 'auto' }

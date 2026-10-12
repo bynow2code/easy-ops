@@ -336,4 +336,50 @@ describe('回到顶部按钮', () => {
       expect(tip?.classList.contains('ant-tooltip-hidden')).toBe(false)
     })
   })
+
+  it('切最大化后按钮不出现 —— 列表不可滚,状态由 effect 同步', () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A'), session('r2', 'B')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    const list = screen.getByTestId('terminal-list') as HTMLDivElement
+    scrollListTo(list, 300)
+    expect(backTopButton()).toBeTruthy()
+
+    // 浏览器会把 scrollTop 夹回(jsdom 不夹,手工模拟);让 maximizedRunId 成为唯一变化量
+    list.scrollTop = 0
+    act(() => {
+      useTerminalStore.setState({ maximizedRunId: 'r1' })
+    })
+
+    expect(backTopButton()).toBeNull()
+  })
+
+  it('按钮消失后再出现,提示不残留 —— 无悬停不自弹', async () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    const list = screen.getByTestId('terminal-list') as HTMLDivElement
+    scrollListTo(list, 300)
+    const btn = screen.getByRole('button', { name: '回到顶部' })
+
+    // 悬停展开提示(此时受控 open 为 true)
+    fireEvent.mouseEnter(btn)
+    await waitFor(() => {
+      const tip = document.querySelector('.ant-tooltip')
+      expect(tip).toBeTruthy()
+      expect(tip?.classList.contains('ant-tooltip-hidden')).toBe(false)
+    })
+
+    // 悬停中滚动越过阈值:按钮卸载(antd 不会回调 onOpenChange;不复位则状态残留)
+    scrollListTo(list, 0)
+    // 再滚回:按钮重挂。修复后提示不应无悬停自弹
+    scrollListTo(list, 300)
+
+    await waitFor(() => {
+      const tip = document.querySelector('.ant-tooltip')
+      expect(tip === null || tip.classList.contains('ant-tooltip-hidden')).toBe(true)
+    })
+  })
 })
