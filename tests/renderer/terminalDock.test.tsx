@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { installJsdomShims } from './jsdomShims'
 
 // xterm 在 jsdom 里跑不起来,且本用例只关心「卡片怎么排布与操作」,用替身隔离。
@@ -57,6 +57,17 @@ function iconButtons(name: string): HTMLElement[] {
     if (!button) throw new Error(`图标 ${name} 不在 button 内`)
     return button
   })
+}
+
+/** 回顶按钮的查询入口(queryBy* 形式:显隐两侧断言都用它) */
+function backTopButton(): HTMLElement | null {
+  return screen.queryByRole('button', { name: '回到顶部' })
+}
+
+/** jsdom 无真实滚动:用数据属性替身改写 scrollTop 再补发 scroll 事件,模拟列表滚动 */
+function scrollListTo(list: HTMLDivElement, value: number): void {
+  Object.defineProperty(list, 'scrollTop', { configurable: true, writable: true, value })
+  fireEvent.scroll(list)
 }
 
 beforeEach(() => {
@@ -217,5 +228,75 @@ describe('终端瀑布流', () => {
     renderDock()
 
     expect(screen.getByText(/还没有运行中的终端/)).toBeTruthy()
+  })
+})
+
+describe('回到顶部按钮', () => {
+  it('顶部时不出现 —— 列表没滚动过就没有这个按钮', () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A'), session('r2', 'B')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+
+    expect(backTopButton()).toBeNull()
+  })
+
+  it('滚动超过阈值后浮现', () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A'), session('r2', 'B')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    scrollListTo(screen.getByTestId('terminal-list') as HTMLDivElement, 300)
+
+    expect(backTopButton()).toBeTruthy()
+  })
+
+  it('点击回顶按钮以平滑方式滚回顶部', () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A'), session('r2', 'B')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    const list = screen.getByTestId('terminal-list') as HTMLDivElement
+    // jsdom 没有 Element.scrollTo,必须打桩,否则点击处理器抛 TypeError
+    const scrollToSpy = vi.fn()
+    Object.defineProperty(list, 'scrollTo', { configurable: true, value: scrollToSpy })
+    scrollListTo(list, 300)
+
+    fireEvent.click(screen.getByRole('button', { name: '回到顶部' }))
+
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
+  })
+
+  it('回到顶部附近自动收起', () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A'), session('r2', 'B')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    const list = screen.getByTestId('terminal-list') as HTMLDivElement
+    scrollListTo(list, 300)
+    expect(backTopButton()).toBeTruthy()
+
+    scrollListTo(list, 0)
+
+    expect(backTopButton()).toBeNull()
+  })
+
+  it('内容变短(scrollTop 被浏览器夹回)后状态主动同步 —— 不依赖 scroll 事件', () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A'), session('r2', 'B')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    const list = screen.getByTestId('terminal-list') as HTMLDivElement
+    scrollListTo(list, 300)
+    expect(backTopButton()).toBeTruthy()
+
+    // 模拟「关闭终端 / 切最大化后,浏览器把 scrollTop 夹回 0 且不补发 scroll 事件」:
+    // 直接改写值,再让会话数变化触发同步 effect
+    list.scrollTop = 0
+    act(() => {
+      useTerminalStore.setState({ sessions: [session('r1', 'A')], activeRunId: 'r1', maximizedRunId: null })
+    })
+
+    expect(backTopButton()).toBeNull()
   })
 })

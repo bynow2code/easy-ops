@@ -492,3 +492,36 @@ body {
 .app-editor-fill .cm-editor {
   height: 100%;
 }
+
+/* ── 终端列表「回到顶部」浮动按钮 ─────────────────────────
+ * 显隐逻辑在 TerminalDock.tsx(仅滚离顶部 > 阈值时渲染);
+ * 配色全走令牌,深浅主题自动适配。 */
+.app-backtop {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-container);
+  border: 1px solid var(--app-hairline-strong);
+  border-radius: 50%;
+  box-shadow: var(--app-shadow-panel);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.app-backtop:hover {
+  color: var(--color-text);
+  background: var(--app-subtle-bg);
+}
+
+.app-backtop:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: 2px;
+}
