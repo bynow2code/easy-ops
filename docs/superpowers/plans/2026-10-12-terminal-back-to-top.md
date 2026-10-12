@@ -53,7 +53,7 @@
 vitest 因 `ulimit -v` 4GB 起不来；单文件走沙箱管线：
 
 ```bash
-bash .workbuddy/verify/build-and-run.sh tests/renderer/terminalDock.test.tsx && node .workbuddy/verify/drive.mjs terminalDock.test.bundle.mjs terminalDock.test
+bash .workbuddy/verify/build-and-run.sh tests/renderer/terminalDock.test.tsx; node .workbuddy/verify/drive.mjs terminalDock.test.bundle.mjs terminalDock.test
 ```
 
 - 该文件含 `vi.mock`，脚本自动改走 build-with-mocks；2026-10-12 上次全量中单进程 9/9 通过。新增到 15 条后若 OOM，按 describe 切片跑。
@@ -172,7 +172,8 @@ describe('回到顶部按钮', () => {
 
 - [ ] **步骤 2：运行测试验证失败**
 
-沙箱：`bash .workbuddy/verify/build-and-run.sh tests/renderer/terminalDock.test.tsx && node .workbuddy/verify/drive.mjs terminalDock.test.bundle.mjs terminalDock.test`
+沙箱：`bash .workbuddy/verify/build-and-run.sh tests/renderer/terminalDock.test.tsx; node .workbuddy/verify/drive.mjs terminalDock.test.bundle.mjs terminalDock.test`
+（两命令用 `;` 相连：构建尾部 rm 的 genie-trash 报错属已知噪音，只要打印「构建完成」，bundle 即已产出。）
 本机：`npm test -- terminalDock`
 
 预期：**4 条新用例 FAIL**（滚动浮现 `expected null to be truthy`、点击回顶 `getByRole` 找不到按钮、回顶收起、状态同步）；「顶部时不出现」与既有 9 条 PASS。
@@ -340,7 +341,8 @@ const BACK_TO_TOP_THRESHOLD = 200
 
 - [ ] **步骤 9：运行测试验证通过**
 
-沙箱：`bash .workbuddy/verify/build-and-run.sh tests/renderer/terminalDock.test.tsx && node .workbuddy/verify/drive.mjs terminalDock.test.bundle.mjs terminalDock.test`
+沙箱：`bash .workbuddy/verify/build-and-run.sh tests/renderer/terminalDock.test.tsx; node .workbuddy/verify/drive.mjs terminalDock.test.bundle.mjs terminalDock.test`
+（若构建脚本以 genie-trash 噪音非零退出但已打印「构建完成」，继续跑 drive 命令即可。）
 
 预期：`[terminalDock.test] 14/14 通过`（既有 9 + 新增 5）。
 
