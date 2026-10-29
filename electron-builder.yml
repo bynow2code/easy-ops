@@ -59,7 +59,14 @@ nsis:
   deleteAppDataOnUninstall: false
 
 linux:
-  icon: build/icon.png
+  # 必须指向「图标集目录」而不是单个 png。freedesktop 的 hicolor index.theme 只声明到
+  # 512x512,而源图是 1024:单给一张 1024 时 electron-builder 会把它原样放进
+  # hicolor/1024x1024/apps/,这个尺寸目录**不在** index.theme 的 Directories 列表里,
+  # 图标主题查找时根本不会扫它 —— 任务栏 / 启动器于是回落到通用图标。
+  # AppImage 更绕一圈:AppImageLauncher 把包内 .DirIcon 原样抄进
+  # ~/.local/share/icons/hicolor/1024x1024/apps/,同样落进不可解析的尺寸目录。
+  # build/icons/ 是 16~512 的常规尺寸集合(由 build/icon.png 等比缩放)。
+  icon: build/icons
   category: Development
   # 让安装进系统的 .desktop 跟随 package.json 的 desktopName。缺了它,Electron 会把
   # app_id / WM_CLASS 取成 desktopName(缺省 <name>.desktop → "easyops"),而这里生成的
