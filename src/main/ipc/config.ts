@@ -2,12 +2,7 @@ import * as fs from 'node:fs/promises'
 import * as syncFs from 'node:fs'
 import { dialog, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
-import {
-  buildExportPayload,
-  filterPortableSettings,
-  parseImport,
-  toLegacyMigration
-} from '../store/transfer'
+import { buildExportPayload, filterPortableSettings, parseImport } from '../store/transfer'
 import { createNodeShellProbe, detectShells } from '../pty/shell'
 import type { ScriptsStore } from '../store/scripts'
 import type { SettingsStore } from '../store/settings'
@@ -51,7 +46,7 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
     return { canceled: false, path: filePath }
   })
 
-  // 格式(v2/legacy)由 parseImport 对文件内容嗅探,不需要调用方声明 mode
+  // 只有新版(v2)导出格式;旧版配置由 parseImport 明确拒绝并给出理由
   ipcMain.handle('config:import', async () => {
     const filePath = await pickOpenPath(deps.getWindow())
     if (!filePath) return { canceled: true }
@@ -79,25 +74,6 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
       }
     }
 
-    if (parsed.mode === 'legacy') {
-      const knownIds = [...detectedIds, ...currentCustomIds]
-      const migrated = toLegacyMigration(parsed.legacyScripts)
-      const normalized = migrated.scripts.map((s) =>
-        s.shellId && !knownIds.includes(s.shellId) ? { ...s, shellId: null } : s
-      )
-      await deps.scripts.replaceAll({ scripts: normalized, groups: migrated.groups })
-      // 与 v2 路径对称:导入后目录集合整体替换,来源机器的折叠 id 一并重置为全展开
-      deps.settings.update({ collapsedGroupIds: [] })
-      return {
-        canceled: false,
-        stats: {
-          imported: normalized.length,
-          groups: migrated.groups.length,
-          warnings: migrated.warnings
-        }
-      }
-    }
-
     // 文件自带的自定义 shell:路径在本机可用即视为已知。否则换机导入时
     // 「刚导入进来的 shell」会被判成不存在 —— 既清空脚本覆盖,又对默认 shell 误报警告。
     const incoming = parsed.payload.settings
@@ -112,7 +88,7 @@ export function registerConfigIpc(deps: ConfigIpcDeps): void {
       knownShellIds: [...detectedIds, ...incomingCustomIds, ...currentCustomIds]
     })
 
-    // 与 legacy 路径对称:换机导入时旧 shellId 可能在本机不存在,留着会让脚本一运行就报错。
+    // 换机导入时旧 shellId 可能在本机不存在,留着会让脚本一运行就报错。
     // 这里用「过滤后真正落盘」的自定义 shell,避免保留指向已失效路径的覆盖。
     const finalIds = [...detectedIds, ...settings.customShells.map((s) => s.id)]
     const scripts = parsed.payload.scripts.map((s) =>

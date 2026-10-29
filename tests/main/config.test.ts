@@ -139,7 +139,7 @@ describe('config:import', () => {
     expect(scripts.listScripts()).toHaveLength(0)
 
     mock.__state.openPath = target
-    const result = await call('config:import', { mode: 'v2' })
+    const result = await call('config:import')
 
     expect(result.canceled).toBe(false)
     expect(result.stats.imported).toBe(1)
@@ -153,30 +153,6 @@ describe('config:import', () => {
     expect(result.stats.warnings.join('\n')).toContain('/definitely/not/here')
   })
 
-  it('导入旧版数组时按 group 字符串生成分组', async () => {
-    const legacyFile = path.join(tmpDir, 'legacy.json')
-    await fs.writeFile(
-      legacyFile,
-      JSON.stringify([
-        { id: '1', name: 'a', content: 'echo a', group: 'backend', orderNum: 0 },
-        { id: '2', name: 'b', content: 'echo b', group: 'frontend', orderNum: 1 },
-        { id: '3', name: 'c', content: 'echo c', group: 'backend', orderNum: 2 }
-      ]),
-      'utf8'
-    )
-
-    scripts.replaceAll({ scripts: [], groups: [] })
-    mock.__state.canceled = false
-    mock.__state.openPath = legacyFile
-    const result = await call('config:import', { mode: 'legacy' })
-
-    expect(result.stats.imported).toBe(3)
-    expect(result.stats.groups).toBe(2)
-    expect(scripts.listGroups().map((g) => g.name).sort()).toEqual(['backend', 'frontend'])
-    const backendId = scripts.listGroups().find((g) => g.name === 'backend')!.id
-    expect(scripts.listScripts().filter((s) => s.groupId === backendId)).toHaveLength(2)
-  })
-
   it('导入非法文件时抛中文错误且原数据保持不变', async () => {
     const badFile = path.join(tmpDir, 'bad.json')
     await fs.writeFile(badFile, '{ not json', 'utf8')
@@ -187,7 +163,7 @@ describe('config:import', () => {
 
     mock.__state.canceled = false
     mock.__state.openPath = badFile
-    await expect(call('config:import', { mode: 'v2' })).rejects.toThrow('不是合法的 JSON 文件')
+    await expect(call('config:import')).rejects.toThrow('不是合法的 JSON 文件')
 
     expect(scripts.listScripts()).toEqual(beforeScripts)
     expect(scripts.listGroups()).toEqual(beforeGroups)
@@ -218,7 +194,7 @@ describe('config:import', () => {
 
     mock.__state.canceled = false
     mock.__state.openPath = brokenFile
-    await expect(call('config:import', { mode: 'v2' })).rejects.toThrow('脚本记录缺少 id')
+    await expect(call('config:import')).rejects.toThrow('脚本记录缺少 id')
 
     expect(spy).not.toHaveBeenCalled()
     expect(scripts.listScripts()).toEqual(beforeScripts)
@@ -226,29 +202,7 @@ describe('config:import', () => {
     spy.mockRestore()
   })
 
-  it('旧数据含非法记录时导入合法部分并回报警告', async () => {
-    const legacyFile = path.join(tmpDir, 'legacy-partial.json')
-    await fs.writeFile(
-      legacyFile,
-      JSON.stringify([
-        { id: '1', name: 'a'.repeat(31), content: 'echo a' },
-        { id: '2', name: 'ok', content: 'echo ok', group: 'ops' }
-      ]),
-      'utf8'
-    )
-
-    scripts.replaceAll({ scripts: [], groups: [] })
-    mock.__state.canceled = false
-    mock.__state.openPath = legacyFile
-    const result = await call('config:import', { mode: 'legacy' })
-
-    expect(result.stats.imported).toBe(1)
-    expect(result.stats.warnings).toHaveLength(1)
-    expect(result.stats.warnings[0]).toContain('第 1 条记录被跳过')
-    expect(scripts.listScripts().map((s) => s.name)).toEqual(['ok'])
-  })
-
-  it('导入 v2 时脚本指向本机不存在的 shell 会被置空,与 legacy 路径一致', async () => {
+  it('导入时脚本指向本机不存在的 shell 会被置空', async () => {
     const probe = createNodeShellProbe()
     const knownIds = (await detectShells(probe)).map((s) => s.id)
     expect(knownIds.length).toBeGreaterThan(0)
@@ -273,7 +227,7 @@ describe('config:import', () => {
     scripts.replaceAll({ scripts: [], groups: [] })
     mock.__state.canceled = false
     mock.__state.openPath = file
-    const result = await call('config:import', { mode: 'v2' })
+    const result = await call('config:import')
 
     expect(result.stats.imported).toBe(2)
     expect(scripts.listScripts().find((s) => s.id === 'stale')!.shellId).toBeNull()
@@ -312,7 +266,7 @@ describe('config:import', () => {
     scripts.replaceAll({ scripts: [], groups: [] })
     mock.__state.canceled = false
     mock.__state.openPath = file
-    await call('config:import', { mode: 'v2' })
+    await call('config:import')
 
     // 导入进来的自定义 shell 本身是有效的,脚本对它的覆盖就不能被判为「本机不存在」而清空
     expect(settings.get().customShells.map((s) => s.id)).toContain('custom:/bin/sh')
@@ -353,7 +307,7 @@ describe('config:import', () => {
     scripts.replaceAll({ scripts: [], groups: [] })
     mock.__state.canceled = false
     mock.__state.openPath = file
-    const result = await call('config:import', { mode: 'v2' })
+    const result = await call('config:import')
 
     expect(settings.get().customShells.map((s) => s.id)).toContain('custom:/bin/sh')
     expect(scripts.listScripts().find((s) => s.id === 'x1')!.shellId).toBe('custom:/bin/sh')
@@ -365,7 +319,7 @@ describe('config:import', () => {
     const before = scripts.listScripts()
     mock.__state.canceled = true
     mock.__state.openPath = null
-    const result = await call('config:import', { mode: 'v2' })
+    const result = await call('config:import')
     expect(result.canceled).toBe(true)
     expect(scripts.listScripts()).toEqual(before)
   })

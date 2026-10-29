@@ -1,7 +1,6 @@
 import {
   DEFAULT_DETAIL_SPLIT_RATIO,
   DEFAULT_MAIN_SPLIT_RATIO,
-  GROUP_NAME_MAX,
   clampSplitRatio,
   validateGroupName,
   validateScriptContent,
@@ -32,28 +31,12 @@ export function buildExportPayload(scripts: Script[], groups: Group[], settings:
   }
 }
 
-export interface LegacyScriptRecord {
-  id?: unknown
-  name?: unknown
-  content?: unknown
-  group?: unknown
-  orderNum?: unknown
-  shellId?: unknown
-  createdAt?: unknown
-}
-
 export type ParseResult =
-  | { ok: true; mode: 'v2'; payload: ExportPayload }
-  | { ok: true; mode: 'legacy'; legacyScripts: LegacyScriptRecord[] }
+  | { ok: true; payload: ExportPayload }
   | { ok: false; reason: string }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function looksLikeLegacyRecord(value: unknown): value is LegacyScriptRecord {
-  if (!isPlainObject(value)) return false
-  return typeof value.name === 'string' || typeof value.content === 'string' || 'group' in value
 }
 
 export function parseImport(raw: string): ParseResult {
@@ -64,11 +47,11 @@ export function parseImport(raw: string): ParseResult {
     return { ok: false, reason: '不是合法的 JSON 文件' }
   }
 
+  // 旧版(v0.7.x)的两种落盘形态:裸脚本数组、带 easyops-scripts-config 标记的对象。
+  // 迁移能力已移除,但这里必须认出来并给一句明确的话 —— 否则用户拿着旧文件只会看到
+  // 「文件结构无法识别」,以为是文件坏了或自己导错了
   if (Array.isArray(parsed)) {
-    if (!parsed.every(looksLikeLegacyRecord)) {
-      return { ok: false, reason: '数组内容不是有效的旧版脚本列表' }
-    }
-    return { ok: true, mode: 'legacy', legacyScripts: parsed }
+    return { ok: false, reason: '这是旧版(v0.7.x)配置文件,本版本已不再支持导入旧版配置' }
   }
 
   if (!isPlainObject(parsed)) {
@@ -76,9 +59,7 @@ export function parseImport(raw: string): ParseResult {
   }
 
   if (parsed.type === 'easyops-scripts-config') {
-    const scripts = parsed.scripts
-    if (!Array.isArray(scripts)) return { ok: false, reason: '旧版配置文件缺少 scripts 数组' }
-    return { ok: true, mode: 'legacy', legacyScripts: scripts as LegacyScriptRecord[] }
+    return { ok: false, reason: '这是旧版(v0.7.x)配置文件,本版本已不再支持导入旧版配置' }
   }
 
   if (parsed.type === EXIT_MARKER_TYPE) {
@@ -128,7 +109,6 @@ export function parseImport(raw: string): ParseResult {
 
     return {
       ok: true,
-      mode: 'v2',
       payload: {
         type: EXIT_MARKER_TYPE,
         version: EXPORT_VERSION,
@@ -141,85 +121,6 @@ export function parseImport(raw: string): ParseResult {
   }
 
   return { ok: false, reason: '无法识别的文件类型标识' }
-}
-
-export interface LegacyMigrationResult {
-  scripts: Script[]
-  groups: Group[]
-  warnings: string[]
-}
-
-function genId(seed: string): string {
-  return `${seed}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-export function toLegacyMigration(input: unknown): LegacyMigrationResult {
-  if (!Array.isArray(input)) {
-    return { scripts: [], groups: [], warnings: ['输入不是数组,已跳过全部记录'] }
-  }
-
-  const warnings: string[] = []
-  const groups: Group[] = []
-  const groupIdByName = new Map<string, string>()
-  const scripts: Script[] = []
-  const now = new Date().toISOString()
-  // 文件内 id 去重:旧版数据没有任何唯一性保证,重复 id 落盘后 updateScript 只改第一条、
-  // deleteScript 会把同 id 记录一次全删掉、渲染层 key 冲突 —— 都比「名字重复」严重得多
-  const seenScriptIds = new Set<string>()
-
-  input.forEach((record, index) => {
-    if (!looksLikeLegacyRecord(record)) {
-      warnings.push(`第 ${index + 1} 条记录结构无法识别,已跳过`)
-      return
-    }
-
-    const nameCheck = validateScriptName(record.name)
-    if (!nameCheck.ok) {
-      warnings.push(`第 ${index + 1} 条记录被跳过:${nameCheck.message}`)
-      return
-    }
-    const contentCheck = validateScriptContent(record.content)
-    if (!contentCheck.ok) {
-      warnings.push(`第 ${index + 1} 条记录被跳过:${contentCheck.message}`)
-      return
-    }
-
-    let groupId: string | null = null
-    const rawGroup = typeof record.group === 'string' ? record.group.trim() : ''
-    if (rawGroup) {
-      const existing = groupIdByName.get(rawGroup)
-      if (existing) {
-        groupId = existing
-      } else {
-        const id = genId('group')
-        groupIdByName.set(rawGroup, id)
-        // CSV 导入的分组一律是顶层;嵌套目前只在 store 内产生
-        groups.push({ id, name: rawGroup.slice(0, GROUP_NAME_MAX), parentId: null, order: groups.length, createdAt: now })
-        groupId = id
-      }
-    }
-
-    const order =
-      typeof record.orderNum === 'number' && Number.isFinite(record.orderNum) ? record.orderNum : scripts.length
-
-    // id 透传旧版数据以便还原时间线;但撞上文件内已有的 id 时重新生成,唯一性是落盘底线
-    const rawId = typeof record.id === 'string' && record.id.length > 0 ? record.id : null
-    const id = rawId !== null && !seenScriptIds.has(rawId) ? rawId : genId('script')
-    seenScriptIds.add(id)
-
-    scripts.push({
-      id,
-      name: record.name as string,
-      content: record.content as string,
-      groupId,
-      shellId: typeof record.shellId === 'string' && record.shellId.length > 0 ? record.shellId : null,
-      order,
-      createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
-      updatedAt: now
-    })
-  })
-
-  return { scripts, groups, warnings }
 }
 
 export interface PortableSettingsContext {
@@ -257,7 +158,7 @@ export function filterPortableSettings(
       theme: source.theme === 'light' || source.theme === 'dark' || source.theme === 'system' ? source.theme : 'system',
       shellId,
       customShells,
-      // 字段缺失(旧版配置没有它)回落到默认打开,与 DEFAULT_SETTINGS 对齐;
+      // 字段缺失(旧版本导出的配置没有它)回落到默认打开,与 DEFAULT_SETTINGS 对齐;
       // 用 Boolean(undefined) 会把「没设置过」误判成「明确关闭」
       checkUpdateOnLaunch: source.checkUpdateOnLaunch === undefined ? true : Boolean(source.checkUpdateOnLaunch),
       // 分栏比例跟着配置走:备份恢复时能保住布局。越界的值一律夹紧到合法区间

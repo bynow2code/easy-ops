@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { App, Button, Input, List, Modal, Space, Switch, Tag, Typography } from 'antd'
-import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, HistoryOutlined, ImportOutlined, ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ExportOutlined, FolderOpenOutlined, ImportOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { ShellInfo } from '../../../shared/types'
 import { UpdatePanel } from './UpdatePanel'
 import { useTheme } from '../theme/provider'
@@ -266,7 +266,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
-  const handleImportV2 = async (): Promise<void> => {
+  const handleImport = async (): Promise<void> => {
     const applied = await new Promise<boolean>((resolve) => {
       modal.confirm({
         centered: true,
@@ -285,34 +285,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       if (!result.canceled) {
         // 导入按脚本 id 整体覆盖,旧草稿若不清掉会被误判为「未保存改动」,
         // Cmd+S 或退出保存就会拿导入前的内容静默覆盖刚导入的脚本 —— 必须整体作废
-        clearAllContentDrafts()
-        reportStats(result.stats)
-      }
-    } catch (err) {
-      message.error(toUserMessage(err))
-    } finally {
-      await syncAfterImport()
-    }
-  }
-
-  const handleImportLegacy = async (): Promise<void> => {
-    const applied = await new Promise<boolean>((resolve) => {
-      modal.confirm({
-        centered: true,
-        title: '导入旧版配置',
-        content:
-          '导入会覆盖当前全部脚本与分组。请先退出旧版 EasyOps,避免两边同时写入数据;点击「开始导入」后选择旧版导出的 JSON,或选择旧版数据目录下的 scripts.json。',
-        okText: '开始导入',
-        cancelText: '取消',
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false)
-      })
-    })
-    if (!applied) return
-    try {
-      const result = await window.api.config.import()
-      if (!result.canceled) {
-        // 与 v2 导入同口径:整体覆盖后旧草稿一律作废
         clearAllContentDrafts()
         reportStats(result.stats)
       }
@@ -363,11 +335,8 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             <Button icon={<ExportOutlined />} onClick={() => void handleExport()}>
               导出当前配置
             </Button>
-            <Button icon={<ImportOutlined />} onClick={() => void handleImportV2()}>
+            <Button icon={<ImportOutlined />} onClick={() => void handleImport()}>
               导入配置
-            </Button>
-            <Button icon={<HistoryOutlined />} onClick={() => void handleImportLegacy()}>
-              导入旧版配置
             </Button>
           </Space>
         </Section>

@@ -3,8 +3,7 @@ import {
   buildExportPayload,
   EXIT_MARKER_TYPE,
   filterPortableSettings,
-  parseImport,
-  toLegacyMigration
+  parseImport
 } from '../../src/main/store/transfer'
 import {
   DEFAULT_DETAIL_SPLIT_RATIO,
@@ -61,8 +60,6 @@ describe('parseImport — v2', () => {
     const result = parseImport(JSON.stringify(payload))
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.mode).toBe('v2')
-    if (result.mode !== 'v2') return
     expect(result.payload.scripts).toHaveLength(1)
   })
 
@@ -81,7 +78,7 @@ describe('parseImport — v2', () => {
     const payload = buildExportPayload([makeScript({ content: '' })], [], SETTINGS)
     const result = parseImport(JSON.stringify(payload))
     expect(result.ok).toBe(true)
-    if (result.ok && result.mode === 'v2') expect(result.payload.scripts[0].content).toBe('')
+    if (result.ok) expect(result.payload.scripts[0].content).toBe('')
   })
 
   it('拒绝缺少 id 的脚本', () => {
@@ -149,18 +146,16 @@ describe('parseImport — v2', () => {
   })
 })
 
-describe('parseImport — 裸数组(旧版 userData)', () => {
-  it('识别裸数组为 legacy', () => {
+describe('parseImport — 旧版配置(已停止支持)', () => {
+  it('裸脚本数组被明确拒绝,而不是报「结构无法识别」', () => {
     const legacy = [{ id: '1', name: 'a', content: 'echo a', group: 'backend', orderNum: 0 }]
     const result = parseImport(JSON.stringify(legacy))
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.mode).toBe('legacy')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toContain('旧版')
   })
-})
 
-describe('parseImport — 旧版导出格式', () => {
-  it('识别 easyops-scripts-config', () => {
+  it('easyops-scripts-config 格式同样被明确拒绝', () => {
     const legacy = {
       type: 'easyops-scripts-config',
       version: 1,
@@ -168,79 +163,9 @@ describe('parseImport — 旧版导出格式', () => {
       scripts: [{ id: '1', name: 'a', content: 'echo a', group: 'frontend', orderNum: 0 }]
     }
     const result = parseImport(JSON.stringify(legacy))
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.mode).toBe('legacy')
-    if (result.mode !== 'legacy') return
-    expect(result.legacyScripts).toHaveLength(1)
-  })
-})
-
-describe('toLegacyMigration', () => {
-  it('把 group 字符串去重生成分组实体并回填 groupId', () => {
-    const legacy = [
-      { id: '1', name: 'a', content: 'echo a', group: 'backend', orderNum: 1 },
-      { id: '2', name: 'b', content: 'echo b', group: 'frontend', orderNum: 0 },
-      { id: '3', name: 'c', content: 'echo c', group: 'backend', orderNum: 2 }
-    ]
-    const result = toLegacyMigration(legacy)
-    expect(result.groups.map((g) => g.name).sort()).toEqual(['backend', 'frontend'])
-    expect(result.scripts).toHaveLength(3)
-    expect(result.scripts.find((s) => s.id === '1')!.groupId).toBe(
-      result.groups.find((g) => g.name === 'backend')!.id
-    )
-    expect(result.scripts.find((s) => s.id === '3')!.groupId).toBe(
-      result.groups.find((g) => g.name === 'backend')!.id
-    )
-  })
-
-  it('保留 orderNum 为 order', () => {
-    const result = toLegacyMigration([{ id: '1', name: 'a', content: 'x', group: 'backend', orderNum: 7 }])
-    expect(result.scripts[0].order).toBe(7)
-  })
-
-  it('group 为空时归入未分组', () => {
-    const result = toLegacyMigration([{ id: '1', name: 'a', content: 'x' }])
-    expect(result.scripts[0].groupId).toBeNull()
-    expect(result.groups).toHaveLength(0)
-  })
-
-  it('跳过名称超长的记录并记录 warning,空内容照常迁入', () => {
-    const legacy = [
-      { id: '1', name: 'a'.repeat(31), content: 'x' },
-      { id: '2', name: 'empty-but-fine', content: '' },
-      { id: '3', name: 'good', content: 'echo ok' }
-    ]
-    const result = toLegacyMigration(legacy)
-    expect(result.scripts).toHaveLength(2)
-    expect(result.scripts.map((s) => s.id)).toEqual(['2', '3'])
-    expect(result.warnings.length).toBe(1)
-  })
-
-  it('无 id 时补生成 id', () => {
-    const result = toLegacyMigration([{ name: 'a', content: 'x' }])
-    expect(result.scripts[0].id.length).toBeGreaterThan(0)
-  })
-
-  it('文件内重复的 id 只保留第一条,后续重新生成,避免落盘后静默分叉', () => {
-    const result = toLegacyMigration([
-      { id: 'dup-1', name: 'a', content: 'x' },
-      { id: 'dup-1', name: 'b', content: 'y' },
-      { id: 'ok', name: 'c', content: 'z' }
-    ])
-    expect(result.scripts[0].id).toBe('dup-1')
-    // 第二条同 id 记录被重新生成,与第一条和第三条都不同
-    expect(result.scripts[1].id).not.toBe('dup-1')
-    expect(result.scripts[1].id).not.toBe('ok')
-    expect(result.scripts[2].id).toBe('ok')
-    const ids = new Set(result.scripts.map((s) => s.id))
-    expect(ids.size).toBe(result.scripts.length)
-  })
-
-  it('非数组输入返回空结果', () => {
-    const result = toLegacyMigration(null)
-    expect(result.scripts).toHaveLength(0)
-    expect(result.warnings).toHaveLength(1)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toContain('旧版')
   })
 })
 
