@@ -83,7 +83,14 @@ jobs:
           - os: windows-latest
             script: build:win
             manifest: latest.yml
-          - os: ubuntu-latest
+          # Linux 必须钉在旧镜像上:node-pty 没有 linux 预编译,pty.node 是构建机现场
+          # 编译出来的,它的 GLIBC 符号下限 = 构建机的 glibc 版本。
+          # ubuntu-latest 已滚到 26.04(glibc 2.42),产出的 pty.node 要求在 2.42,
+          # 于是在 Deepin 25(2.38)、Debian 13、Ubuntu 24.04 上 dlopen 直接失败
+          # (v0.9.8 的真实故障)。22.04 的 glibc 是 2.35,足够老。
+          # 注意:22.04 镜像 2026-09-17 起进入弃用、2027-04-17 彻底下线,
+          # 届时要么换更老的构建容器,要么接受更高的 glibc 下限。
+          - os: ubuntu-22.04
             script: build:linux
             manifest: latest-linux.yml
     runs-on: ${{ matrix.os }}
@@ -117,7 +124,7 @@ jobs:
         run: npm ci
 
       - name: 安装 Linux 打包依赖
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: 构建并发布
@@ -143,6 +150,39 @@ jobs:
           fi
           echo "--- $manifest ---"
           cat "$manifest"
+
+      # 闸门:产出的原生库不得要求比构建机更老的 glibc 之外的任何东西 ——
+      # 换句话说,把「最高 GLIBC 符号版本」钉死,构建镜像一升级就会红,
+      # 而不是等到用户机器上启动崩溃才发现。
+      # v0.9.8 事故:ubuntu-latest 滚到 glibc 2.42,pty.node 带上 GLIBC_2.42,
+      # 而 node-pty 的加载器会吞掉 dlopen 的真实错误,只报最后一个候选路径不存在,
+      # 表现为一句极具误导性的「Cannot find module './prebuilds/linux-x64//pty.node'」。
+      - name: 校验原生产物不依赖过新的 glibc(Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          set -euo pipefail
+          limit="GLIBC_2.35"   # ubuntu-22.04 的 glibc 版本 = 允许的最高符号版本
+          # 不用进程替换 < <(...):换个 shell 就报 /dev/fd 不存在,列表落成临时文件最稳
+          list="$(mktemp)"
+          find release -type f \( -name '*.node' -o -name '*.so' -o -name '*.so.*' \) > "$list" 2>/dev/null || true
+          bad=0
+          checked=0
+          while IFS= read -r lib; do
+            checked=$((checked + 1))
+            max="$(strings -a "$lib" | grep -oE 'GLIBC_2\.[0-9]+' | sort -uV | tail -1 || true)"
+            [[ -n "$max" ]] || continue
+            # sort -V 取两者较大值;若较大者仍等于上限,说明没超
+            if [[ "$(printf '%s\n%s\n' "$limit" "$max" | sort -V | tail -1)" != "$limit" ]]; then
+              echo "::error::${lib} 需要 $max,高于允许的 $limit"
+              bad=1
+            fi
+          done < "$list"
+          if [[ "$checked" -eq 0 ]]; then
+            echo "::error::release/ 里没找到任何原生库,node-pty 可能整个漏打包了"
+            exit 1
+          fi
+          echo "已检查 $checked 个原生库,glibc 上限 $limit"
+          exit "$bad"
 
   verify-release:
     needs:
