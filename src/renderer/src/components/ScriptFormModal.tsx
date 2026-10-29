@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import { App, Form, Input, Modal, Select, Typography } from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { App, Form, Input, Modal, Select, TreeSelect, Typography } from 'antd'
+import { FolderOutlined } from '@ant-design/icons'
 import { SCRIPT_NAME_MAX, validateScriptName } from '../../../shared/types'
 import type { ShellInfo } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
+import { buildGroupTree, groupAncestorIds, groupParentIds, type GroupTreeNode } from '../utils/groupTree'
 import { toUserMessage } from '../utils/toUserMessage'
 import {
   buildOverrideOptions,
@@ -10,6 +12,14 @@ import {
   toSelectValue,
   toShellIdPatch
 } from '../settings/shellOverride'
+
+/** 分组选择器的节点:`name` 是给搜索过滤用的纯字符串副本(见 treeData 注释) */
+interface GroupTreeOption {
+  value: string
+  name: string
+  title: JSX.Element
+  children?: GroupTreeOption[]
+}
 
 /**
  * 脚本元数据弹窗:只管名称 / 分组 / Shell。
@@ -27,6 +37,9 @@ export function ScriptFormModal(): JSX.Element {
 
   const [name, setName] = useState('')
   const [groupId, setGroupId] = useState<string | null>(null)
+  // 展开态受控:决定"选中的值在哪一层"。搜索词有意不受控 —— 交给 antd 自己管理,
+  // 它会在收起弹层时清掉,我们自己存一份反而容易留下过滤残影(重开看到被过滤过的树)
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   const [shellId, setShellId] = useState<string | null>(null)
   const [shells, setShells] = useState<ShellInfo[]>([])
   const [globalShellId, setGlobalShellId] = useState<string | null>(null)
@@ -68,6 +81,50 @@ export function ScriptFormModal(): JSX.Element {
     })()
   }, [open, message])
 
+  /**
+   * 分组树:父子层级直接来自 groups 的 parentId,与侧栏同一份数据、同一套排序。
+   * 节点额外带一个纯字符串 `name`,给 `treeNodeFilterProp` 用 —— `title` 是 ReactNode,
+   * 拿它做包含匹配会过滤失效(整个对象转字符串后永远匹配不上)。
+   */
+  const treeData = useMemo((): GroupTreeOption[] => {
+    const toOption = (node: GroupTreeNode): GroupTreeOption => {
+      const option: GroupTreeOption = {
+        value: node.group.id,
+        name: node.group.name,
+        title: (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <FolderOutlined style={{ fontSize: 13, opacity: 0.7 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {node.group.name}
+            </span>
+          </span>
+        )
+      }
+      // 叶子节点不挂 children 空数组:rc-tree 会据此判定可展开,给每个叶子画一个空箭头槽
+      if (node.children.length > 0) option.children = node.children.map(toOption)
+      return option
+    }
+    return buildGroupTree(groups).map(toOption)
+  }, [groups])
+
+  /**
+   * 数据层的 normalize 已经会把指向已删分组的脚本回退成 null,这里只是兜底:
+   * groups 还没加载完(空数组)时原样透传,避免一次误判把 groupId 洗成 null 提交上去。
+   */
+  const selectedGroupId =
+    groupId && groups.length > 0 && !groups.some((g) => g.id === groupId) ? null : groupId
+
+  // 打开弹窗时展开"已选分组的祖先链":否则选中的值藏在收起的父级里,看不出它在哪一层
+  useEffect(() => {
+    if (!open) return
+    setExpandedKeys(groupAncestorIds(groups, selectedGroupId))
+  }, [open, selectedGroupId, groups])
+
+  const handleGroupSearch = (value: string): void => {
+    // 搜索态摊开全部有子级的分组:命中项若在收起的父级下,不展开就等于搜不到
+    setExpandedKeys(value.trim() ? groupParentIds(groups) : groupAncestorIds(groups, selectedGroupId))
+  }
+
   const nameCheck = validateScriptName(name)
 
   const handleOk = async (): Promise<void> => {
@@ -79,12 +136,17 @@ export function ScriptFormModal(): JSX.Element {
     try {
       if (isCreate) {
         // 内容故意留空:创建后自动选中,到内容面板里写
-        const created = await window.api.scripts.create({ name, content: '', groupId, shellId })
+        const created = await window.api.scripts.create({
+          name,
+          content: '',
+          groupId: selectedGroupId,
+          shellId
+        })
         await reload()
         selectScript(created.id)
         requestContentFocus(created.id)
       } else if (isEdit) {
-        await window.api.scripts.update(form.script.id, { name, groupId, shellId })
+        await window.api.scripts.update(form.script.id, { name, groupId: selectedGroupId, shellId })
         await reload()
       }
       closeForm()
@@ -129,13 +191,18 @@ export function ScriptFormModal(): JSX.Element {
           />
         </Form.Item>
 
-        <Form.Item label="分组" help="可留空,表示不归入任何分组">
-          <Select
-            value={groupId}
+        <Form.Item label="分组" help="可留空,表示不归入任何分组;按层级展示,任意层级都能选">
+          <TreeSelect
+            value={selectedGroupId ?? undefined}
             allowClear
             placeholder="未分组"
+            treeData={treeData}
+            showSearch
+            treeNodeFilterProp="name"
+            onSearch={handleGroupSearch}
+            treeExpandedKeys={expandedKeys}
+            onTreeExpand={(keys) => setExpandedKeys(keys as string[])}
             onChange={(value) => setGroupId(value ?? null)}
-            options={groups.map((g) => ({ label: g.name, value: g.id }))}
           />
         </Form.Item>
 

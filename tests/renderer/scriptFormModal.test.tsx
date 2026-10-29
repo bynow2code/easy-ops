@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Script, ShellInfo } from '../../src/shared/types'
+import type { Group, Script, ShellInfo } from '../../src/shared/types'
 
 // CodeMirror 是重量级且与本用例关注的「Shell 字段」无关,用受控 textarea 替身隔离
 vi.mock('../../src/renderer/src/components/ScriptEditor', () => ({
@@ -85,6 +85,38 @@ async function openShellSelect(): Promise<void> {
 /** antd 会在两个中文字符间插入空格,可访问名实际是「保 存」 */
 function saveButton(): HTMLElement {
   return screen.getByRole('button', { name: /^保\s?存$/ })
+}
+
+const group = (
+  id: string,
+  name: string,
+  order: number,
+  parentId: string | null = null
+): Group => ({ id, name, order, parentId, createdAt: '2026-01-01T00:00:00.000Z' })
+
+/** 打开「分组」下拉树(弹窗里还有 Shell 下拉,必须按表单项定位) */
+async function openGroupSelect(): Promise<void> {
+  const item = (await screen.findByText('分组')).closest('.ant-form-item')
+  if (!item) throw new Error('未找到分组表单项')
+  const selector = item.querySelector('.ant-select-selector')
+  if (!selector) throw new Error('未找到分组下拉')
+  fireEvent.mouseDown(selector)
+  await screen.findByRole('tree')
+}
+
+/** 弹层里当前可见的节点名(顺序即渲染顺序=树的前序) */
+function treeTitles(): string[] {
+  return [...document.querySelectorAll('.ant-select-tree-title')].map((n) => n.textContent ?? '')
+}
+
+/** 点某个节点的展开箭头(节点名在同层内唯一时才用得上) */
+function expandNode(name: string): void {
+  const row = [...document.querySelectorAll('.ant-select-tree-treenode')].find(
+    (n) => n.textContent === name
+  )
+  const switcher = row?.querySelector('.ant-select-tree-switcher')
+  if (!switcher) throw new Error(`未找到「${name}」的展开箭头`)
+  fireEvent.click(switcher as HTMLElement)
 }
 
 beforeEach(() => {
@@ -189,5 +221,103 @@ describe('脚本弹窗的 Shell 字段', () => {
         expect.objectContaining({ shellId: 'custom:/opt/gone' })
       )
     )
+  })
+})
+
+describe('脚本弹窗的分组树', () => {
+  // 后端服务 > 部署,前端 > 构建:两个父分组各自带一个子分组
+  const nested: Group[] = [
+    group('g-be', '后端服务', 0),
+    group('g-be-dep', '部署', 0, 'g-be'),
+    group('g-fe', '前端', 1),
+    group('g-fe-build', '构建', 0, 'g-fe')
+  ]
+
+  it('编辑已归入子分组的脚本时,弹层按层级展示并把父分组展开', async () => {
+    setupApi()
+    useAppStore.setState({
+      form: { type: 'script-edit', script: { ...script(null), groupId: 'g-be-dep' } },
+      groups: nested
+    })
+
+    renderModal()
+    await waitFor(() => expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('部署'))
+    await openGroupSelect()
+
+    // 父分组与子分组同时在屏:说明展开链是「已选分组的祖先」而不是全树摊开
+    await waitFor(() => expect(treeTitles()).toEqual(['后端服务', '部署', '前端']))
+    const childRow = [...document.querySelectorAll('.ant-select-tree-treenode')].find(
+      (n) => n.textContent === '部署'
+    )
+    // 子分组比父分组多一级缩进 —— 层级是被渲染出来的,不是靠名字排序伪装的
+    expect(childRow?.querySelectorAll('.ant-select-tree-indent-unit').length).toBe(1)
+  })
+
+  it('父分组自身也能被选为脚本归属', async () => {
+    const api = setupApi()
+    useAppStore.setState({ form: { type: 'script-edit', script: script(null) }, groups: nested })
+
+    renderModal()
+    await waitFor(() => expect(screen.getByTitle('跟随全局')).toBeTruthy())
+    await openGroupSelect()
+    fireEvent.click(await screen.findByText('后端服务'))
+    fireEvent.click(saveButton())
+
+    await waitFor(() =>
+      expect(api.scripts.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ groupId: 'g-be' })
+      )
+    )
+  })
+
+  it('同名但不同父级的分组互不串位', async () => {
+    // 两个「部署」:靠 id 而不是名字区分,选错了就会写进另一个父分组
+    const twins: Group[] = [
+      group('g-be', '后端服务', 0),
+      group('g-be-dep', '部署', 0, 'g-be'),
+      group('g-fe', '前端', 1),
+      group('g-fe-dep', '部署', 0, 'g-fe')
+    ]
+    const api = setupApi()
+    useAppStore.setState({
+      form: { type: 'script-edit', script: { ...script(null), groupId: 'g-be-dep' } },
+      groups: twins
+    })
+
+    renderModal()
+    await openGroupSelect()
+    await waitFor(() => expect(treeTitles()).toEqual(['后端服务', '部署', '前端']))
+    expandNode('前端')
+    await waitFor(() => expect(treeTitles()).toEqual(['后端服务', '部署', '前端', '部署']))
+
+    // 末尾那个「部署」属于前端(树是前序渲染,前端的子级排在最后)。
+    // 选中回调挂在 node-content-wrapper 上,点外层 treenode 不会冒泡到它 —— 必须点进一层
+    const rows = [...document.querySelectorAll('.ant-select-tree-node-content-wrapper')]
+    fireEvent.click(rows[rows.length - 1] as HTMLElement)
+    fireEvent.click(saveButton())
+
+    await waitFor(() =>
+      expect(api.scripts.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ groupId: 'g-fe-dep' })
+      )
+    )
+  })
+
+  it('搜索时只保留命中项及其父路径', async () => {
+    setupApi()
+    useAppStore.setState({ form: { type: 'script-edit', script: script(null) }, groups: nested })
+
+    renderModal()
+    await waitFor(() => expect(screen.getByTitle('跟随全局')).toBeTruthy())
+    await openGroupSelect()
+
+    const item = screen.getByText('分组').closest('.ant-form-item') as HTMLElement
+    const input = item.querySelector('.ant-select-selection-search-input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '部署' } })
+
+    // 命中项「部署」保留,它的父分组「后端服务」作为路径保留;另一个分支整个隐藏
+    await waitFor(() => expect(treeTitles()).toEqual(['后端服务', '部署']))
   })
 })
