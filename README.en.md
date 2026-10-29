@@ -1,22 +1,14 @@
-# EasyOps Script Manager
+# EasyOps Shell Manager
 
 [简体中文](./README.md) | English
 
-> A little desktop tool that helps you **keep your shell scripts in one place and run them in one click**.
+> Keep every scattered shell script in one window — one click to run.
 
 ## The problem it solves
 
-Day-to-day development and ops leave you with piles of scattered scripts and long commands: SSH remote execution, running ops scripts remotely, triaging logs, clearing caches, ad-hoc commands… tucked into all kinds of folders and buried in shell history until you can no longer remember where they are or what arguments they take.
+The shell scripts you use day to day end up everywhere: inside some project folder, buried in shell history, scribbled in some note. After a while you can't recall where one lives or what arguments it takes, so running it again means piecing the command together from scratch.
 
-EasyOps gathers them into one window: organize them in groups, search on a whim, and run one with a click in a **real interactive terminal** — output streams live and you can type right into it. Each script's content and shell are remembered for next time.
-
-## Typical Use Cases
-
-- **SSH remote execution**: Turn "go do this on the server" into a script and run it in one click (`ssh deploy@prod "cd /app && git pull && pm2 restart all"`)
-- **Run scripts over SSH**: Keep an ops script locally and send it to a remote host in one click (`ssh ops@db-1 'bash -s' < backup.sh`)
-- **Multi-host batch operations**: Restart services across machines with one loop (`for h in web-1 web-2; do ssh $h "systemctl restart app"; done`)
-- **Log triage**: Watch and filter logs on a server without retyping the login command (`ssh prod "tail -f /var/log/app/error.log"`)
-- **Everyday local tasks**: Clear caches, run commands and other small tasks — one click each
+EasyOps puts them all in one window, organised in groups and searchable on demand — then runs one with a single click in a real interactive terminal.
 
 ## Core Features
 
