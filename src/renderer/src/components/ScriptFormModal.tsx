@@ -203,6 +203,9 @@ export function ScriptFormModal(): JSX.Element {
             treeExpandedKeys={expandedKeys}
             onTreeExpand={(keys) => setExpandedKeys(keys as string[])}
             onChange={(value) => setGroupId(value ?? null)}
+            // 只给弹层挂类名,用来收紧箭头槽与缩进(见 theme.css);
+            // 下拉是 portal 到 body 的,写在组件根上的 className 够不到它
+            classNames={{ popup: { root: 'app-group-picker-popup' } }}
           />
         </Form.Item>
 

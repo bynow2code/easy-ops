@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Group, Script, ShellInfo } from '../../src/shared/types'
 
 // CodeMirror 是重量级且与本用例关注的「Shell 字段」无关,用受控 textarea 替身隔离
@@ -319,5 +322,59 @@ describe('脚本弹窗的分组树', () => {
 
     // 命中项「部署」保留,它的父分组「后端服务」作为路径保留;另一个分支整个隐藏
     await waitFor(() => expect(treeTitles()).toEqual(['后端服务', '部署']))
+  })
+})
+
+describe('分组树弹层的间距', () => {
+  /**
+   * vitest 默认不处理 CSS(本仓库 vitest.config.ts 无 css 配置),所以尺寸只能从
+   * theme.css 源码里读 —— getComputedStyle 在 jsdom 里拿不到任何真实值。
+   */
+  function themeCss(): string {
+    const candidates = [
+      join(dirname(fileURLToPath(import.meta.url)), '../../src/renderer/src/theme/theme.css'),
+      join(process.cwd(), 'src/renderer/src/theme/theme.css')
+    ]
+    for (const p of candidates) {
+      try {
+        return readFileSync(p, 'utf8')
+      } catch {
+        /* 试下一个 */
+      }
+    }
+    throw new Error('找不到 theme.css,尝试过: ' + candidates.join(' | '))
+  }
+
+  /** 取某个选择器块里的数值属性(0 层花括号,足够用) */
+  function cssProp(selector: string, prop: string): number {
+    const css = themeCss()
+    const start = css.indexOf(`${selector} {`)
+    if (start === -1) throw new Error(`theme.css 里找不到选择器 ${selector}`)
+    const block = css.slice(start, css.indexOf('}', start)).replace(/\/\*[\s\S]*?\*\//g, '')
+    const match = block.match(new RegExp(`[\\s;{]${prop}:\\s*(-?[\\d.]+)(?:px)?\\s*[;}]`))
+    if (!match) throw new Error(`选择器 ${selector} 里找不到 ${prop}(需为具体数值)`)
+    return parseFloat(match[1])
+  }
+
+  it('弹层根上挂专属类名,否则下面两条尺寸规则是死代码', async () => {
+    setupApi()
+    useAppStore.setState({ form: { type: 'script-edit', script: script(null) }, groups: [group('g1', 'PMS', 0)] })
+
+    renderModal()
+    await waitFor(() => expect(screen.getByTitle('跟随全局')).toBeTruthy())
+    await openGroupSelect()
+
+    expect(document.querySelector('.app-group-picker-popup')).toBeTruthy()
+  })
+
+  it('箭头槽与缩进都收紧了(antd 默认两者都是 24px)', () => {
+    const base = '.app-group-picker-popup .ant-select-tree'
+    // 箭头槽:窄到大约一个箭头 + 一点留白;右边距贴近 0,否则又白空一截
+    expect(cssProp(`${base} .ant-select-tree-switcher`, 'width')).toBeLessThanOrEqual(16)
+    expect(cssProp(`${base} .ant-select-tree-switcher`, 'margin-inline-end')).toBeLessThanOrEqual(4)
+    // 悬停底色的 ::before 也必须跟着收,否则溢出到名字上
+    expect(cssProp(`${base} .ant-select-tree-switcher::before`, 'width')).toBeLessThanOrEqual(16)
+    // 每级缩进:仍要能看出层级,但不必是 24px 的一整格
+    expect(cssProp(`${base} .ant-select-tree-indent-unit`, 'width')).toBeLessThanOrEqual(14)
   })
 })

@@ -525,3 +525,26 @@ body {
   outline: 2px solid var(--app-primary);
   outline-offset: 2px;
 }
+
+/* ── 新建/编辑脚本弹窗:分组树弹层 ─────────────────────────
+ * antd 把 titleHeight(=controlHeightSM,24px)同时用作「箭头槽宽度」和「每级缩进」,
+ * 于是箭头与文件夹图标之间要空出约 20px,比侧栏(箭头槽 10 + 间隙 6)松得多,
+ * 一行只有「▶  📁 名字」时看着像三块互不相干的东西。
+ * 这里只收紧这两个尺寸:配色 / 圆角 / hover 仍走 antd 令牌,深浅主题不用各写一份。
+ * 选择器多带一级 .ant-select-tree,是为了压过 antd 运行时注入的 (0,2,0) 规则,
+ * 不靠 !important —— 否则以后想调回来得先跟优先级打架。
+ * 类名由 ScriptFormModal 的 classNames.popup.root 挂到 portal 出来的弹层根上。 */
+.app-group-picker-popup .ant-select-tree .ant-select-tree-switcher {
+  width: 14px;
+  margin-inline-end: 2px;
+}
+
+/* 悬停底色是箭头槽里的 ::before,antd 按 titleHeight(24px)画 —— 槽收窄后它会横向
+ * 溢出到分组名上,变成一块压着图标和文字的灰方。这里让它跟随槽宽。 */
+.app-group-picker-popup .ant-select-tree .ant-select-tree-switcher::before {
+  width: 14px;
+}
+
+.app-group-picker-popup .ant-select-tree .ant-select-tree-indent-unit {
+  width: 12px;
+}
