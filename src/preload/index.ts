@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { clipboard, contextBridge, ipcRenderer } from 'electron'
 import type { Group, Script, Settings, ShellInfo } from '../shared/types'
 
 const api = {
@@ -6,6 +6,12 @@ const api = {
     info: (): Promise<{ version: string; repo: string; platform: string; packaged: boolean }> =>
       ipcRenderer.invoke('app:info'),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', { url })
+  },
+  clipboard: {
+    // 终端「复制选中内容」用。走 Electron 的 clipboard 而不是 navigator.clipboard:
+    // 渲染层跑在 file:// 下,Web Clipboard 的写入要安全上下文 + 权限,失败还只能静默吞掉;
+    // 这个模块同步写、无权限概念,按键触发即可靠落地
+    writeText: (text: string): void => clipboard.writeText(text)
   },
   win: {
     // 自绘标题栏(titleBarStyle: 'hidden')的窗口控件;macOS 用系统红绿灯,不消费这些

@@ -14,7 +14,7 @@ EasyOps puts them all in one window, organised in groups and searchable on deman
 
 - **Script management**: Multi-level groups with drag-and-drop sorting and cross-group moves; search by name; deleting a group cascades to its subgroups and scripts (with a confirmation).
 - **Context menus & multi-select**: Right-click any script or group row to duplicate, delete, rename or add a subgroup; Cmd/Ctrl-click or Shift-click to select multiple rows, then batch delete in one go.
-- **Real interactive terminal**: Built on node-pty + xterm.js — not an "output panel": scripts can read input and you can type commands right in; cards can be maximized or all closed at once.
+- **Real interactive terminal**: Built on node-pty + xterm.js — not an "output panel": scripts can read input and you can type commands right in. Select output and press `Ctrl+Shift+C` (`Cmd+C` on macOS) to copy; `Ctrl+C` stays reserved for interrupting scripts. Cards can be maximized or all closed at once.
 - **Per-script shell**: Give each script its own shell (zsh, bash, WSL, Git Bash, …) or follow the global default.
 - **Syntax-highlighted editor**: CodeMirror 6 with shell command completion; edit several scripts side by side in tabs, unsaved changes kept automatically.
 - **Import / Export**: One-click backup and restore of the whole configuration; migration from v0.7.x supported.

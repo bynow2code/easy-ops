@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { App } from 'antd'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -6,6 +7,10 @@ import '@xterm/xterm/css/xterm.css'
 import { useTheme } from '../theme/provider'
 import { terminalPalette } from '../theme/tokens'
 import { isSignificantResize, terminalSizeChanged, type TerminalBox } from '../utils/terminalFit'
+import { isCopyShortcut } from '../utils/terminalCopy'
+
+/** 与 App.tsx 同一判定口径(同步读,避免异步 info 造成的首帧差异) */
+const IS_MAC = /Mac/i.test(navigator.platform)
 
 export function TerminalView({
   runId,
@@ -22,6 +27,14 @@ export function TerminalView({
   // 上一次 fit 时的容器尺寸:尺寸没变就跳过重排(见下方 ResizeObserver 注释)
   const lastBoxRef = useRef<TerminalBox | null>(null)
   const { resolved } = useTheme()
+
+  // 复制成功的提示:剪贴板是不可见的,不给反馈用户无法判断按键生效了没有。
+  // 用 ref 拿 message,避免它进 main effect 的依赖 —— 那会重建 xterm、丢掉滚动缓冲
+  const { message } = App.useApp()
+  const messageRef = useRef(message)
+  useEffect(() => {
+    messageRef.current = message
+  }, [message])
 
   useEffect(() => {
     const container = containerRef.current
@@ -57,6 +70,23 @@ export function TerminalView({
       window.api.pty.write(runId, data).catch(() => {
         // 关闭后迟到的 write rejection 静默丢弃:无用户可恢复动作,弹窗是噪音
       })
+    })
+
+    // 终端输出的选区是 xterm 自绘的,不是文档原生选区:浏览器自带的「选中 → Ctrl+C」
+    // 在这里完全不成立;而 Ctrl+C 又被 xterm 当 SIGINT 吃掉,于是选中之后没有任何路径
+    // 能把文本送进剪贴板。这里按终端通行约定接管复制键(见 isCopyShortcut)。
+    // 注意:该 API 返回 void(没有 disposable),随 term.dispose() 一起失效
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown' || !isCopyShortcut(ev, IS_MAC)) return true
+      const selection = term.getSelection()
+      // 无选中也返回 false 吞掉:否则 Ctrl+Shift+C 会被 xterm 当成 Ctrl+C 往 pty 送 ^C,
+      // 用户在「以为自己在复制」的时候把正在跑的程序打断了
+      if (selection) {
+        window.api.clipboard.writeText(selection)
+        // 可选链:AppContext 的默认值是空对象,组件万一被用在 <App> 之外也只是没有提示、不炸
+        messageRef.current?.success?.({ content: '已复制', key: 'terminal-copy', duration: 1.2 })
+      }
+      return false
     })
 
     const observer = new ResizeObserver((entries) => {
