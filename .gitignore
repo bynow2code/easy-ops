@@ -16,3 +16,6 @@ electron.vite.config*.mjs
 cdp/
 chrome-headless-shell-linux64/
 chs.zip
+
+# 沙箱安全删除的回收站(删掉的文件落到仓库根,原文件都在 .workbuddy/ 下已忽略)
+.Trash-*/
