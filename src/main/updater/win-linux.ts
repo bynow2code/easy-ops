@@ -1,7 +1,5 @@
-import { join } from 'node:path'
 import { app } from 'electron'
 import electronUpdater from 'electron-updater'
-import { createFileLogger } from './log'
 
 export type UpdateEvent =
   | { status: 'checking' }
@@ -19,10 +17,6 @@ export interface UpdaterHandle {
 
 export function createWinLinuxUpdater(emit: (event: UpdateEvent) => void): UpdaterHandle {
   const { autoUpdater } = electronUpdater
-
-  // 打包后的应用没有终端,electron-updater 的安装动作默认只写 console(等于丢掉)。
-  // 落一份到 userData/logs/updater.log:再出「更新完没自动打开」时能直接看它做没做、做了什么
-  autoUpdater.logger = createFileLogger(join(app.getPath('userData'), 'logs', 'updater.log'))
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
@@ -60,7 +54,6 @@ export function createWinLinuxUpdater(emit: (event: UpdateEvent) => void): Updat
       // 抢不到锁就落到 index.ts 的 app.quit(),静默退出、没有窗口。
       // 用户看到的就是「更新成功但没有自动打开」。
       // 退出前主动释放锁,新实例才能正常接管。
-      autoUpdater.logger?.info(`install(): APPIMAGE=${process.env['APPIMAGE'] ?? '<unset>'}`)
       app.releaseSingleInstanceLock()
       autoUpdater.quitAndInstall()
     }

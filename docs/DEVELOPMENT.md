@@ -146,10 +146,9 @@ mac 链路的几个要点：
 
 > macOS 不做签名就无法使用 Squirrel.Mac 的标准更新链路，所以这里自己实现替换逻辑。
 
-Windows / Linux 链路的两个要点（`src/main/updater/win-linux.ts`）：
+Windows / Linux 链路的一个要点（`src/main/updater/win-linux.ts`）：
 
 - **必须赶在新实例启动前释放单实例锁**：electron-updater 的 `quitAndInstall` 会**先** spawn 新的 AppImage（`detached`），**再**让本进程退出。新实例一启动就 `requestSingleInstanceLock()`，旧进程若还握着锁，新实例拿不到 → 落到 `index.ts` 里的 `app.quit()`，**静默退出、不弹窗口**（2026-10-29 Deepin 上「更新成功但没自动打开」就是这个顺序问题）。所以 `install()` 里先 `app.releaseSingleInstanceLock()` 再 `quitAndInstall()`。
-- **安装动作有落盘日志**：`userData/logs/updater.log`（Windows 为 `%APPDATA%\easyops\logs\`）。打包后的应用没有终端，electron-updater 默认只写 console，等于把「Install / Executing」这些关键行丢掉；出问题时先看这份日志。
 
 ### 发版前建议
 

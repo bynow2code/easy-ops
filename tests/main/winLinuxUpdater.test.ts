@@ -20,8 +20,6 @@ const releaseSingleInstanceLock = vi.fn(() => {
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
-    getPath: () => '/tmp/easyops-userdata',
-    getVersion: () => '0.9.12',
     releaseSingleInstanceLock
   }
 }))
@@ -31,7 +29,6 @@ vi.mock('electron-updater', () => {
     autoDownload: false,
     autoInstallOnAppQuit: true,
     autoRunAppAfterInstall: true,
-    logger: null as unknown,
     on: () => undefined,
     checkForUpdates: async () => undefined,
     downloadUpdate: async () => undefined,
@@ -56,14 +53,5 @@ describe('Windows/Linux 更新安装', () => {
     expect(releaseSingleInstanceLock).toHaveBeenCalledTimes(1)
     expect(quitAndInstall).toHaveBeenCalledTimes(1)
     expect(calls).toEqual(['releaseSingleInstanceLock', 'quitAndInstall'])
-  })
-
-  it('给 electron-updater 挂上落盘 logger,安装动作不再只写 console', async () => {
-    const { autoUpdater } = (await import('electron-updater')) as unknown as {
-      autoUpdater: { logger: { info: (m: string) => void } | null }
-    }
-    createWinLinuxUpdater(() => undefined)
-    expect(autoUpdater.logger).not.toBeNull()
-    expect(typeof autoUpdater.logger?.info).toBe('function')
   })
 })
