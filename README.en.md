@@ -49,6 +49,9 @@ An interactive shell loads your `~/.zshrc` / `~/.bashrc` on startup; with heavy 
 **Will I lose my edits if I switch away without saving?**
 No. Unsaved changes are kept per script (marked with an orange dot on the tab); closing a tab with unsaved changes first asks you to save, discard or cancel, and quitting the app reminds you too.
 
+**The app didn't reopen after updating?**
+The update was already installed the moment you clicked the button — just launch the new package from your desktop. Your scripts and settings are untouched.
+
 **Where is my data? How do I back it up?**
 Copy the whole data folder and you have a backup:
 
