@@ -21,9 +21,12 @@ const emit = (name: string, ...args: unknown[]): void => {
   for (const fn of handlers.get(name) ?? []) fn(...args)
 }
 
+// 拉起新版本必须**同步**发出:spawn 出去的 systemd-run 也在我们自己的 cgroup 里,
+// 可能没把请求交给 systemd 就被清场杀掉
+const execFileSync = vi.fn()
 const spawn = vi.fn(() => ({ on: () => undefined, unref: () => undefined }))
 
-vi.mock('node:child_process', () => ({ spawn }))
+vi.mock('node:child_process', () => ({ execFileSync, spawn }))
 
 vi.mock('electron', () => ({
   app: { isPackaged: true, releaseSingleInstanceLock }
@@ -58,6 +61,7 @@ beforeEach(() => {
   quitAndInstall.mockClear()
   releaseSingleInstanceLock.mockClear()
   spawn.mockClear()
+  execFileSync.mockClear()
 })
 
 describe('Linux 更新安装与重启', () => {
@@ -71,17 +75,31 @@ describe('Linux 更新安装与重启', () => {
     expect(calls).toEqual(['releaseSingleInstanceLock', 'quitAndInstall'])
   })
 
-  it('装完后交给 systemd-run 起独立 unit 拉起新版本,目标路径作为最后一个参数', () => {
+  it('装完后同步调 systemd-run 起独立 unit(不能 spawn——它也在同一 cgroup 里)', () => {
     createWinLinuxUpdater(() => undefined).install()
 
-    expect(spawn).toHaveBeenCalledTimes(1)
-    const [command, args, options] = spawn.mock.calls[0] as unknown as [string, string[], { detached: boolean }]
     // 本机有 systemd-run 且有会话总线 → 应该走脱离 cgroup 的那条路
+    expect(execFileSync).toHaveBeenCalledTimes(1)
+    expect(spawn).not.toHaveBeenCalled()
+
+    const [command, args] = execFileSync.mock.calls[0] as unknown as [string, string[]]
     expect(command).toBe('systemd-run')
     expect(args.some((a) => a === '--user')).toBe(true)
     expect(args.some((a) => a === '--collect')).toBe(true)
+    expect(args.some((a) => a === '--no-block')).toBe(true)
     expect(args.some((a) => a.startsWith('--unit=easyops-relaunch-'))).toBe(true)
     expect(args[args.length - 1]).toBe('/home/arthur/Desktop/EasyOps-0.9.15-x86_64.AppImage')
+  })
+
+  it('systemd-run 失败时退回普通 detached 启动', () => {
+    execFileSync.mockImplementationOnce(() => {
+      throw new Error('Failed to connect to bus')
+    })
+    createWinLinuxUpdater(() => undefined).install()
+
+    expect(spawn).toHaveBeenCalledTimes(1)
+    const [command, , options] = spawn.mock.calls[0] as unknown as [string, string[], { detached: boolean }]
+    expect(command).toBe('/home/arthur/Desktop/EasyOps-0.9.15-x86_64.AppImage')
     expect(options.detached).toBe(true)
   })
 
@@ -91,6 +109,7 @@ describe('Linux 更新安装与重启', () => {
       // 不发 appimage-filename-updated
     })
     createWinLinuxUpdater(() => undefined).install()
+    expect(execFileSync).not.toHaveBeenCalled()
     expect(spawn).not.toHaveBeenCalled()
   })
 })

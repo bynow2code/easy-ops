@@ -42,7 +42,8 @@ export function planRelaunch(input: {
     return { command: input.target, args: [] }
   }
 
-  const args = ['--user', '--collect', `--unit=${input.unitName}`]
+  // --no-block:任务入队即返回,不必等 unit 启动完成(调用方是「马上要退出的进程」,不能久等)
+  const args = ['--user', '--collect', '--no-block', `--unit=${input.unitName}`]
   for (const name of PASSTHROUGH_ENV) {
     const value = input.env[name]
     if (value) args.push(`--setenv=${name}=${value}`)

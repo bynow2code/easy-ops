@@ -40,6 +40,8 @@ describe('planRelaunch', () => {
     expect(plan.args).toContain('--user')
     expect(plan.args).toContain('--collect')
     expect(plan.args).toContain('--unit=easyops-relaunch-1')
+    // 调用方马上要退出,--no-block 让它入队即返回
+    expect(plan.args).toContain('--no-block')
     // 目标必须是最后一个参数:前面全是 systemd-run 自己的开关
     expect(plan.args[plan.args.length - 1]).toBe('/home/arthur/Desktop/EasyOps-0.9.15-x86_64.AppImage')
   })

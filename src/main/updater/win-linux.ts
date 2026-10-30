@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { app } from 'electron'
 import electronUpdater from 'electron-updater'
@@ -18,7 +18,17 @@ export interface UpdaterHandle {
   install: () => void
 }
 
-/** 把新版本拉起来。失败无处上报(应用正在退出),但至少不会把退出流程卡住 */
+/**
+ * 把新版本拉起来。
+ *
+ * 关键:systemd-run 自己也是我们的子进程,同样在**本进程所属 unit 的 cgroup** 里。
+ * 如果只是 spawn 出去然后立刻退出,它可能还没把「建 unit」这个 D-Bus 请求交给 systemd,
+ * 就被 unit 结束时的那轮清场一起杀掉了 —— 结果还是什么都没起来。
+ * 所以这里必须**同步**发出去(execFileSync),确认请求已交给 systemd 再返回;
+ * `--no-block` 让它在「任务已入队」时立刻返回,不必等 unit 启动完成。
+ *
+ * 失败无处上报(应用正在退出),退回普通 detached 启动 —— 那等于回到修复前的行为,聊胜于无。
+ */
 function relaunch(target: string): void {
   const plan = planRelaunch({
     target,
@@ -26,8 +36,18 @@ function relaunch(target: string): void {
     hasSystemdRun: canUseSystemdRun({ exists: existsSync, env: process.env }),
     env: process.env
   })
+
+  if (plan.command === 'systemd-run') {
+    try {
+      execFileSync(plan.command, plan.args, { stdio: 'ignore', timeout: 5000 })
+      return
+    } catch {
+      // systemd-run 不可用 / 会话总线不通:落到下面的普通启动
+    }
+  }
+
   try {
-    const child = spawn(plan.command, plan.args, { detached: true, stdio: 'ignore' })
+    const child = spawn(target, [], { detached: true, stdio: 'ignore' })
     child.on('error', () => undefined)
     child.unref()
   } catch {
