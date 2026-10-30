@@ -1,5 +1,8 @@
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { app } from 'electron'
 import electronUpdater from 'electron-updater'
+import { canUseSystemdRun, planRelaunch } from './linuxRelaunch'
 
 export type UpdateEvent =
   | { status: 'checking' }
@@ -13,6 +16,23 @@ export interface UpdaterHandle {
   check: () => Promise<void>
   download: () => Promise<void>
   install: () => void
+}
+
+/** 把新版本拉起来。失败无处上报(应用正在退出),但至少不会把退出流程卡住 */
+function relaunch(target: string): void {
+  const plan = planRelaunch({
+    target,
+    unitName: `easyops-relaunch-${Date.now()}`,
+    hasSystemdRun: canUseSystemdRun({ exists: existsSync, env: process.env }),
+    env: process.env
+  })
+  try {
+    const child = spawn(plan.command, plan.args, { detached: true, stdio: 'ignore' })
+    child.on('error', () => undefined)
+    child.unref()
+  } catch {
+    // 见上:应用马上要退出,没有可上报的通道
+  }
 }
 
 export function createWinLinuxUpdater(emit: (event: UpdateEvent) => void): UpdaterHandle {
@@ -48,14 +68,40 @@ export function createWinLinuxUpdater(emit: (event: UpdateEvent) => void): Updat
       }
     },
     install() {
-      // 顺序问题(electron-updater 6.8.9 实测源码):quitAndInstall → AppImageUpdater.doInstall
-      // 里**先** spawn 新 AppImage(detached),**再** setImmediate(app.quit())。
-      // 新实例一启动就 requestSingleInstanceLock(),此时旧进程还活着、锁还握着 ——
-      // 抢不到锁就落到 index.ts 的 app.quit(),静默退出、没有窗口。
-      // 用户看到的就是「更新成功但没有自动打开」。
-      // 退出前主动释放锁,新实例才能正常接管。
+      // Windows:NSIS 装完自己会把应用拉起来,不需要我们插手
+      if (process.platform !== 'linux') {
+        autoUpdater.quitAndInstall()
+        return
+      }
+
+      // Linux:不能让它自己 spawn。electron-updater 是在**退出前** spawn 新 AppImage 的,
+      // 新进程继承同一个 systemd unit 的 cgroup,应用一退 unit 变 inactive,systemd 按
+      // KillMode=control-group 清场 —— 新实例被一起 SIGKILL,表现就是「更新成功但没自动打开」
+      // (2026-10-30 实测:systemd-run 起 unit + setsid 子进程,unit 结束后子进程一并消失)。
+      // 所以改成:它只负责「换文件」,拉起新版本交给我们(见 linuxRelaunch.ts)。
+      autoUpdater.autoRunAppAfterInstall = false
+
+      // 新版本由 user manager 起在另一个 unit 里,启动时机不受我们控制;
+      // 万一它比本进程退得还快,也不该被单实例锁挡在门外
       app.releaseSingleInstanceLock()
-      autoUpdater.quitAndInstall()
+
+      let destination: string | null = null
+      const onRenamed = (filePath: string): void => {
+        destination = filePath
+      }
+      autoUpdater.on('appimage-filename-updated', onRenamed)
+      try {
+        // 同步走完「替换文件」;isForceRunAfter=false 时它走「只装不跑」分支
+        // (AppRun 见到 APPIMAGE_EXIT_AFTER_INSTALL 就不 exec 应用,已实测)
+        autoUpdater.quitAndInstall()
+      } finally {
+        autoUpdater.off('appimage-filename-updated', onRenamed)
+      }
+
+      // 有 destination = 文件确实换成新名字了。安装失败时它是 null,此时不能再拉起 ——
+      // 那会启动第二个「旧版本」实例
+      if (!destination) return
+      relaunch(destination)
     }
   }
 }

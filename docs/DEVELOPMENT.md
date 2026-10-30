@@ -146,9 +146,14 @@ mac 链路的几个要点：
 
 > macOS 不做签名就无法使用 Squirrel.Mac 的标准更新链路，所以这里自己实现替换逻辑。
 
-Windows / Linux 链路的一个要点（`src/main/updater/win-linux.ts`）：
+Windows / Linux 链路上必须知道的一件事（`src/main/updater/win-linux.ts` + `linuxRelaunch.ts`）：
 
-- **必须赶在新实例启动前释放单实例锁**：electron-updater 的 `quitAndInstall` 会**先** spawn 新的 AppImage（`detached`），**再**让本进程退出。新实例一启动就 `requestSingleInstanceLock()`，旧进程若还握着锁，新实例拿不到 → 落到 `index.ts` 里的 `app.quit()`，**静默退出、不弹窗口**（2026-10-29 Deepin 上「更新成功但没自动打开」就是这个顺序问题）。所以 `install()` 里先 `app.releaseSingleInstanceLock()` 再 `quitAndInstall()`。
+- **Linux 上不能交给 electron-updater 去拉起新版本**。它的 `quitAndInstall` 是「**先** spawn 新 AppImage（`detached` + `stdio: ignore`）、**再** `app.quit()`」。而桌面环境（Deepin 的 dde-application-manager、以及多数 systemd 桌面）会把每个 GUI 应用放进一个 transient unit 的 **cgroup**；应用一退，unit 变 `inactive`，systemd 按 `KillMode=control-group` 清场，把刚起来的新实例一起 SIGKILL —— 用户看到的就是「更新成功，但没有自动打开」。`detached` 只做 `setsid`（换 session），**换不了 cgroup**，所以躲不开。
+  - 定性实验（不用跑 GUI）：`systemd-run --user --unit=t --collect sh -c 'setsid sleep 40 & echo started'`，unit 结束后 `pgrep -f "sleep 40"` 找不到，即子进程被一起收走。
+  - 现行做法：`autoRunAppAfterInstall = false`（让它只换文件，`AppRun` 见到 `APPIMAGE_EXIT_AFTER_INSTALL` 就不 exec 应用），换完后由我们自己用 `systemd-run --user --collect --unit=…` 把新版本交给 **user manager** 起独立 unit，旧 unit 死掉带不走它；并通过 `--setenv` 显式带上 `DISPLAY` / `XAUTHORITY` / `WAYLAND_DISPLAY`（user manager 的 env 不一定有）。
+  - 兜底：没有 `systemd-run` 或没有会话总线（非 systemd 发行版）时退回普通 detached spawn —— 那些环境本来就没有 cgroup 清场问题。
+  - 目标路径来自 `appimage-filename-updated` 事件；它没触发（安装失败 / 文件名不含版本号）时**不**拉起，否则会启动第二个旧实例。
+- **顺带仍会先 `app.releaseSingleInstanceLock()`**：新版本由另一个 unit 启动，时机不受我们控制，不该被单实例锁挡在门外。
 
 ### 发版前建议
 
