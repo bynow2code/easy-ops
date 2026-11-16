@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { App } from 'antd'
 import { installJsdomShims } from './jsdomShims'
 
 // xterm 在 jsdom 里跑不起来,且本用例只关心「卡片怎么排布与操作」,用替身隔离。
@@ -57,6 +58,32 @@ function iconButtons(name: string): HTMLElement[] {
     if (!button) throw new Error(`图标 ${name} 不在 button 内`)
     return button
   })
+}
+
+/** 渲染时包一层 antd App：关闭失败分支会调 message.error，无 App 上下文时它是 undefined 会抛 TypeError */
+function renderDockInApp(): void {
+  render(
+    <App>
+      <ThemeProvider mode="light" onModeChange={() => undefined}>
+        <TerminalDock />
+      </ThemeProvider>
+    </App>
+  )
+}
+
+/**
+ * 菜单项元素（antd 把 role="menuitem" 挂在 .ant-dropdown-menu-item 上）。
+ * 必须在菜单浮层内查：「关闭全部」既是菜单项、也是工具条上的按钮，
+ * 直接 screen.getByText 会撞成 multiple elements。
+ */
+function menuItem(label: string): HTMLElement {
+  const overlay = document.querySelector('.ant-dropdown:not(.ant-dropdown-hidden)')
+  if (!overlay) throw new Error('没有可见的菜单浮层')
+  const el = Array.from(overlay.querySelectorAll('.ant-dropdown-menu-item')).find(
+    (item) => item.textContent?.trim() === label
+  )
+  if (!el) throw new Error(`菜单项「${label}」不存在`)
+  return el as HTMLElement
 }
 
 /** 回顶按钮的查询入口(queryBy* 形式:显隐两侧断言都用它) */
@@ -228,6 +255,140 @@ describe('终端瀑布流', () => {
     renderDock()
 
     expect(screen.getByText(/还没有运行中的终端/)).toBeTruthy()
+  })
+})
+
+describe('卡片头部右键菜单', () => {
+  it('右键卡片头部弹出三项关闭菜单,且是纯文字(无图标)', async () => {
+    setupApi()
+    useTerminalStore.setState({
+      sessions: [session('r1', 'A'), session('r2', 'B')],
+      activeRunId: 'r1',
+      maximizedRunId: null
+    })
+
+    renderDock()
+    // 对照组:右键前菜单项不存在,证明后面的断言确实来自这一次右键
+    expect(screen.queryByText('关闭其他终端')).toBeNull()
+
+    fireEvent.contextMenu(screen.getByTestId('card-head-r2'))
+
+    expect(await screen.findByText('关闭其他终端')).toBeTruthy()
+
+    for (const label of ['关闭此终端', '关闭其他终端', '关闭全部']) {
+      const item = menuItem(label)
+      expect(item).toBeTruthy()
+      expect(item.querySelector('.anticon')).toBeNull()
+    }
+    // 危险色只给范围不受右键目标约束的那一项
+    expect(menuItem('关闭全部').className).toContain('danger')
+    expect(menuItem('关闭其他终端').className).not.toContain('danger')
+    expect(menuItem('关闭此终端').className).not.toContain('danger')
+  })
+
+  it('关闭其他终端:只保留被右键的那张,并让它成为激活态', async () => {
+    const api = setupApi()
+    useTerminalStore.setState({
+      sessions: [session('r3', 'C'), session('r2', 'B'), session('r1', 'A')],
+      activeRunId: 'r1',
+      maximizedRunId: null
+    })
+
+    renderDock()
+    fireEvent.contextMenu(screen.getByTestId('card-head-r2'))
+    fireEvent.click(await screen.findByText('关闭其他终端'))
+
+    await waitFor(() => expect(useTerminalStore.getState().sessions.map((s) => s.runId)).toEqual(['r2']))
+    // 其余两个各关一次,保留者一次都不关
+    const closedIds = api.pty.close.mock.calls.map((c) => c[0]).sort()
+    expect(closedIds).toEqual(['r1', 'r3'])
+    expect(useTerminalStore.getState().activeRunId).toBe('r2')
+  })
+
+  it('只剩一个终端时「关闭其他终端」禁用但仍在菜单里', async () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    fireEvent.contextMenu(screen.getByTestId('card-head-r1'))
+
+    // 「关闭其他终端」禁用但仍在菜单里(不隐藏,菜单位置才稳定)
+    expect(await screen.findByText('关闭其他终端')).toBeTruthy()
+    expect(menuItem('关闭其他终端').className).toContain('ant-dropdown-menu-item-disabled')
+    // 「关闭此终端」「关闭全部」不受影响
+    expect(menuItem('关闭此终端').className).not.toContain('disabled')
+    expect(menuItem('关闭全部').className).not.toContain('disabled')
+  })
+
+  it('最大化态下关闭其他:隐藏的卡片同样被关,保留者仍保持最大化', async () => {
+    const api = setupApi()
+    useTerminalStore.setState({
+      sessions: [session('r1', 'A'), session('r2', 'B')],
+      activeRunId: 'r1',
+      maximizedRunId: 'r2'
+    })
+
+    renderDock()
+    fireEvent.contextMenu(screen.getByTestId('card-head-r2'))
+    fireEvent.click(await screen.findByText('关闭其他终端'))
+
+    await waitFor(() => expect(api.pty.close).toHaveBeenCalledWith('r1'))
+    expect(useTerminalStore.getState().sessions.map((s) => s.runId)).toEqual(['r2'])
+    expect(useTerminalStore.getState().maximizedRunId).toBe('r2')
+  })
+
+  it('某个终端关不掉时:其余照关,失败的卡片留在列表并提示', async () => {
+    const api = setupApi()
+    api.pty.close.mockImplementation(async (runId: string) => {
+      if (runId === 'r1') throw new Error('会话不存在')
+      return undefined
+    })
+    useTerminalStore.setState({
+      sessions: [session('r3', 'C'), session('r1', 'A'), session('r2', 'B')],
+      activeRunId: 'r1',
+      maximizedRunId: null
+    })
+
+    // 错误分支会调 message.error：必须包 App,否则 useApp 拿到空 message 对象
+    renderDockInApp()
+    fireEvent.contextMenu(screen.getByTestId('card-head-r2'))
+    fireEvent.click(await screen.findByText('关闭其他终端'))
+
+    await waitFor(() => expect(useTerminalStore.getState().sessions.map((s) => s.runId)).toEqual(['r1', 'r2']))
+    await waitFor(() => expect(document.querySelector('.ant-message')).toBeTruthy())
+  })
+
+  it('同一时刻只有一个菜单:右键 B 之后 A 的菜单关闭', async () => {
+    setupApi()
+    useTerminalStore.setState({
+      sessions: [session('r1', 'A'), session('r2', 'B')],
+      activeRunId: 'r1',
+      maximizedRunId: null
+    })
+
+    renderDock()
+    fireEvent.contextMenu(screen.getByTestId('card-head-r1'))
+    await screen.findByText('关闭其他终端')
+
+    fireEvent.contextMenu(screen.getByTestId('card-head-r2'))
+
+    // 可见菜单（排除 .ant-dropdown-hidden）必须只有一个
+    await waitFor(() => {
+      const visible = Array.from(document.querySelectorAll('.ant-dropdown')).filter(
+        (el) => !el.classList.contains('ant-dropdown-hidden')
+      )
+      expect(visible.length).toBe(1)
+    })
+  })
+
+  it('终端内容区右键不弹关闭菜单', () => {
+    setupApi()
+    useTerminalStore.setState({ sessions: [session('r1', 'A'), session('r2', 'B')], activeRunId: 'r1', maximizedRunId: null })
+
+    renderDock()
+    fireEvent.contextMenu(screen.getByTestId('view-r1'))
+
+    expect(screen.queryByText('关闭其他终端')).toBeNull()
   })
 })
 

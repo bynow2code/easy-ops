@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { App, Badge, Button, Tag, Tooltip, Typography } from 'antd'
+import { App, Badge, Button, Dropdown, Tag, Tooltip, Typography } from 'antd'
+import type { MenuProps } from 'antd'
 import { CloseOutlined, CodeOutlined, FullscreenExitOutlined, FullscreenOutlined, VerticalAlignTopOutlined } from '@ant-design/icons'
 import { terminalActions, useTerminalStore } from '../store/useTerminalStore'
 import { usePtyEvents } from '../hooks/usePtyEvents'
@@ -11,6 +12,19 @@ const CARD_HEIGHT = 340
 
 /** 列表滚离顶部超过该距离时浮现「回到顶部」按钮(约大半张卡片高) */
 const BACK_TO_TOP_THRESHOLD = 200
+
+/**
+ * 卡片头部右键菜单。
+ * 纯文字无图标,与侧栏 groupMenuItems / scriptMenuItems 一致(菜单项带了图标会让
+ * 两项文字与其余错开);危险色只给「关闭全部」—— 前两项都以被右键的卡片为参照、
+ * 影响范围可预期,只有「关闭全部」的范围不受右键目标约束。
+ */
+const terminalMenuItems = (canCloseOthers: boolean): MenuProps['items'] => [
+  { key: 'close-self', label: '关闭此终端' },
+  { key: 'close-others', label: '关闭其他终端', disabled: !canCloseOthers },
+  { type: 'divider' },
+  { key: 'close-all', label: '关闭全部', danger: true }
+]
 
 export function TerminalDock(): JSX.Element {
   const sessions = useTerminalStore((s) => s.sessions)
@@ -31,6 +45,16 @@ export function TerminalDock(): JSX.Element {
   const [showBackTop, setShowBackTop] = useState(false)
   // 回顶按钮的悬停提示:受控 open(和最大化按钮同款,点击即收不残留)
   const [tipOpen, setTipOpen] = useState(false)
+
+  /**
+   * 当前开着的卡片右键菜单(值是卡片 runId);null = 全关。
+   * 与 Sidebar 的 openMenuKey 同一套写法:单个 key 让「互斥」退化成一次 setState,
+   * 不需要手写「关掉别人」的逻辑。
+   * ⚠️ onOpenChange 的关闭分支必须带 `prev === myId` 守卫 —— antd 在
+   * 「另一个菜单打开导致我被动关闭」时也会回调本 Dropdown(open=false),
+   * 少了守卫会把刚设的新 key 一起清掉,两个菜单全关。
+   */
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   // 「回到顶部」状态同步统一入口:onScroll 与「会话数/最大化态变化」effect 共用。
   // next=false 时一并复位 tipOpen:按钮即将随 showBackTop 卸载,antd 在卸载路径
@@ -94,6 +118,34 @@ export function TerminalDock(): JSX.Element {
     writers.current.clear()
     buffers.current.clear()
     useTerminalStore.setState({ sessions: [], activeRunId: null, maximizedRunId: null })
+  }
+
+  // 关闭其他:保留 runId 这张卡片,其余全关。
+  // 不走 closeAll —— pty.close 对不存在的会话是 no-op(主进程直接 return),
+  // 逐个关即可;N 通常 < 10,为此新增一个 IPC 只是把 Promise.all 挪到主进程。
+  const handleCloseOthers = async (runId: string): Promise<void> => {
+    const others = sessions.filter((s) => s.runId !== runId).map((s) => s.runId)
+    if (others.length === 0) return
+
+    const results = await Promise.allSettled(others.map((id) => window.api.pty.close(id)))
+    // 只移除真正关掉的:失败的卡片留在列表里,可再次右键重试
+    const closed = others.filter((_, i) => results[i].status === 'fulfilled')
+
+    // 先移除会话再清 writer/缓冲(与 handleClose 同一顺序):两步之间到达的迟到 chunk
+    // 会被数据回调里的「会话不存在」检查丢弃,不会重建无主的 pending 缓冲
+    terminalActions.removeMany(closed)
+    // 规格:保留者成为激活态(原本可能是别的卡片在激活)
+    terminalActions.setActive(runId)
+    closed.forEach((id) => {
+      writers.current.delete(id)
+      buffers.current.delete(id)
+    })
+
+    const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (rejected) {
+      const remaining = others.length - closed.length
+      message.error(`${toUserMessage(rejected.reason)}（还有 ${remaining} 个终端未关闭）`)
+    }
   }
 
   if (sessions.length === 0) {
@@ -211,61 +263,83 @@ export function TerminalDock(): JSX.Element {
                   background: 'var(--color-bg-container)'
                 }}
               >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '5px 4px 5px 10px',
-                    borderBottom: '1px solid var(--app-hairline)',
-                    background: 'var(--app-subtle-bg)',
-                    flex: '0 0 auto'
+                {/* 头部整行右键 = 关闭菜单(与侧栏整行右键同构)。
+                    Dropdown 用 cloneElement 给子元素注入 onContextMenu,不产生额外 DOM 层级,
+                    卡片的网格布局与头部样式都不受影响。终端内容区不接管右键,留给将来的复制粘贴。 */}
+                <Dropdown
+                  trigger={['contextMenu']}
+                  open={openMenuId === s.runId}
+                  onOpenChange={(open) =>
+                    setOpenMenuId((prev) => (open ? s.runId : prev === s.runId ? null : prev))
+                  }
+                  menu={{
+                    items: terminalMenuItems(sessions.length > 1),
+                    // 浮层挂在 body 上;阻止冒泡,避免将来给头部加点击行为时被误触
+                    onClick: ({ key, domEvent }) => {
+                      domEvent.stopPropagation()
+                      if (key === 'close-self') void handleClose(s.runId)
+                      else if (key === 'close-others') void handleCloseOthers(s.runId)
+                      else if (key === 'close-all') void handleCloseAll()
+                    }
                   }}
                 >
-                  <Typography.Text
-                    strong
-                    ellipsis
-                    style={{ fontSize: 12, flex: 1, minWidth: 0 }}
-                    title={s.title}
+                  <div
+                    data-testid={`card-head-${s.runId}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '5px 4px 5px 10px',
+                      borderBottom: '1px solid var(--app-hairline)',
+                      background: 'var(--app-subtle-bg)',
+                      flex: '0 0 auto'
+                    }}
                   >
-                    {s.title}
-                  </Typography.Text>
-                  {s.exited ? (
-                    <Tag style={{ marginInlineEnd: 0 }}>退出 {s.exitCode ?? 0}</Tag>
-                  ) : (
-                    // 运行中 = 苹果绿静点(替代 antd processing 蓝色脉冲灯,和整体风格解绑)
-                    <Badge color="#34C759" />
-                  )}
-                  {/* 受控 open:antd 的 Tooltip 默认 hover 触发、点击不关闭 —— 鼠标停在按钮上
-                      不动时,点完按钮提示会一直挂在按钮上方(用户反馈的现象)。这里点击即收起;
-                      mouseleave 仍走 antd 的 onOpenChange 正常关闭,两者不冲突 */}
-                  <Tooltip
-                    title={cardMaximized ? '还原' : '最大化'}
-                    open={tipRunId === s.runId}
-                    onOpenChange={(open) =>
-                      setTipRunId((prev) => (open ? s.runId : prev === s.runId ? null : prev))
-                    }
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={cardMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
-                      onClick={() => {
-                        setTipRunId(null)
-                        terminalActions.setMaximized(s.runId, !cardMaximized)
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="关闭此终端">
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<CloseOutlined />}
-                      onClick={() => void handleClose(s.runId)}
-                    />
-                  </Tooltip>
-                </div>
+                    <Typography.Text
+                      strong
+                      ellipsis
+                      style={{ fontSize: 12, flex: 1, minWidth: 0 }}
+                      title={s.title}
+                    >
+                      {s.title}
+                    </Typography.Text>
+                    {s.exited ? (
+                      <Tag style={{ marginInlineEnd: 0 }}>退出 {s.exitCode ?? 0}</Tag>
+                    ) : (
+                      // 运行中 = 苹果绿静点(替代 antd processing 蓝色脉冲灯,和整体风格解绑)
+                      <Badge color="#34C759" />
+                    )}
+                    {/* 受控 open:antd 的 Tooltip 默认 hover 触发、点击不关闭 —— 鼠标停在按钮上
+                        不动时,点完按钮提示会一直挂在按钮上方(用户反馈的现象)。这里点击即收起;
+                        mouseleave 仍走 antd 的 onOpenChange 正常关闭,两者不冲突 */}
+                    <Tooltip
+                      title={cardMaximized ? '还原' : '最大化'}
+                      open={tipRunId === s.runId}
+                      onOpenChange={(open) =>
+                        setTipRunId((prev) => (open ? s.runId : prev === s.runId ? null : prev))
+                      }
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={cardMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                        onClick={() => {
+                          setTipRunId(null)
+                          terminalActions.setMaximized(s.runId, !cardMaximized)
+                        }}
+                      />
+                    </Tooltip>
+                    <Tooltip title="关闭此终端">
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<CloseOutlined />}
+                        onClick={() => void handleClose(s.runId)}
+                      />
+                    </Tooltip>
+                  </div>
+                </Dropdown>
                 <div
                   style={{ flex: 1, minHeight: 0, padding: 4 }}
                   onClick={() => terminalActions.setActive(s.runId)}
